@@ -1,0 +1,13 @@
+API*
+*.txt
+venv/
+__pycache__/
+build/
+dist/
+.DS_Store
+._*
+cache/
+ocr_cache/
+projects/
+settings.json
+.gemini/
