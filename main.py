@@ -77,8 +77,8 @@ class WebtoonManager(QMainWindow):
         self.update_button_pos()
         
         # 앱 실행 시 기존 작업 내역 확인 및 모드 복원
-        # 타이머를 사용하여 메인 루프 진입 직후에 실행되도록 합니다 (UI가 그려진 후 팝업).
-        QTimer.singleShot(0, self.check_existing_work)
+        # 2단계: 모드 체크 및 기존 작업 확인 (지연 호출)
+        QTimer.singleShot(0, lambda: self.check_existing_work(is_startup=True))
 
     def update_button_pos(self):
         """사이드바의 현재 너비에 맞춰 버튼 위치를 실시간으로 이동시킵니다."""
@@ -152,13 +152,14 @@ class WebtoonManager(QMainWindow):
                 except Exception as e:
                     print(f"Failed to delete {f}: {e}")
 
-    def check_existing_work(self):
-        # 먼저 설정된 모드에 맞춰 UI를 전환합니다 (심플 모드일 경우 사이드바 숨김 등)
-        if getattr(config, 'IS_SIMPLE_MODE', False):
-            # toggle_simple_mode 내부에서 load_images/load_data가 호출되므로 
-            # 일단 UI만 먼저 심플모드로 바꾸고 데이터 로드는 나중에 결정할 수도 있지만,
-            # 현재 구조상 토글을 먼저 해서 UI를 정돈하는 것이 사용자 혼동이 적습니다.
-            self.toggle_simple_mode(show_toast=False)
+    def check_existing_work(self, is_startup=False):
+        # 1. 앱 시작 시: 전체 모드(프로젝트 모드)라면 심플 모드 체크를 하지 않습니다.
+        if is_startup and not getattr(config, 'IS_SIMPLE_MODE', False):
+            return
+            
+        # 2. 심플 모드로 시작할 때: UI를 먼저 전환합니다.
+        if is_startup and getattr(config, 'IS_SIMPLE_MODE', False):
+            self.toggle_simple_mode(show_toast=False, check_work=False)
 
         simple_dir = os.path.join(CACHE_DIR, "simple_mode")
         has_work = False
@@ -171,9 +172,8 @@ class WebtoonManager(QMainWindow):
         if has_work:
             msg_box = QMessageBox(self)
             msg_box.setWindowTitle('기존 작업 불러오기')
-            msg_box.setText('기존에 작업하던 내용이 있습니다.\n이어서 작업하시겠습니까?\n(아니오를 누르면 새 작업으로 시작합니다.)')
+            msg_box.setText('심플 모드에 기존 작업 내용이 있습니다.\n이어서 작업하시겠습니까?\n(아니오를 누르면 기존 내용을 삭제하고 새로 시작합니다.)')
             
-            # 버튼 순서를 '예' -> '아니오' 순으로 강제하기 위해 addButton 사용
             btn_yes = msg_box.addButton(" 예 ", QMessageBox.ActionRole)
             btn_no = msg_box.addButton(" 아니오 ", QMessageBox.ActionRole)
             
@@ -182,10 +182,10 @@ class WebtoonManager(QMainWindow):
 
             if msg_box.clickedButton() == btn_no:
                 self.clear_simple_mode_cache()
-                # 이미 로드된 이미지가 있다면 비워줍니다.
                 self.clear_workspace()
                 self.load_images()
                 self.load_data()
+            # '예'를 누른 경우는 이미 toggle_simple_mode 등에서 로드가 완료되었으므로 추가 로드가 필요 없습니다.
             
     def prompt_clear_workspace(self):
         msg_box = QMessageBox(self)
@@ -822,14 +822,17 @@ class WebtoonManager(QMainWindow):
         # 1. 오른쪽 영역 컨테이너 (QStackedWidget으로 변경!)
         # [수정] background-color를 white에서 #F9FAFB로 변경
         self.viewer_stack = QStackedWidget()
-        self.viewer_stack.setStyleSheet("background-color: #F9FAFB; border-radius: 8px; border: 1px solid #D1D5DB;")
+        self.viewer_stack.setObjectName("ViewerStack")
+        self.viewer_stack.setFrameShape(QFrame.NoFrame)
+        # padding: 1px를 추가하여 내부 위젯이 테두리 선을 덮지 않도록 보호합니다.
+        self.viewer_stack.setStyleSheet("#ViewerStack { background-color: #F9FAFB; border-radius: 8px; border: 1px solid #D1D5DB; padding: 1px; }")
 
         # ---------------------------------------------------------
         # [Index 0] 초기 안내 화면 (empty_widget) 수정 버전
         # ---------------------------------------------------------
         # [수정] background를 white에서 transparent 또는 #F9FAFB로 변경
         self.empty_widget = QWidget()
-        self.empty_widget.setStyleSheet("border: none; background: transparent;") # 바닥(stack) 색이 보이게 투명 처리
+        self.empty_widget.setStyleSheet("border: none; background: transparent; border-radius: 8px;") # 바닥(stack) 색이 보이게 투명 처리
         
         empty_vbox = QVBoxLayout(self.empty_widget)
         empty_vbox.addStretch(1) # 위쪽 여백
@@ -885,8 +888,14 @@ class WebtoonManager(QMainWindow):
         # [Index 1] 실제 웹툰 이미지가 보일 스크롤 영역
         # ---------------------------------------------------------
         self.scroll_area = WebtoonScrollArea()
+        self.scroll_area.setFrameShape(QFrame.NoFrame)
         self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setStyleSheet("border: none;") # 테두리는 부모가 가지고 있으니 제거
+        # 내부 뷰포트와 스크롤 영역 자체에 라운드를 주어 이미지가 뚫고 나가지 않게 함
+        self.scroll_area.setStyleSheet("""
+            QScrollArea { border: none; background: transparent; border-radius: 8px; }
+            QWidget { border-radius: 8px; }
+        """) 
+        self.scroll_area.viewport().setStyleSheet("background: transparent; border-radius: 8px;")
         
         scroll_content = QWidget()
         self.image_layout = QVBoxLayout(scroll_content)
@@ -1403,12 +1412,8 @@ class WebtoonManager(QMainWindow):
         self.load_images()
 
     def update_viewer_background(self, has_images):
-        if has_images:
-            # 이미지가 있으면 깔끔한 흰색 배경
-            self.viewer_stack.setStyleSheet("background-color: white; border-radius: 8px; border: 1px solid #D1D5DB;")
-        else:
-            # 이미지가 없으면 다시 차분한 회색 배경
-            self.viewer_stack.setStyleSheet("background-color: #F9FAFB; border-radius: 8px; border: 1px solid #D1D5DB;")
+        bg_color = "white" if has_images else "#F9FAFB"
+        self.viewer_stack.setStyleSheet(f"#ViewerStack {{ background-color: {bg_color}; border-radius: 8px; border: 1px solid #D1D5DB; padding: 1px; }}")
 
 
     def create_menu(self):
@@ -1441,7 +1446,7 @@ class WebtoonManager(QMainWindow):
 
         # 설정 메뉴
         settings_menu = menubar.addMenu("설정(&S)")
-        action_settings = QAction("API키 설정", self)
+        action_settings = QAction("API 키 설정", self)
         action_settings.setShortcut("Ctrl+,")
         action_settings.triggered.connect(self.open_settings_dialog)
         settings_menu.addAction(action_settings)
@@ -1450,7 +1455,7 @@ class WebtoonManager(QMainWindow):
         dlg = SettingsDialog(self)
         dlg.exec()
 
-    def toggle_simple_mode(self, show_toast=True):
+    def toggle_simple_mode(self, show_toast=True, check_work=True):
         self.is_simple_mode = not self.is_simple_mode
         
         # 메뉴 텍스트를 현재 상태에 맞춰 변경
@@ -1472,7 +1477,12 @@ class WebtoonManager(QMainWindow):
             """)
             self.clear_workspace()
             self.load_images()
-            self.load_data() # 심플 모드 진입 시 기존 텍스트 파일 연동
+            self.load_data()
+            
+            # [추가] 전체 모드에서 심플 모드로 전환 시, 기존 작업이 있다면 묻습니다.
+            if check_work:
+                self.check_existing_work(is_startup=False)
+
             if show_toast:
                 self.toast.show_message("✨ 심플 모드가 켜졌습니다. 드롭하여 바로 텍스트를 추출하세요.", 3000)
         else:
