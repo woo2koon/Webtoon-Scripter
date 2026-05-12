@@ -4,8 +4,15 @@ from PySide6.QtWidgets import (QLabel, QComboBox, QListView, QStyledItemDelegate
                                QPushButton, QWidget, QSizePolicy, QTextEdit,
                                QTableWidget, QAbstractItemView, QTableWidgetItem, QApplication, QHeaderView,
                                QGraphicsOpacityEffect, QMenu, QDialog, QVBoxLayout, QMessageBox, QInputDialog)
-from PySide6.QtCore import Qt, QEvent, Signal, QTimer, QSize, QEasingCurve, QPropertyAnimation
-from PySide6.QtGui import QPixmap, QTextCursor, QKeySequence, QIcon, QAction
+from PySide6.QtCore import Qt, QEvent, Signal, QTimer, QSize, QEasingCurve, QPropertyAnimation, QRect, QRectF
+from PySide6.QtGui import (
+    QPixmap, QDrag, QPainter, QColor, QPen, QFont, QAction, QIcon,
+    QRegion, QBrush, QLinearGradient, QTextCharFormat, QTextFormat,
+    QTextCursor, QKeySequence
+)
+from PySide6.QtSvg import QSvgRenderer
+from PySide6.QtCore import QByteArray
+import unicodedata
 from config import ROLE_OPTIONS, AGE_OPTIONS, GENDER_OPTIONS, PROJECTS_DIR
 from utils import get_icon, get_colored_icon
 import config
@@ -74,11 +81,57 @@ class ClickableComboBox(QComboBox):
 class WebtoonScrollArea(QScrollArea):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.is_adjusting = False
+        self.stable_ratio = 0.0
+        # 사용자가 직접 스크롤할 때만 비율을 업데이트하여 리사이즈 중의 간섭을 방지합니다.
+        self.verticalScrollBar().valueChanged.connect(self._update_stable_ratio)
+        # 리사이즈 등으로 인해 스크롤 범위가 변할 때 즉시 비율을 적용하여 깜빡임을 방지합니다.
+        self.verticalScrollBar().rangeChanged.connect(self._on_range_changed)
+
+    def _update_stable_ratio(self):
+        if not self.is_adjusting:
+            vbar = self.verticalScrollBar()
+            m = vbar.maximum()
+            if m > 0:
+                self.stable_ratio = vbar.value() / m
+
+    def _on_range_changed(self, min_val, max_val):
+        # 리사이즈 중이거나 이미지를 로딩 중일 때 비율을 유지합니다.
+        if self.is_adjusting and self.stable_ratio > 0:
+            self.verticalScrollBar().setValue(int(max_val * self.stable_ratio))
+
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
         new_value = self.verticalScrollBar().value() - int(delta)
         self.verticalScrollBar().setValue(new_value)
         event.accept()
+
+    def get_scroll_ratio(self):
+        return self.stable_ratio
+
+    def set_scroll_ratio(self, ratio):
+        if ratio <= 0: return
+        self.stable_ratio = ratio
+        self.is_adjusting = True
+        # 레이아웃이 완전히 정해진 후 적용하기 위해 지연 실행
+        QTimer.singleShot(100, lambda: self._apply_ratio(ratio))
+
+    def _apply_ratio(self, ratio):
+        vbar = self.verticalScrollBar()
+        m = vbar.maximum()
+        if m > 0:
+            vbar.setValue(int(m * ratio))
+        self.is_adjusting = False
+
+    def resizeEvent(self, event):
+        # 리사이즈 시작 시 잠금
+        self.is_adjusting = True
+        super().resizeEvent(event)
+        # 리사이즈 완료 후 잠금 해제 (연속 리사이즈 시 계속 연장됨)
+        QTimer.singleShot(100, self._stop_adjusting)
+
+    def _stop_adjusting(self):
+        self.is_adjusting = False
 
 class PopupItemDelegate(QStyledItemDelegate):
     def sizeHint(self, option, index):
@@ -154,9 +207,6 @@ class CharacterRow(QFrame):
 
     def get_data(self):
         return { "Character": self.input_name.text(), "Role": self.combo_role.currentText(), "Age": self.combo_age.currentText(), "Gender": self.combo_gender.currentText() }
-
-from PySide6.QtWidgets import QStyledItemDelegate, QLineEdit
-from PySide6.QtCore import Qt
 
 class ExcelTextDelegate(QStyledItemDelegate):
     # 1. 편집기(QLineEdit)를 만드는 함수입니다.
@@ -287,40 +337,109 @@ class SpreadsheetTable(QTableWidget):
                     self.setItem(r, c, QTableWidgetItem(col_text.strip()))
 
     # widgets.py 맨 아래에 추가하세요
-import difflib # 상단 임포트에 추가하거나, 함수 안에서 써도 됨
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, QLabel, QPushButton, QMessageBox
+import difflib
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, QLabel, QPushButton, QMessageBox, QFrame, QWidget
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QTextCharFormat, QTextCursor, QColor, QFont, QTextFormat
+
+# [NEW] 선택적 취소를 위한 플로팅 버튼
+class FloatingUndoButton(QPushButton):
+    revert_requested = Signal(int) # index 전달
+
+    def __init__(self, parent=None):
+        super().__init__("↩ 원래대로", parent)
+        self.setFixedSize(90, 32)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet("""
+            QPushButton {
+                background-color: #1E293B;
+                color: white;
+                border-radius: 4px;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: #334155;
+            }
+        """)
+        self.target_index = -1
+        self.hide()
+        self.clicked.connect(lambda: self.revert_requested.emit(self.target_index))
 
 class SpellCheckDialog(QDialog):
-    def __init__(self, original, corrected, parent=None):
+    def __init__(self, original, corrected, parent=None, initial_vscroll=0):
         super().__init__(parent)
+        self.initial_vscroll = initial_vscroll
         self.setWindowTitle("맞춤법 검사 결과 비교")
-        self.resize(900, 600)
-        self.result_text = None # 사용자가 '적용'을 눌렀을 때 저장될 텍스트
+        self.resize(1000, 700)
+        self.result_text = None
+        self.diff_data = [] # {tag, org, new, id}
         
         layout = QVBoxLayout(self)
         
         # 안내 문구
-        info_label = QLabel("좌측이 원본, 우측이 교정된 텍스트입니다. 변경된 부분은 색상으로 표시됩니다.")
-        info_label.setStyleSheet("color: #666; margin-bottom: 10px; font-weight: bold;")
+        info_label = QLabel("💡 수정된 부분에 커서를 두면 '원래대로' 되돌릴 수 있는 버튼이 나타납니다.")
+        info_label.setStyleSheet("color: #2563EB; margin-bottom: 10px; font-weight: bold;")
         layout.addWidget(info_label)
 
         # 비교 에디터 영역
         editor_layout = QHBoxLayout()
         
-        # 1. 원본 에디터
+        scrollbar_style = """
+            QScrollBar:vertical {
+                border: none;
+                background: #F1F5F9;
+                width: 14px;
+                margin: 0px 0px 0px 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #94A3B8;
+                min-height: 40px;
+                border-radius: 7px;
+                margin: 2px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #64748B;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+                background: none;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
+        """
+
+        # 1. 원본 에디터 (왼쪽)
         self.edit_org = QTextEdit()
         self.edit_org.setReadOnly(True)
         self.edit_org.setPlaceholderText("원본 텍스트")
+        self.edit_org.setStyleSheet(f"QTextEdit {{ background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; }} {scrollbar_style}")
+        self.edit_org.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         
-        # 2. 교정본 에디터 (수정 가능)
+        # 2. 교정본 에디터 (오른쪽 - 핵심 위젯)
         self.edit_new = QTextEdit()
         self.edit_new.setPlaceholderText("교정된 텍스트")
+        self.edit_new.setStyleSheet(f"QTextEdit {{ border: 1px solid #E2E8F0; border-radius: 8px; background-color: white; padding: 5px; }} {scrollbar_style}")
+        self.edit_new.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         
         editor_layout.addWidget(self.edit_org)
         editor_layout.addWidget(self.edit_new)
         layout.addLayout(editor_layout)
 
-        # 3. Diff(차이점) 하이라이팅 로직
+        # [핵심] 플로팅 버튼 초기화 (viewport 위에 배치)
+        self.undo_btn = FloatingUndoButton(self.edit_new.viewport())
+        self.undo_btn.revert_requested.connect(self.revert_segment)
+        self.edit_new.cursorPositionChanged.connect(self.check_cursor_context)
+
+        # [추가] 스크롤 동기화
+        self.edit_org.verticalScrollBar().valueChanged.connect(self.edit_new.verticalScrollBar().setValue)
+        self.edit_new.verticalScrollBar().valueChanged.connect(self.edit_org.verticalScrollBar().setValue)
+        self.edit_org.horizontalScrollBar().valueChanged.connect(self.edit_new.horizontalScrollBar().setValue)
+        self.edit_new.horizontalScrollBar().valueChanged.connect(self.edit_org.horizontalScrollBar().setValue)
+
+        # 3. Diff 분석 및 표시
         self.show_diff(original, corrected)
 
         # 버튼 영역
@@ -330,9 +449,18 @@ class SpellCheckDialog(QDialog):
         btn_cancel.clicked.connect(self.reject)
         
         btn_apply = QPushButton("교정 내용 적용")
-        btn_apply.setObjectName("PrimaryBtn") # 기존 스타일 적용
         btn_apply.setFixedSize(150, 40)
-        btn_apply.setStyleSheet("background-color: #ff4b4b; color: white; font-weight: bold; border-radius: 4px;")
+        btn_apply.setStyleSheet("""
+            QPushButton {
+                background-color: #FF5722;
+                color: white;
+                font-weight: bold;
+                border-radius: 8px;
+            }
+            QPushButton:hover {
+                background-color: #F4511E;
+            }
+        """)
         btn_apply.clicked.connect(self.apply_changes)
         
         btn_layout.addStretch()
@@ -341,38 +469,162 @@ class SpellCheckDialog(QDialog):
         layout.addLayout(btn_layout)
 
     def show_diff(self, text1, text2):
-        # 파이썬 difflib으로 차이점 분석
+        self.diff_data = []
         d = difflib.SequenceMatcher(None, text1, text2)
         
-        html_org = ""
-        html_new = ""
+        # 신호 차단하여 이벤트 루프 간섭 방지
+        self.edit_org.blockSignals(True)
+        self.edit_new.blockSignals(True)
         
-        for tag, i1, i2, j1, j2 in d.get_opcodes():
-            org_part = text1[i1:i2].replace('\n', '<br>')
-            new_part = text2[j1:j2].replace('\n', '<br>')
+        self.edit_org.clear()
+        self.edit_new.clear()
+        
+        cursor_org = self.edit_org.textCursor()
+        cursor_new = self.edit_new.textCursor()
+        
+        for idx, (tag, i1, i2, j1, j2) in enumerate(d.get_opcodes()):
+            org_part = text1[i1:i2]
+            new_part = text2[j1:j2]
+            
+            # 메타데이터 저장
+            diff_item = {'tag': tag, 'org': org_part, 'new': new_part, 'id': idx}
+            self.diff_data.append(diff_item)
+
+            # 포맷 설정
+            fmt_org = QTextCharFormat()
+            fmt_new = QTextCharFormat()
             
             if tag == 'replace':
-                html_org += f"<span style='background-color: #ffcccc; text-decoration: line-through;'>{org_part}</span>"
-                html_new += f"<span style='background-color: #ccffcc; font-weight: bold;'>{new_part}</span>"
+                fmt_org.setBackground(QColor("#FFCDD2")) # 진한 빨간 배경
+                fmt_org.setForeground(QColor("#B71C1C")) # 진한 빨간 글씨
+                fmt_org.setFontStrikeOut(True)
+                
+                fmt_new.setBackground(QColor("#FFB74D")) # 선명한 주황색 배경
+                fmt_new.setForeground(QColor("#000000")) # 검정 글씨
+                fmt_new.setFontWeight(QFont.Bold)
+                fmt_new.setProperty(QTextFormat.UserProperty + 1, idx)
+                
+                cursor_org.insertText(org_part.replace(' ', '✓'), fmt_org)
+                cursor_new.insertText(new_part.replace(' ', '✓'), fmt_new)
+                
             elif tag == 'delete':
-                html_org += f"<span style='background-color: #ffcccc; text-decoration: line-through;'>{org_part}</span>"
+                fmt_org.setBackground(QColor("#FFCDD2"))
+                fmt_org.setForeground(QColor("#B71C1C"))
+                fmt_org.setFontStrikeOut(True)
+                cursor_org.insertText(org_part.replace(' ', '✓'), fmt_org)
+                
             elif tag == 'insert':
-                html_new += f"<span style='background-color: #ccffcc; font-weight: bold;'>{new_part}</span>"
+                fmt_new.setBackground(QColor("#FFB74D"))
+                fmt_new.setForeground(QColor("#000000"))
+                fmt_new.setFontWeight(QFont.Bold)
+                fmt_new.setProperty(QTextFormat.UserProperty + 1, idx)
+                cursor_new.insertText(new_part.replace(' ', '✓'), fmt_new)
+                
             elif tag == 'equal':
-                html_org += org_part
-                html_new += new_part
+                cursor_org.insertText(org_part, QTextCharFormat())
+                cursor_new.insertText(new_part, QTextCharFormat())
 
-        self.edit_org.setHtml(html_org)
-        self.edit_new.setHtml(html_new) # HTML로 넣어서 색상 표시, 하지만 편집하면 플레인 텍스트가 됨
+        self.edit_org.blockSignals(False)
+        self.edit_new.blockSignals(False)
+
+        # [추가] 처음 실행 시 맨 위로 스크롤 고정 (또는 이전 위치 복구)
+        if self.initial_vscroll > 0:
+            self.edit_org.verticalScrollBar().setValue(self.initial_vscroll)
+            self.edit_new.verticalScrollBar().setValue(self.initial_vscroll)
+        else:
+            self.edit_org.verticalScrollBar().setValue(0)
+            self.edit_new.verticalScrollBar().setValue(0)
+            
+            # 커서 위치도 맨 앞으로 이동
+            c1 = self.edit_org.textCursor()
+            c1.movePosition(QTextCursor.Start)
+            self.edit_org.setTextCursor(c1)
+
+            c2 = self.edit_new.textCursor()
+            c2.movePosition(QTextCursor.Start)
+            self.edit_new.setTextCursor(c2)
+
+    def resizeEvent(self, event):
+        # 리사이즈 시 현재 스크롤의 상대적 위치(비율) 계산
+        vbar = self.edit_new.verticalScrollBar()
+        old_max = vbar.maximum()
+        old_val = vbar.value()
+        ratio = old_val / old_max if old_max > 0 else 0
         
-        # 편집 가능하도록 다시 텍스트 세팅 (하이라이팅은 보여주기용이고, 실제 데이터는 text2)
-        # 사용자가 수정하고 싶을 수 있으므로 하이라이팅 후 원본 텍스트를 한 번 더 넣어주는 게 좋으나
-        # QTextEdit 특성상 HTML set 후에는 스타일이 유지됨. 
-        # 여기서는 '수정'보다는 '확인'에 집중하고, 미세 수정은 적용 후 메인에서 하도록 유도.
+        super().resizeEvent(event)
+        
+        # 레이아웃 재계산 시간을 벌기 위해 아주 짧은 지연 후 위치 복구
+        QTimer.singleShot(10, lambda: vbar.setValue(int(vbar.maximum() * ratio)))
 
+
+    def check_cursor_context(self):
+        cursor = self.edit_new.textCursor()
+        pos = cursor.position()
+        doc = self.edit_new.document()
+        diff_id = None
+
+        block = doc.begin()
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                fragment = it.fragment()
+                if fragment.isValid():
+                    if fragment.position() <= pos <= fragment.position() + fragment.length():
+                        val = fragment.charFormat().property(QTextFormat.UserProperty + 1)
+                        if val is not None:
+                            diff_id = val
+                it += 1
+            block = block.next()
+
+        if diff_id is not None and isinstance(diff_id, int):
+            rect = self.edit_new.cursorRect(cursor)
+            btn_pos = rect.topLeft()
+            btn_pos.setY(btn_pos.y() - self.undo_btn.height() - 5)
+            btn_pos.setX(btn_pos.x() - 20)
+            self.undo_btn.move(btn_pos)
+            self.undo_btn.target_index = diff_id
+            self.undo_btn.show()
+            self.undo_btn.raise_()
+        else:
+            self.undo_btn.hide()
+
+    def revert_segment(self, diff_id):
+        """특정 구역을 원본 텍스트로 되돌립니다."""
+        item = next((x for x in self.diff_data if x["id"] == diff_id), None)
+        if not item: return
+
+        doc = self.edit_new.document()
+        start_pos = -1
+        end_pos = -1
+
+        block = doc.begin()
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                fragment = it.fragment()
+                if fragment.isValid():
+                    val = fragment.charFormat().property(QTextFormat.UserProperty + 1)
+                    if val is not None and val == diff_id:
+                        if start_pos == -1:
+                            start_pos = fragment.position()
+                        end_pos = fragment.position() + fragment.length()
+                it += 1
+            block = block.next()
+
+        if start_pos != -1 and end_pos != -1 and start_pos < end_pos:
+            revert_cursor = self.edit_new.textCursor()
+            revert_cursor.setPosition(start_pos)
+            revert_cursor.setPosition(end_pos, QTextCursor.KeepAnchor)
+            revert_cursor.beginEditBlock()
+            revert_cursor.insertText(item["org"], QTextCharFormat())
+            revert_cursor.endEditBlock()
+
+        self.undo_btn.hide()
     def apply_changes(self):
         # HTML 태그가 섞일 수 있으므로 toPlainText()로 순수 텍스트만 가져옴
-        self.result_text = self.edit_new.toPlainText()
+        text = self.edit_new.toPlainText()
+        # 시각적 피드백을 위해 넣은 체크 표시를 다시 띄어쓰기로 복구
+        self.result_text = text.replace("✓", " ")
         self.accept()
 
 import os
@@ -751,15 +1003,14 @@ class FileDropListWidget(QListWidget):
                 print(f"❌ 파일을 찾을 수 없습니다: {file_name}")
                 print(f"   ㄴ 상위 폴더 존재 여부: {os.path.exists(abs_i_path)}")
         
-        # 중앙 뷰어 새로고침
+        # 중앙 뷰어 및 데이터 새로고침
         if hasattr(mw, 'load_images'):
             mw.load_images()
-        
+        if hasattr(mw, 'load_data'):
+            mw.load_data()
+            
         if hasattr(mw, 'toast'):
-            mw.toast.show_message(f"{deleted_count}개의 파일 삭제 완료")
-
-
-        self.load_images()
+            mw.toast.show_message(f"✨ {deleted_count}개의 파일 삭제 완료")
 
     # [수정] 윈도우 표준에 맞춰 Backspace 삭제 기능 제거
     def keyPressEvent(self, event):
@@ -783,6 +1034,13 @@ class FileDropListWidget(QListWidget):
     # --- 드래그앤드롭 이벤트 (기존 유지) ---
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
+            # [수정] 메인 윈도우의 오버레이도 함께 띄워줌
+            mw = self.window()
+            if hasattr(mw, 'overlay'):
+                mw.overlay.setGeometry(mw.rect())
+                mw.overlay.show()
+                mw.overlay.raise_()
+            
             self.set_highlight(True)
             event.accept()
         else:
@@ -845,7 +1103,8 @@ class DropOverlay(QWidget):
     def __init__(self, parent):
         super().__init__(parent)
         self.setAcceptDrops(True)
-        self.setAttribute(Qt.WA_NoSystemBackground)
+        # [수정] 배경 투명도 처리를 위해 속성 변경
+        self.setAttribute(Qt.WA_TranslucentBackground)
         self.hide()
         self.snapshot = None 
 
@@ -854,6 +1113,7 @@ class DropOverlay(QWidget):
         self.update()
 
     def paintEvent(self, event):
+        # print(f"DEBUG: DropOverlay paintEvent called - size: {self.size()}")
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
@@ -861,27 +1121,50 @@ class DropOverlay(QWidget):
             painter.drawPixmap(0, 0, self.snapshot)
 
         # 1. 배경 틴트 (오렌지색 투명도 100)
-        # 만약 여전히 파란색이면 이 숫자를 (255, 0, 0, 100)으로 바꿔서 빨간색이 되는지 보세요.
         tint_color = QColor(251, 146, 60, 100) 
         painter.fillRect(self.rect(), tint_color)
 
         # 2. 테두리 (진한 오렌지색 점선)
         pen = QPen(QColor("#FB923C")) 
-        pen.setStyle(Qt.DashLine)
-        pen.setWidth(6)
+        pen.setWidth(4)  # 선 굵기 4px
+        # [수정] 아주 촘촘한 대시 간격 조절 (선 3, 간격 2)
+        pen.setDashPattern([3, 2])
         painter.setPen(pen)
         painter.setBrush(Qt.NoBrush)
         
-        rect_for_border = self.rect().adjusted(10, 10, -10, -10)
-        painter.drawRoundedRect(rect_for_border, 30, 30)
+        # 보더 래디우스 작게 (30 -> 12)
+        rect_for_border = self.rect().adjusted(15, 15, -15, -15)
+        painter.drawRoundedRect(rect_for_border, 12, 12)
 
-        # 3. 안내 텍스트 (하얀색으로 강제 고정)
-        painter.setPen(QColor("white"))
+        # 3. 안내 아이콘 (제공된 SVG)
+        svg_code = """
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#1E293B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10l-3.1-3.1a2 2 0 0 0-2.814.014L6 21"/>
+            <path d="m14 19.5 3-3 3 3"/>
+            <path d="M17 22v-5.5"/>
+            <circle cx="9" cy="9" r="2"/>
+        </svg>
+        """
+        renderer = QSvgRenderer(QByteArray(svg_code.encode('utf-8')))
+        icon_size = 80
+        icon_rect = QRect(
+            (self.width() - icon_size) // 2,
+            (self.height() - icon_size) // 2 - 40, # 중앙보다 약간 위
+            icon_size,
+            icon_size
+        )
+        renderer.render(painter, icon_rect)
+
+        # 4. 안내 텍스트 (아이콘 아래에 배치)
+        painter.setPen(QColor("#1E293B")) 
         font = QFont("Pretendard", 32, QFont.Bold)
         painter.setFont(font)
-        painter.drawText(self.rect(), Qt.AlignCenter, "파일을 여기에 드롭하세요")
+        
+        text_rect = self.rect().adjusted(0, icon_size // 2 + 20, 0, 0)
+        painter.drawText(text_rect, Qt.AlignCenter, "파일을 여기에 드롭하세요")
 
     def dragEnterEvent(self, event):
+        print("DEBUG: DropOverlay dragEnterEvent")
         event.acceptProposedAction()
 
     def dragMoveEvent(self, event):
@@ -890,12 +1173,36 @@ class DropOverlay(QWidget):
     def dragLeaveEvent(self, event):
         self.hide()
 
+    def dropEvent(self, event):
+        self.hide()
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            urls = event.mimeData().urls()
+            files = [u.toLocalFile() for u in urls]
+            
+            # 부모(WebtoonManager)의 파일 처리 함수 호출
+            mw = self.window()
+            if hasattr(mw, 'process_image_files'):
+                mw.process_image_files(files)
+        else:
+            event.ignore()
+
 # [main.py] SmartTextEdit 클래스 (최종_진짜_마지막.ver)
 class SmartTextEdit(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
-        # 드롭 기능 켜둠 (텍스트 이동도 해야 하니까)
         self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            mw = self.window()
+            if hasattr(mw, 'overlay'):
+                mw.overlay.setGeometry(mw.rect())
+                mw.overlay.show()
+                mw.overlay.raise_()
+            event.accept()
+        else:
+            super().dragEnterEvent(event)
 
     # [핵심] 에디터에 무언가가 '입력'되려는 순간을 가로챕니다.
     def insertFromMimeData(self, source):

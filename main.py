@@ -105,33 +105,39 @@ class WebtoonManager(QMainWindow):
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
-            # 창 안에 들어오자마자 목록 상자 불 켜기! (감지 성공)
-            self.file_list_widget.set_highlight(True)
-            event.accept()
+            # [수정] 오버레이 크기와 위치를 강제로 다시 잡고 표시
+            self.overlay.setGeometry(self.rect())
+            self.overlay.show()
+            self.overlay.raise_()
+            event.acceptProposedAction()
         else:
             event.ignore()
 
     def dragMoveEvent(self, event):
         if event.mimeData().hasUrls():
-            # 움직이는 동안에도 계속 불 켜둠
-            self.file_list_widget.set_highlight(True)
-            event.accept()
+            if not self.overlay.isVisible():
+                self.overlay.show()
+                self.overlay.raise_()
+            event.acceptProposedAction()
         else:
             event.ignore()
 
     def dragLeaveEvent(self, event):
-        # 창 밖으로 나가면 불 끄기
+        # [수정] 메인 윈도우의 leave 이벤트는 무시합니다. (오버레이가 직접 관리)
         self.file_list_widget.set_highlight(False)
 
     def dropEvent(self, event):
-        # [핵심] 여기에 드롭됐다는 건, 목록 상자(Target)를 빗나갔다는 뜻입니다!
+        # [수정] 오버레이 숨기고 파일 직접 처리
+        if hasattr(self, 'overlay'):
+            self.overlay.hide()
         
-        self.file_list_widget.set_highlight(False) # 일단 불 끄고
+        self.file_list_widget.set_highlight(False)
         
         if event.mimeData().hasUrls():
-            event.accept()
-            # 업로드 대신 토스트 메시지 띄우기!
-            self.toast.show_message("⚠️ 파일 목록 상자에 놓아주세요!") 
+            event.acceptProposedAction()
+            urls = event.mimeData().urls()
+            files = [u.toLocalFile() for u in urls]
+            self.process_image_files(files)
         else:
             event.ignore()
 
@@ -960,9 +966,9 @@ class WebtoonManager(QMainWindow):
             }
         """)
 
-        self.text_editor = QTextEdit()
+        self.text_editor = SmartTextEdit()
         self.text_editor.setFrameShape(QFrame.NoFrame)
-        self.text_editor.setAcceptDrops(False)
+        self.text_editor.setAcceptDrops(True)
         self.text_editor.textChanged.connect(self.save_text_content)
         self.text_editor.setStyleSheet("line-height: 160%;") 
         current_font = QApplication.font()
@@ -1057,7 +1063,7 @@ class WebtoonManager(QMainWindow):
         # ---------------------------------------------------------
         # 2. 텍스트 에디터 (가운데 큰 박스)
         # ---------------------------------------------------------
-        self.text_editor = QTextEdit()
+        self.text_editor = SmartTextEdit()
         self.text_editor.setFrameShape(QFrame.NoFrame)
         self.text_editor.textChanged.connect(self.save_text_content)
         
@@ -1422,8 +1428,8 @@ class WebtoonManager(QMainWindow):
         # 파일 메뉴
         file_menu = menubar.addMenu("파일(&F)")
         
-        # 새 작업(심플모드) 액션 추가
-        action_new_simple = QAction("새 작업 (심플모드)", self)
+        # 새 작업(심플 모드) 액션 추가
+        action_new_simple = QAction("새 작업 (심플 모드)", self)
         action_new_simple.setShortcut("Ctrl+N")
         action_new_simple.triggered.connect(self.prompt_clear_workspace)
         file_menu.addAction(action_new_simple)
@@ -1626,9 +1632,53 @@ class WebtoonManager(QMainWindow):
 
     def on_episode_change(self, text):
         if not text: return
+        
+        # [추가] 이전 회차의 스크롤 위치 저장
+        self.save_viewer_state()
+            
         self.current_episode = text
         self.load_images()
         self.load_data()
+        
+        # [추가] 새 회차의 스크롤 위치 복구
+        self.load_viewer_state()
+
+    def save_viewer_state(self):
+        """현재 웹툰 뷰어의 스크롤 위치(비율)를 파일로 저장합니다."""
+        try:
+            p_path, _, _ = self.get_paths()
+            if not p_path or not os.path.exists(p_path): return
+            
+            ratio = self.scroll_area.get_scroll_ratio()
+            if ratio <= 0: return
+            
+            import json
+            meta_path = os.path.join(p_path, "viewer_state.json")
+            with open(meta_path, 'w', encoding='utf-8') as f:
+                json.dump({"scroll_ratio": ratio}, f)
+        except Exception as e:
+            print(f"DEBUG: 스크롤 위치 저장 실패 -> {e}")
+
+    def load_viewer_state(self):
+        """파일에서 스크롤 위치(비율)를 읽어와 뷰어에 적용합니다."""
+        try:
+            p_path, _, _ = self.get_paths()
+            if not p_path: return
+            
+            import json
+            meta_path = os.path.join(p_path, "viewer_state.json")
+            if os.path.exists(meta_path):
+                with open(meta_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    ratio = data.get("scroll_ratio", 0.0)
+                    self.scroll_area.set_scroll_ratio(ratio)
+        except Exception as e:
+            print(f"DEBUG: 스크롤 위치 로드 실패 -> {e}")
+
+    def closeEvent(self, event):
+        """프로그램 종료 시 현재 상태를 저장합니다."""
+        self.save_viewer_state()
+        super().closeEvent(event)
 
     def clear_workspace(self):
         while self.image_layout.count():
@@ -2105,6 +2155,28 @@ class WebtoonManager(QMainWindow):
              self.toast.show_message("⚠️ 검사할 텍스트가 없습니다.", 2000)
              return
 
+        # 스마트 캐시 확인: 변경된 텍스트가 없으면 이전 결과 바로 띄우기
+        if hasattr(self, '_last_spellcheck_original') and hasattr(self, '_last_spellcheck_corrected'):
+            if self._last_spellcheck_original == text:
+                self.toast.show_message("⚡ 기존 분석 결과를 불러옵니다.", 2000)
+                # 이전 캐시 결과로 즉시 다이얼로그 호출 (AI 무시)
+                original_text = self.text_editor.toPlainText()
+                # 이전 스크롤 위치 기억 (없으면 0)
+                vscroll = getattr(self, '_last_spellcheck_vscroll', 0)
+                dlg = SpellCheckDialog(original_text, self._last_spellcheck_corrected, self, initial_vscroll=vscroll)
+                
+                dlg.exec() # 결과 저장 여부와 상관없이 현재 스크롤은 저장
+                self._last_spellcheck_vscroll = dlg.edit_new.verticalScrollBar().value()
+                
+                if dlg.result(): # Accepted
+                    self.text_editor.setText(dlg.result_text)
+                    self.save_text_content() 
+                    self.toast.show_message("✅ 맞춤법 교정이 완료되었습니다!", 2000)
+                    self._last_spellcheck_original = None
+                    self._last_spellcheck_corrected = None
+                    self._last_spellcheck_vscroll = 0
+                return
+
         self.status_container.setVisible(True)
         self.lbl_status.setText("AI가 맞춤법을 검사하고 있습니다...")
         self.progress_bar.setRange(0, 0) 
@@ -2120,12 +2192,24 @@ class WebtoonManager(QMainWindow):
         self.progress_bar.setValue(100)
 
         original_text = self.text_editor.toPlainText()
+        
+        # 결과 캐시 저장 (새 검사이므로 스크롤은 0부터 시작)
+        self._last_spellcheck_original = original_text.strip()
+        self._last_spellcheck_corrected = corrected_text
+        self._last_spellcheck_vscroll = 0
 
-        dlg = SpellCheckDialog(original_text, corrected_text, self)
-        if dlg.exec() == QDialog.Accepted:
+        dlg = SpellCheckDialog(original_text, corrected_text, self, initial_vscroll=0)
+        dlg.exec()
+        self._last_spellcheck_vscroll = dlg.edit_new.verticalScrollBar().value()
+        
+        if dlg.result(): # Accepted
             self.text_editor.setText(dlg.result_text)
             self.save_text_content() 
-        self.toast.show_message("✅ 맞춤법 교정이 완료되었습니다!", 2000)
+            self.toast.show_message("✅ 맞춤법 교정이 완료되었습니다!", 2000)
+            # 적용 시 캐시 초기화
+            self._last_spellcheck_original = None
+            self._last_spellcheck_corrected = None
+            self._last_spellcheck_vscroll = 0
 
     def on_spell_check_error(self, err_msg):
          self.status_container.setVisible(False)
