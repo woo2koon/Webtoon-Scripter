@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (QLabel, QComboBox, QListView, QStyledItemDelegate
                                QPushButton, QWidget, QSizePolicy, QTextEdit,
                                QTableWidget, QAbstractItemView, QTableWidgetItem, QApplication, QHeaderView,
                                QGraphicsOpacityEffect, QMenu, QDialog, QVBoxLayout, QMessageBox, QInputDialog)
-from PySide6.QtCore import Qt, QEvent, Signal, QTimer, QSize, QEasingCurve, QPropertyAnimation, QRect, QRectF
+from PySide6.QtCore import Qt, QEvent, Signal, QTimer, QSize, QEasingCurve, QPropertyAnimation, QRect, QRectF, QMimeData
 from PySide6.QtGui import (
     QPixmap, QDrag, QPainter, QColor, QPen, QFont, QAction, QIcon,
     QRegion, QBrush, QLinearGradient, QTextCharFormat, QTextFormat,
@@ -12,6 +12,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtCore import QByteArray
+import re
 import unicodedata
 from config import ROLE_OPTIONS, AGE_OPTIONS, GENDER_OPTIONS, PROJECTS_DIR
 from utils import get_icon, get_colored_icon
@@ -61,22 +62,40 @@ class ClickableComboBox(QComboBox):
         self.refresh_callback = func
 
     def eventFilter(self, obj, event):
-        if obj == self.lineEdit() and event.type() == QEvent.MouseButtonPress:
-            if self.refresh_callback:
-                current_text = self.currentText()
-                try:
-                    new_items = self.refresh_callback()
-                    self.blockSignals(True) 
-                    self.clear()
-                    self.addItems(new_items)
-                    self.setCurrentText(current_text) 
-                    self.blockSignals(False)
-                    if current_text == "": self.setCurrentIndex(-1)
-                except: pass
-            if self.view().isVisible(): self.hidePopup()
-            else: self.showPopup()
-            return True
+        if obj == self.lineEdit():
+            import sys
+            is_mac = sys.platform == "darwin"
+            
+            if is_mac:
+                # Mac: Press 시 팝업을 열면 곧이은 Release 이벤트를 팝업창이 흡수해 즉시 닫히는 현상 발생
+                # 따라서 Press 이벤트를 먹어치우고(소비), 실제 팝업 오픈은 Release에서 처리
+                if event.type() == QEvent.MouseButtonPress:
+                    return True
+                elif event.type() == QEvent.MouseButtonRelease:
+                    self._toggle_popup()
+                    return True
+            else:
+                # Windows 등: 기존처럼 Press에서 바로 열어도 무방함
+                if event.type() == QEvent.MouseButtonPress:
+                    self._toggle_popup()
+                    return True
+                    
         return super().eventFilter(obj, event)
+
+    def _toggle_popup(self):
+        if self.refresh_callback:
+            current_text = self.currentText()
+            try:
+                new_items = self.refresh_callback()
+                self.blockSignals(True) 
+                self.clear()
+                self.addItems(new_items)
+                self.setCurrentText(current_text) 
+                self.blockSignals(False)
+                if current_text == "": self.setCurrentIndex(-1)
+            except: pass
+        if self.view().isVisible(): self.hidePopup()
+        else: self.showPopup()
 
 class WebtoonScrollArea(QScrollArea):
     def __init__(self, parent=None):
@@ -140,6 +159,154 @@ class PopupItemDelegate(QStyledItemDelegate):
         return size
 
 # =================================================================
+# 캐릭터 목록 드래그 컨테이너 및 핸들
+# =================================================================
+class CharacterListContainer(QWidget):
+    order_changed_signal = Signal()
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setStyleSheet("background-color: transparent;")
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignTop)
+        layout.setSpacing(5)
+        layout.setContentsMargins(0, 10, 0, 10)
+        self.drop_indicator_y = -1
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat("application/x-character-row"):
+            event.acceptProposedAction()
+            
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasFormat("application/x-character-row"):
+            handle = event.source()
+            row_widget = handle.parent() if handle else None
+            drop_y = event.pos().y()
+            layout = self.layout()
+            
+            # 드래그 중인 위젯을 제외한 위젯들만 리스트업
+            widgets = []
+            for i in range(layout.count()):
+                w = layout.itemAt(i).widget()
+                if w and w != row_widget:
+                    widgets.append(w)
+            
+            found = False
+            for w in widgets:
+                center_y = w.y() + w.height() / 2.0
+                if drop_y < center_y:
+                    self.drop_indicator_y = w.y() - layout.spacing() / 2.0
+                    found = True
+                    break
+            
+            if not found:
+                if len(widgets) > 0:
+                    last_w = widgets[-1]
+                    self.drop_indicator_y = last_w.y() + last_w.height() + layout.spacing() / 2.0
+                else:
+                    self.drop_indicator_y = 10
+            
+            self.update()
+            event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event):
+        self.drop_indicator_y = -1
+        self.update()
+            
+    def dropEvent(self, event):
+        self.drop_indicator_y = -1
+        self.update()
+        if event.mimeData().hasFormat("application/x-character-row"):
+            handle = event.source()
+            if not handle: return
+            
+            row_widget = handle.parent()
+            drop_y = event.pos().y()
+            layout = self.layout()
+            
+            # 드래그 중인 위젯을 제외한 나머지 위젯들 리스트업
+            widgets = []
+            for i in range(layout.count()):
+                w = layout.itemAt(i).widget()
+                if w and w != row_widget:
+                    widgets.append(w)
+            
+            # 타겟 인덱스 계산 (어떤 위젯 앞에 놓을 것인가)
+            target_index = len(widgets)
+            for i, w in enumerate(widgets):
+                if drop_y < w.y() + w.height() / 2.0:
+                    target_index = i
+                    break
+            
+            layout.removeWidget(row_widget)
+            layout.insertWidget(target_index, row_widget)
+            
+            event.acceptProposedAction()
+            self.order_changed_signal.emit()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.drop_indicator_y != -1:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing)
+            pen = QPen(QColor("#ff4b4b"), 3)
+            painter.setPen(pen)
+            painter.drawLine(10, self.drop_indicator_y, self.width() - 10, self.drop_indicator_y)
+
+class DragHandle(QLabel):
+    def __init__(self, parent=None):
+        super().__init__("≡", parent)
+        self.setObjectName("DragHandle")
+        self.setStyleSheet("""
+            QLabel#DragHandle {
+                color: #6b7280; 
+                font-weight: 900; 
+                font-size: 24px; 
+                padding: 0 5px;
+            }
+            QLabel#DragHandle:hover {
+                color: #ff4b4b;
+            }
+        """)
+        self.setCursor(Qt.OpenHandCursor)
+        self.setFixedWidth(24)
+        self.setAlignment(Qt.AlignCenter)
+        self.drag_start_pos = None
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_start_pos = event.pos()
+            self.setCursor(Qt.ClosedHandCursor)
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if not (event.buttons() & Qt.LeftButton) or self.drag_start_pos is None:
+            return
+        if (event.pos() - self.drag_start_pos).manhattanLength() < QApplication.startDragDistance():
+            return
+            
+        drag = QDrag(self)
+        mime_data = QMimeData()
+        mime_data.setData("application/x-character-row", b"")
+        drag.setMimeData(mime_data)
+        
+        row_widget = self.parent() 
+        pixmap = row_widget.grab()
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(event.pos() + self.pos())
+        
+        row_widget.hide()
+        drag.exec(Qt.MoveAction)
+        row_widget.show()
+        
+        self.setCursor(Qt.OpenHandCursor)
+        
+    def mouseReleaseEvent(self, event):
+        self.setCursor(Qt.OpenHandCursor)
+        super().mouseReleaseEvent(event)
+
+# =================================================================
 # 캐릭터 입력 행
 # =================================================================
 class CharacterRow(QFrame):
@@ -151,8 +318,8 @@ class CharacterRow(QFrame):
         self.setStyleSheet("QFrame#CharacterRow { background-color: transparent; border: none; }")
         
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5) 
-        layout.setSpacing(15) 
+        layout.setContentsMargins(10, 5, 10, 5) 
+        layout.setSpacing(10) 
         WIDGET_HEIGHT = 45 
 
         BASIC_BOX_STYLE = """
@@ -167,6 +334,9 @@ class CharacterRow(QFrame):
             QComboBox QAbstractItemView {{ font-family: 'Pretendard'; background-color: white; border: 1px solid #d1d5db; selection-background-color: #ffecec; selection-color: #ff4b4b; outline: none; padding: 4px; }}
             QComboBox QAbstractItemView::item {{ min-height: 35px; padding: 5px; margin: 2px 0px; }}
         """
+
+        self.lbl_drag = DragHandle(self)
+        layout.addWidget(self.lbl_drag)
 
         self.input_name = QLineEdit(name)
         self.input_name.setPlaceholderText("이름")
@@ -449,13 +619,13 @@ class SpellCheckDialog(QDialog):
         btn_cancel.clicked.connect(self.reject)
         
         btn_apply = QPushButton("교정 내용 적용")
-        btn_apply.setFixedSize(150, 40)
+        btn_apply.setFixedSize(130, 40)
         btn_apply.setStyleSheet("""
             QPushButton {
                 background-color: #FF5722;
                 color: white;
                 font-weight: bold;
-                border-radius: 8px;
+                border-radius: 4px;
             }
             QPushButton:hover {
                 background-color: #F4511E;
@@ -482,47 +652,116 @@ class SpellCheckDialog(QDialog):
         cursor_org = self.edit_org.textCursor()
         cursor_new = self.edit_new.textCursor()
         
-        for idx, (tag, i1, i2, j1, j2) in enumerate(d.get_opcodes()):
-            org_part = text1[i1:i2]
-            new_part = text2[j1:j2]
-            
-            # 메타데이터 저장
-            diff_item = {'tag': tag, 'org': org_part, 'new': new_part, 'id': idx}
-            self.diff_data.append(diff_item)
+        current_idx = 0
+        for tag, i1, i2, j1, j2 in d.get_opcodes():
+            org_full = text1[i1:i2]
+            new_full = text2[j1:j2]
 
-            # 포맷 설정
-            fmt_org = QTextCharFormat()
-            fmt_new = QTextCharFormat()
-            
-            if tag == 'replace':
-                fmt_org.setBackground(QColor("#FFCDD2")) # 진한 빨간 배경
-                fmt_org.setForeground(QColor("#B71C1C")) # 진한 빨간 글씨
-                fmt_org.setFontStrikeOut(True)
+            # [기능 개선] 띄어쓰기와 글자 교정을 완벽히 분리하기 위한 정밀 분할 로직
+            def get_granular_segments(org, new, tag_type):
+                if tag_type == 'equal':
+                    return [('equal', org, new)]
                 
-                fmt_new.setBackground(QColor("#FFB74D")) # 선명한 주황색 배경
-                fmt_new.setForeground(QColor("#000000")) # 검정 글씨
-                fmt_new.setFontWeight(QFont.Bold)
-                fmt_new.setProperty(QTextFormat.UserProperty + 1, idx)
+                # 1. 공통 접두사/접미사 추출하여 equal로 분리
+                pre_i = 0
+                while pre_i < len(org) and pre_i < len(new) and org[pre_i] == new[pre_i]:
+                    pre_i += 1
+                prefix = org[:pre_i]
                 
-                cursor_org.insertText(org_part.replace(' ', '✓'), fmt_org)
-                cursor_new.insertText(new_part.replace(' ', '✓'), fmt_new)
+                suf_i = 0
+                while suf_i < len(org)-pre_i and suf_i < len(new)-pre_i and org[-1-suf_i] == new[-1-suf_i]:
+                    suf_i += 1
+                suffix = org[len(org)-suf_i:] if suf_i > 0 else ""
                 
-            elif tag == 'delete':
-                fmt_org.setBackground(QColor("#FFCDD2"))
-                fmt_org.setForeground(QColor("#B71C1C"))
-                fmt_org.setFontStrikeOut(True)
-                cursor_org.insertText(org_part.replace(' ', '✓'), fmt_org)
+                mid_org = org[pre_i:len(org)-suf_i] if suf_i > 0 else org[pre_i:]
+                mid_new = new[pre_i:len(new)-suf_i] if suf_i > 0 else new[pre_i:]
                 
-            elif tag == 'insert':
-                fmt_new.setBackground(QColor("#FFB74D"))
-                fmt_new.setForeground(QColor("#000000"))
-                fmt_new.setFontWeight(QFont.Bold)
-                fmt_new.setProperty(QTextFormat.UserProperty + 1, idx)
-                cursor_new.insertText(new_part.replace(' ', '✓'), fmt_new)
+                res = []
+                if prefix: res.append(('equal', prefix, prefix))
                 
-            elif tag == 'equal':
-                cursor_org.insertText(org_part, QTextCharFormat())
-                cursor_new.insertText(new_part, QTextCharFormat())
+                # 2. 중간 부분(실제 차이점)을 공백과 글자 단위로 강제 분리
+                if not mid_org and not mid_new:
+                    pass
+                elif not mid_org:
+                    for p in re.findall(r' +|[^ ]+', mid_new):
+                        res.append(('insert', '', p))
+                elif not mid_new:
+                    for p in re.findall(r' +|[^ ]+', mid_org):
+                        res.append(('delete', p, ''))
+                else:
+                    # 교체(replace) 구역: 공백과 글자 덩어리를 분리하여 각각 매칭
+                    org_parts = re.findall(r' +|[^ ]+', mid_org)
+                    new_parts = re.findall(r' +|[^ ]+', mid_new)
+                    
+                    o_idx = 0
+                    for n_p in new_parts:
+                        if n_p.strip() == "": # 공백 덩어리인 경우
+                            # 공백은 별도의 삽입/삭제 또는 교체로 처리
+                            if o_idx < len(org_parts) and org_parts[o_idx].strip() == "":
+                                res.append(('replace', org_parts[o_idx], n_p))
+                                o_idx += 1
+                            else:
+                                res.append(('insert', '', n_p))
+                        else: # 글자 덩어리인 경우
+                            # 앞선 공백들을 먼저 처리(삭제)
+                            while o_idx < len(org_parts) and org_parts[o_idx].strip() == "":
+                                res.append(('delete', org_parts[o_idx], ''))
+                                o_idx += 1
+                            
+                            if o_idx < len(org_parts):
+                                res.append(('replace', org_parts[o_idx], n_p))
+                                o_idx += 1
+                            else:
+                                res.append(('insert', '', n_p))
+                    # 남은 원본 덩어리 삭제 처리
+                    while o_idx < len(org_parts):
+                        res.append(('delete', org_parts[o_idx], ''))
+                
+                if suffix: res.append(('equal', suffix, suffix))
+                return res
+
+            segments = get_granular_segments(org_full, new_full, tag)
+
+            for s_tag, s_org, s_new in segments:
+                if s_tag == 'equal':
+                    cursor_org.insertText(s_org, QTextCharFormat())
+                    cursor_new.insertText(s_new, QTextCharFormat())
+                    continue
+
+                # 개별 세그먼트에 대한 메타데이터 저장 (독립적인 ID 부여)
+                diff_item = {'tag': s_tag, 'org': s_org, 'new': s_new, 'id': current_idx}
+                self.diff_data.append(diff_item)
+
+                fmt_org = QTextCharFormat()
+                fmt_new = QTextCharFormat()
+                
+                if s_tag == 'replace':
+                    fmt_org.setBackground(QColor("#FFCDD2")) 
+                    fmt_org.setForeground(QColor("#B71C1C")) 
+                    fmt_org.setFontStrikeOut(True)
+                    
+                    fmt_new.setBackground(QColor("#FFB74D")) 
+                    fmt_new.setForeground(QColor("#000000")) 
+                    fmt_new.setFontWeight(QFont.Bold)
+                    fmt_new.setProperty(QTextFormat.UserProperty + 1, current_idx)
+                    
+                    cursor_org.insertText(s_org.replace(' ', '✓'), fmt_org)
+                    cursor_new.insertText(s_new.replace(' ', '✓'), fmt_new)
+                    
+                elif s_tag == 'delete':
+                    fmt_org.setBackground(QColor("#FFCDD2"))
+                    fmt_org.setForeground(QColor("#B71C1C"))
+                    fmt_org.setFontStrikeOut(True)
+                    cursor_org.insertText(s_org.replace(' ', '✓'), fmt_org)
+                    
+                elif s_tag == 'insert':
+                    fmt_new.setBackground(QColor("#FFB74D"))
+                    fmt_new.setForeground(QColor("#000000"))
+                    fmt_new.setFontWeight(QFont.Bold)
+                    fmt_new.setProperty(QTextFormat.UserProperty + 1, current_idx)
+                    cursor_new.insertText(s_new.replace(' ', '✓'), fmt_new)
+                
+                current_idx += 1
 
         self.edit_org.blockSignals(False)
         self.edit_new.blockSignals(False)
@@ -567,20 +806,29 @@ class SpellCheckDialog(QDialog):
         while block.isValid():
             it = block.begin()
             while not it.atEnd():
-                fragment = it.fragment()
-                if fragment.isValid():
-                    if fragment.position() <= pos <= fragment.position() + fragment.length():
-                        val = fragment.charFormat().property(QTextFormat.UserProperty + 1)
-                        if val is not None:
-                            diff_id = val
+                if hasattr(it, "fragment"):
+                    fragment = it.fragment()
+                    if fragment.isValid():
+                        if fragment.position() <= pos <= fragment.position() + fragment.length():
+                            val = fragment.charFormat().property(QTextFormat.UserProperty + 1)
+                            if val is not None:
+                                diff_id = val
                 it += 1
             block = block.next()
 
         if diff_id is not None and isinstance(diff_id, int):
             rect = self.edit_new.cursorRect(cursor)
             btn_pos = rect.topLeft()
-            btn_pos.setY(btn_pos.y() - self.undo_btn.height() - 5)
-            btn_pos.setX(btn_pos.x() - 20)
+            
+            # 버튼을 커서 위에 배치하되, 뷰포트 상단을 벗어나면 아래에 배치
+            target_y = btn_pos.y() - self.undo_btn.height() - 5
+            if target_y < 0:
+                # 첫 줄이거나 상단 공간이 부족하면 텍스트 아래쪽에 배치
+                target_y = rect.bottom() + 5
+            
+            btn_pos.setY(target_y)
+            btn_pos.setX(max(5, btn_pos.x() - 20)) # X도 0보다 크게 보장 (여백 5px)
+            
             self.undo_btn.move(btn_pos)
             self.undo_btn.target_index = diff_id
             self.undo_btn.show()
@@ -601,13 +849,14 @@ class SpellCheckDialog(QDialog):
         while block.isValid():
             it = block.begin()
             while not it.atEnd():
-                fragment = it.fragment()
-                if fragment.isValid():
-                    val = fragment.charFormat().property(QTextFormat.UserProperty + 1)
-                    if val is not None and val == diff_id:
-                        if start_pos == -1:
-                            start_pos = fragment.position()
-                        end_pos = fragment.position() + fragment.length()
+                if hasattr(it, "fragment"):
+                    fragment = it.fragment()
+                    if fragment.isValid():
+                        val = fragment.charFormat().property(QTextFormat.UserProperty + 1)
+                        if val is not None and val == diff_id:
+                            if start_pos == -1:
+                                start_pos = fragment.position()
+                            end_pos = fragment.position() + fragment.length()
                 it += 1
             block = block.next()
 

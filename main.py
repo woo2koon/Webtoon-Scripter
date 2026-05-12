@@ -33,7 +33,7 @@ import config
 
 from config import BASE_DIR, ASSETS_DIR, CACHE_DIR, PROJECTS_DIR, TEMPLATE_PATH, MODERN_STYLE
 from utils import restore_template, natural_sort_key
-from widgets import ResponsiveLabel, ClickableComboBox, WebtoonScrollArea, PopupItemDelegate, CharacterRow, SpreadsheetTable, ExcelTextDelegate
+from widgets import ResponsiveLabel, ClickableComboBox, WebtoonScrollArea, PopupItemDelegate, CharacterRow, SpreadsheetTable, ExcelTextDelegate, CharacterListContainer
 from ocr_worker import OCRWorker
 
 # 디렉토리 생성
@@ -196,7 +196,7 @@ class WebtoonManager(QMainWindow):
     def prompt_clear_workspace(self):
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle('새 작업 시작')
-        msg_box.setText('현재 화면과 데이터를 모두 지우고 새 작업을 시작하시겠습니까?')
+        msg_box.setText('이미지와 텍스트를 모두 지우고 새 작업을 시작하시겠습니까?')
         
         btn_yes = msg_box.addButton(" 예 ", QMessageBox.ActionRole)
         btn_no = msg_box.addButton(" 아니오 ", QMessageBox.ActionRole)
@@ -362,6 +362,14 @@ class WebtoonManager(QMainWindow):
             }
             QPushButton:hover { 
                 background-color: #F3F4F6; 
+            }
+            QToolTip { 
+                background-color: white; 
+                color: black; 
+                border: 1px solid #D1D5DB; 
+                padding: 5px; 
+                font-family: 'Pretendard'; 
+                font-size: 12px;
             }
         """)
         self.btn_toggle.clicked.connect(self.toggle_sidebar)
@@ -607,12 +615,18 @@ class WebtoonManager(QMainWindow):
         # [추가] 마우스를 올렸을 때 나타날 툴팁 설정
         self.check_reanalyze.setToolTip("기존 결과를 무시하고 새로 분석합니다. API가 소모됩니다.")
         
-        # 스타일 설정 (기존 코드 유지)
-        option_style = "QRadioButton, QCheckBox { font-size: 13px; color: #374151; }"
-        self.check_reanalyze.setStyleSheet(option_style)
-
-        # 스타일 및 초기값 설정
-        option_style = "QRadioButton, QCheckBox { font-size: 13px; color: #374151; }"
+        # 스타일 설정
+        option_style = """
+            QRadioButton, QCheckBox { font-size: 13px; color: #374151; }
+            QToolTip { 
+                background-color: white; 
+                color: black; 
+                border: 1px solid #D1D5DB; 
+                padding: 5px; 
+                font-family: 'Pretendard'; 
+                font-size: 12px;
+            }
+        """
         self.radio_fast.setStyleSheet(option_style)
         self.radio_smart.setStyleSheet(option_style)
         self.check_reanalyze.setStyleSheet(option_style)
@@ -1138,7 +1152,7 @@ class WebtoonManager(QMainWindow):
                 border: 1px solid #FBC02D; 
                 color: #5D4037;            
                 font-weight: bold;
-                border-radius: 6px;
+                border-radius: 4px;
                 padding: 0 15px;
                 font-size: 13px;
             }
@@ -1205,6 +1219,11 @@ class WebtoonManager(QMainWindow):
         header_layout.setSpacing(10)
         
         lbl_style = "color: white; font-weight: bold; font-size: 14px;"
+        
+        lbl_drag_spacer = QLabel()
+        lbl_drag_spacer.setFixedWidth(24)
+        header_layout.addWidget(lbl_drag_spacer)
+        
         lbl_name = QLabel("캐릭터 이름")
         lbl_name.setStyleSheet(lbl_style)
         lbl_name.setAlignment(Qt.AlignCenter)
@@ -1231,12 +1250,9 @@ class WebtoonManager(QMainWindow):
         scroll_area_char = QScrollArea()
         scroll_area_char.setWidgetResizable(True)
         scroll_area_char.setStyleSheet("background-color: #f8f9fa; border: none;") 
-        self.char_container = QWidget()
-        self.char_container.setStyleSheet("background-color: transparent;")
-        self.char_layout = QVBoxLayout(self.char_container)
-        self.char_layout.setAlignment(Qt.AlignTop)
-        self.char_layout.setSpacing(5) 
-        self.char_layout.setContentsMargins(0, 10, 0, 10)
+        self.char_container = CharacterListContainer()
+        self.char_container.order_changed_signal.connect(self.save_char_data)
+        self.char_layout = self.char_container.layout()
         scroll_area_char.setWidget(self.char_container)
         tab2_layout.addWidget(scroll_area_char)
         self.tabs.addTab(tab2_widget, "Step 2. 캐릭터")
@@ -1429,10 +1445,11 @@ class WebtoonManager(QMainWindow):
         file_menu = menubar.addMenu("파일(&F)")
         
         # 새 작업(심플 모드) 액션 추가
-        action_new_simple = QAction("새 작업 (심플 모드)", self)
-        action_new_simple.setShortcut("Ctrl+N")
-        action_new_simple.triggered.connect(self.prompt_clear_workspace)
-        file_menu.addAction(action_new_simple)
+        self.action_new_simple = QAction("새 작업 (심플 모드)", self)
+        self.action_new_simple.setShortcut("Ctrl+N")
+        self.action_new_simple.triggered.connect(self.prompt_clear_workspace)
+        self.action_new_simple.setVisible(self.is_simple_mode) # 모드에 따라 숨김/표시
+        file_menu.addAction(self.action_new_simple)
         
         file_menu.addSeparator()
 
@@ -1464,9 +1481,11 @@ class WebtoonManager(QMainWindow):
     def toggle_simple_mode(self, show_toast=True, check_work=True):
         self.is_simple_mode = not self.is_simple_mode
         
-        # 메뉴 텍스트를 현재 상태에 맞춰 변경
+        # 메뉴 텍스트 및 가시성을 현재 상태에 맞춰 변경
         if hasattr(self, 'action_simple_mode'):
             self.action_simple_mode.setText("전체 모드 전환" if self.is_simple_mode else "심플 모드 전환")
+        if hasattr(self, 'action_new_simple'):
+            self.action_new_simple.setVisible(self.is_simple_mode)
         if self.is_simple_mode:
             self.sidebar.hide()
             self.btn_toggle.hide()
@@ -1704,10 +1723,18 @@ class WebtoonManager(QMainWindow):
         _, i_path, _ = self.get_paths()
         valid_extensions = ('.png', '.jpg', '.jpeg')
         processed_count = 0
+        duplicate_count = 0
         
         for fname in file_paths:
-            # [수정] 파일명이 마침표(.)로 시작하지 않는 경우만 복사합니다.
-            if fname.lower().endswith(valid_extensions) and not os.path.basename(fname).startswith('.'):
+            base_name = os.path.basename(fname)
+            dest_path = os.path.join(i_path, base_name)
+            
+            # 중복 체크
+            if os.path.exists(dest_path):
+                duplicate_count += 1
+                continue
+
+            if fname.lower().endswith(valid_extensions) and not base_name.startswith('.'):
                 try:
                     shutil.copy(fname, i_path)
                     processed_count += 1
@@ -1716,7 +1743,12 @@ class WebtoonManager(QMainWindow):
 
         if processed_count > 0:
             self.load_images()
-            self.toast.show_message(f"✅ 이미지 {processed_count}장이 추가되었습니다!")
+            if duplicate_count > 0:
+                self.toast.show_message(f"✅ {processed_count}개 추가 (중복 {duplicate_count}개 제외)")
+            else:
+                self.toast.show_message(f"✅ 이미지 {processed_count}장이 추가되었습니다!")
+        elif duplicate_count > 0:
+            self.toast.show_message("이미 추가한 파일입니다.")
 
     def upload_images(self):
         file_names, _ = QFileDialog.getOpenFileNames(self, "이미지 선택", "", "Images (*.png *.jpg *.jpeg)")
