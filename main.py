@@ -53,7 +53,7 @@ from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage
 class WebtoonManager(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Webtooon script manager") 
+        self.setWindowTitle(f"Webtoon Script Manager v{config.APP_VERSION}") 
         self.resize(1600, 950)
         self.current_title = ""
         self.current_episode = ""
@@ -815,7 +815,7 @@ class WebtoonManager(QMainWindow):
                 background-color: #E5E7EB;
                 border-radius: 4px;
             }
-            QProgressBar::chunk {
+            Q ProgressBar::chunk {
                 background-color: #2563EB;
                 border-radius: 4px;
             }
@@ -1479,9 +1479,11 @@ class WebtoonManager(QMainWindow):
         dlg.exec()
 
     def toggle_simple_mode(self, show_toast=True, check_work=True):
-        self.is_simple_mode = not self.is_simple_mode
+        # 모드 전환 전 현재 모드의 스크롤 위치 저장
+        self.save_viewer_state()
         
-        # 메뉴 텍스트 및 가시성을 현재 상태에 맞춰 변경
+        self.is_simple_mode = not self.is_simple_mode
+        config.IS_SIMPLE_MODE = self.is_simple_mode      # 메뉴 텍스트 및 가시성을 현재 상태에 맞춰 변경
         if hasattr(self, 'action_simple_mode'):
             self.action_simple_mode.setText("전체 모드 전환" if self.is_simple_mode else "심플 모드 전환")
         if hasattr(self, 'action_new_simple'):
@@ -1503,6 +1505,7 @@ class WebtoonManager(QMainWindow):
             self.clear_workspace()
             self.load_images()
             self.load_data()
+            self.load_viewer_state() # 새 모드의 스크롤 위치 복구
             
             # [추가] 전체 모드에서 심플 모드로 전환 시, 기존 작업이 있다면 묻습니다.
             if check_work:
@@ -1561,6 +1564,7 @@ class WebtoonManager(QMainWindow):
             self.clear_workspace()
             self.load_images()
             self.load_data()
+            self.load_viewer_state() # 새 모드의 스크롤 위치 복구
             
             if show_toast:
                 self.toast.show_message("🏢 전체 모드로 전환되었습니다.", 3000)
@@ -1701,7 +1705,36 @@ class WebtoonManager(QMainWindow):
         self.save_viewer_state()
         super().closeEvent(event)
 
+    def keyPressEvent(self, event):
+        """단축키 처리 (Home/End, Ctrl+Up/Down)"""
+        # 1. Ctrl(또는 Cmd) 조합키 체크
+        if event.modifiers() & Qt.ControlModifier:
+            if event.key() == Qt.Key_Up:
+                self.scroll_area.verticalScrollBar().setValue(0)
+                event.accept()
+                return
+            elif event.key() == Qt.Key_Down:
+                self.scroll_area.verticalScrollBar().setValue(self.scroll_area.verticalScrollBar().maximum())
+                event.accept()
+                return
+
+        # 2. Home / End 키 (에디터 포커스가 없을 때만)
+        if not self.text_editor.hasFocus():
+            if event.key() == Qt.Key_Home:
+                self.scroll_area.verticalScrollBar().setValue(0)
+                event.accept()
+                return
+            elif event.key() == Qt.Key_End:
+                self.scroll_area.verticalScrollBar().setValue(self.scroll_area.verticalScrollBar().maximum())
+                event.accept()
+                return
+        
+        super().keyPressEvent(event)
+
     def clear_workspace(self):
+        # 스크롤 위치 초기화
+        self.scroll_area.verticalScrollBar().setValue(0)
+        
         while self.image_layout.count():
             child = self.image_layout.takeAt(0)
             if child.widget(): child.widget().deleteLater()
@@ -1945,7 +1978,13 @@ class WebtoonManager(QMainWindow):
             }
         """)
         line_edit = combo.lineEdit()
-        line_edit.setTextMargins(0, 0, 0, 0)
+        if line_edit:
+            line_edit.setTextMargins(0, 0, 0, 0)
+            
+        # [복구] 기존에 누락되었던 콜백 및 저장 신호 연결
+        combo.set_refresh_callback(self.get_character_list)
+        combo.currentTextChanged.connect(lambda text: self.save_script_data())
+        
         return combo
 
     def add_character_card(self, name="", age="", gender="", role=""):
@@ -1986,6 +2025,11 @@ class WebtoonManager(QMainWindow):
 
     def show_script_context_menu(self, pos):
         menu = QMenu()
+        # [추가] 최상단에 실행취소 / 다시실행 추가 (아이콘 적용)
+        undo_action = menu.addAction(get_icon(config.ICON_UNDO), "실행취소 (Ctrl+Z)")
+        redo_action = menu.addAction(get_icon(config.ICON_REDO), "다시실행 (Ctrl+Shift+Z)")
+        menu.addSeparator()
+
         action_insert_above = menu.addAction(get_icon(config.ICON_ARROW_UP), "위에 행 추가")
         action_insert_below = menu.addAction(get_icon(config.ICON_ARROW_DOWN), "아래에 행 추가")
         menu.addSeparator()
@@ -1995,6 +2039,15 @@ class WebtoonManager(QMainWindow):
         delete_action.setIcon(get_icon(config.ICON_DELETE))
         
         action = menu.exec(QCursor.pos())
+        if not action: return
+
+        # [추가] 실행취소/다시실행 처리
+        if action == undo_action:
+            self.table_script.undo()
+            return
+        elif action == redo_action:
+            self.table_script.redo()
+            return
         
         selected_ranges = self.table_script.selectedRanges()
         if not selected_ranges: return
@@ -2009,20 +2062,24 @@ class WebtoonManager(QMainWindow):
         rows = sorted(list(rows))
 
         if action == delete_action:
+            self.table_script.save_state_for_undo() # [추가] 상태 백업
             for r in reversed(rows):
                 self.table_script.removeRow(r)
             self.save_script_data()
 
         elif action == action_insert_above:
+            self.table_script.save_state_for_undo() # [추가] 상태 백업
             self.insert_script_row_at(top_row)
         
         elif action == action_insert_below:
+            self.table_script.save_state_for_undo() # [추가] 상태 백업
             self.insert_script_row_at(bottom_row + 1)
             
         elif action == merge_action:
             if len(rows) < 2:
                 QMessageBox.warning(self, "알림", "합칠 행을 2개 이상 선택해주세요.")
                 return
+            self.table_script.save_state_for_undo() # [추가] 상태 백업
             combined_text = []
             for r in rows:
                 item = self.table_script.item(r, 1) 
@@ -2035,6 +2092,7 @@ class WebtoonManager(QMainWindow):
             self.save_script_data()
 
     def add_script_row(self):
+        self.table_script.save_state_for_undo() # [추가] 상태 백업
         self.insert_script_row_at(self.table_script.rowCount())
 
     def load_script_to_table(self):
@@ -2047,6 +2105,8 @@ class WebtoonManager(QMainWindow):
                 QMessageBox.No 
             )
             if reply == QMessageBox.No: return
+
+        self.table_script.save_state_for_undo() # [추가] 상태 백업
 
         text = self.text_editor.toPlainText()
         lines = [line.strip() for line in text.split('\n') if line.strip()]
@@ -2099,6 +2159,8 @@ class WebtoonManager(QMainWindow):
     def load_data(self):
         import pandas as pd
         e_path, _, s_path = self.get_paths()
+        if not e_path or not s_path: return # 경로가 없으면 로드 중단
+
         self.text_editor.blockSignals(True)
         if os.path.exists(s_path):
             with open(s_path, 'r', encoding='utf-8') as f: self.text_editor.setText(f.read())
@@ -2117,22 +2179,30 @@ class WebtoonManager(QMainWindow):
                     gender=str(row.get('Gender','')),
                     role=str(row.get('Role',''))
                 )
+        
+        # 3. 스크립트 테이블 데이터 로드
         self.table_script.blockSignals(True)
         self.table_script.setRowCount(0)
         s_csv = os.path.join(e_path, "script_data.csv")
+        
+        # [수정] 통합된 get_character_list 사용
         char_list = self.get_character_list()
+        
         if os.path.exists(s_csv):
             df = pd.read_csv(s_csv, keep_default_na=False)
-            self.table_script.setRowCount(len(df))
-            for i, row in df.iterrows():
-                combo = self.create_table_combo(char_list, str(row.get('Character','')))
-                combo.set_refresh_callback(self.get_character_list)
-                combo.currentTextChanged.connect(lambda text: self.save_script_data())
+            for _, row in df.iterrows():
+                r = self.table_script.rowCount()
+                self.table_script.insertRow(r)
                 
-                self.table_script.setCellWidget(i, 0, combo)
-                self.table_script.setItem(i, 1, QTableWidgetItem(str(row.get('Line',''))))
+                # 캐릭터 콤보박스
+                combo = self.create_table_combo(char_list, str(row.get('Character','')))
+                self.table_script.setCellWidget(r, 0, combo)
+                
+                # 대사
+                self.table_script.setItem(r, 1, QTableWidgetItem(str(row.get('Line',''))))
+        
         self.table_script.blockSignals(False)
-        self.table_script.resizeRowsToContents() 
+        self.table_script.resizeRowsToContents()
 
     def export_excel(self):
         from excel_handler import export_to_excel

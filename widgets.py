@@ -3,7 +3,8 @@ from PySide6.QtWidgets import (QLabel, QComboBox, QListView, QStyledItemDelegate
                                QScrollArea, QFrame, QHBoxLayout, QLineEdit, 
                                QPushButton, QWidget, QSizePolicy, QTextEdit,
                                QTableWidget, QAbstractItemView, QTableWidgetItem, QApplication, QHeaderView,
-                               QGraphicsOpacityEffect, QMenu, QDialog, QVBoxLayout, QMessageBox, QInputDialog)
+                               QGraphicsOpacityEffect, QMenu, QDialog, QVBoxLayout, QMessageBox, QInputDialog,
+                               QListWidget, QListWidgetItem, QStackedWidget, QFileDialog)
 from PySide6.QtCore import Qt, QEvent, Signal, QTimer, QSize, QEasingCurve, QPropertyAnimation, QRect, QRectF, QMimeData
 from PySide6.QtGui import (
     QPixmap, QDrag, QPainter, QColor, QPen, QFont, QAction, QIcon,
@@ -47,12 +48,34 @@ class ClickableComboBox(QComboBox):
         self.lineEdit().setReadOnly(True)
         self.lineEdit().setCursor(Qt.ArrowCursor)
         self.lineEdit().installEventFilter(self)
+        self.installEventFilter(self) # [추가] 자기 자신에게도 필터 설치
         self.setView(QListView())
         
         delegate = QStyledItemDelegate()
         self.setItemDelegate(delegate)
         self.refresh_callback = None 
         self._popup_hidden_recently = False
+
+    def showPopup(self):
+        # [추가] 콤보박스가 열려서 값이 바뀌기 직전의 상태 저장
+        self._trigger_undo_backup()
+        super().showPopup()
+
+    def mousePressEvent(self, event):
+        # [추가] 클릭 시에도 백업 (직접 입력이나 휠 조작 전 대비)
+        self._trigger_undo_backup()
+        super().mousePressEvent(event)
+
+    def wheelEvent(self, event):
+        # [추가] 휠 조작으로 값이 바뀌기 전 백 swap
+        self._trigger_undo_backup()
+        super().wheelEvent(event)
+
+    def _trigger_undo_backup(self):
+        """메인 윈도우의 테이블에 Undo 백업 요청"""
+        mw = self.window()
+        if hasattr(mw, 'table_script') and hasattr(mw.table_script, 'save_state_for_undo'):
+            mw.table_script.save_state_for_undo()
 
     def hidePopup(self):
         super().hidePopup()
@@ -71,6 +94,27 @@ class ClickableComboBox(QComboBox):
         self.refresh_callback = func
 
     def eventFilter(self, obj, event):
+        # [핵심] 콤보박스 본체나 내부 입력창 어디서든 Ctrl+Z 감지
+        if obj in (self, self.lineEdit()):
+            if event.type() == QEvent.KeyPress:
+                if event.modifiers() & Qt.ControlModifier:
+                    # 부모 위젯들을 거슬러 올라가서 SpreadsheetTable 찾기
+                    target_table = None
+                    p = self.parent()
+                    while p:
+                        if isinstance(p, QTableWidget): # SpreadsheetTable은 QTableWidget 상속
+                            target_table = p
+                            break
+                        p = p.parent()
+                    
+                    if target_table and hasattr(target_table, 'undo'):
+                        if event.modifiers() & Qt.ShiftModifier and event.key() == Qt.Key_Z:
+                            target_table.redo()
+                            return True
+                        elif event.key() == Qt.Key_Z:
+                            target_table.undo()
+                            return True
+
         if obj == self.lineEdit():
             if event.type() == QEvent.MouseButtonPress:
                 if getattr(self, '_popup_just_hidden', False):
@@ -392,6 +436,9 @@ class CharacterRow(QFrame):
         return { "Character": self.input_name.text(), "Role": self.combo_role.currentText(), "Age": self.combo_age.currentText(), "Gender": self.combo_gender.currentText() }
 
 class ExcelTextDelegate(QStyledItemDelegate):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
     # 1. 편집기(QLineEdit)를 만드는 함수입니다.
     def createEditor(self, parent, option, index):
         editor = QLineEdit(parent)
@@ -414,14 +461,13 @@ class ExcelTextDelegate(QStyledItemDelegate):
     def updateEditorGeometry(self, editor, option, index):
         editor.setGeometry(option.rect)
 
-    # 3. 셀에 있던 글자를 편집기에 넣어주는 함수입니다.
-    def setEditorData(self, editor, index):
-        value = index.data(Qt.EditRole)
-        if value:
-            editor.setText(str(value))
-
     # 4. 수정한 글자를 다시 셀에 저장하는 함수입니다.
     def setModelData(self, editor, model, index):
+        # [추가] 변경되기 전 상태를 undo 스택에 저장
+        table = self.parent()
+        if table and hasattr(table, 'save_state_for_undo'):
+            table.save_state_for_undo()
+            
         model.setData(index, editor.text(), Qt.EditRole)
 
     def setEditorData(self, editor, index):
@@ -444,15 +490,21 @@ class SpreadsheetTable(QTableWidget):
     def __init__(self, rows=0, columns=0, parent=None):
         super().__init__(rows, columns, parent)
         
+        # [추가] 드래그 앤 드롭 설정 (행 이동용)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDragDropOverwriteMode(False)
+        self.setDropIndicatorShown(True)
+        self.setDefaultDropAction(Qt.MoveAction)
+        self.setDragDropMode(QAbstractItemView.DragDrop)
+
         self.setAlternatingRowColors(True)
         self.setSelectionMode(QAbstractItemView.ContiguousSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectItems)
-        # widgets.py 내 SpreadsheetTable 클래스 안에서
-        self.verticalHeader().setMinimumSectionSize(47) # 최소 높이를 50으로 확보
-        self.verticalHeader().setDefaultSectionSize(47) # 기본 높이도 50으로 설정
-        self.verticalHeader().setSectionResizeMode(QHeaderView.Interactive) # 사용자가 조절 가능하게
-                
-        # [수정] padding을 0px로 설정하여 위젯이 꽉 차게 만듦
+        self.verticalHeader().setMinimumSectionSize(47)
+        self.verticalHeader().setDefaultSectionSize(47)
+        self.verticalHeader().setSectionResizeMode(QHeaderView.Interactive)
+
         self.setStyleSheet("""
             QTableWidget {
                 gridline-color: #e0e0e0;
@@ -466,13 +518,274 @@ class SpreadsheetTable(QTableWidget):
             QTableWidget::item { padding-left: 5px; padding-right: 5px; } 
             QTableWidget::item:focus { border: 2px solid #1a73e8; }
         """)
+        
+        # [추가] 드래그 인디케이터용 변수
+        self.drop_target_row = None
+        
+        # [추가] 실행취소/다시실행 스택
+        self.undo_stack = []
+        self.redo_stack = []
+        self.is_undoing = False
+
+    def get_table_state(self):
+        """현재 테이블의 전체 상태(캐릭터 콤보, 대사)를 리스트로 반환"""
+        state = []
+        for r in range(self.rowCount()):
+            combo_text = ""
+            widget = self.cellWidget(r, 0)
+            if isinstance(widget, QComboBox):
+                combo_text = widget.currentText()
+            
+            item = self.item(r, 1)
+            text = item.text() if item else ""
+            
+            state.append({"combo": combo_text, "text": text})
+        return state
+
+    def restore_table_state(self, state):
+        """주어진 상태(state)로 테이블을 복구 (성능 최적화 버전)"""
+        self.is_undoing = True
+        self.blockSignals(True)
+        self.setUpdatesEnabled(False) # [추가] 화면 갱신 일시 중지
+        
+        # 행 개수가 다르면 조정
+        if self.rowCount() != len(state):
+            self.setRowCount(len(state))
+        
+        mw = self.window()
+        char_names = []
+        if hasattr(mw, 'get_character_list'):
+            char_names = mw.get_character_list()
+            
+        for r, row_data in enumerate(state):
+            # 콤보박스 재사용 또는 생성
+            widget = self.cellWidget(r, 0)
+            if isinstance(widget, QComboBox):
+                if widget.currentText() != row_data["combo"]:
+                    widget.setCurrentText(row_data["combo"])
+            else:
+                if hasattr(mw, 'create_table_combo'):
+                    combo = mw.create_table_combo(char_names, row_data["combo"])
+                    self.setCellWidget(r, 0, combo)
+            
+            # 텍스트 재사용 또는 생성
+            old_item = self.item(r, 1)
+            if old_item:
+                if old_item.text() != row_data["text"]:
+                    old_item.setText(row_data["text"])
+            else:
+                self.setItem(r, 1, QTableWidgetItem(row_data["text"]))
+            
+        self.setUpdatesEnabled(True) # [추가] 화면 갱신 재개
+        self.blockSignals(False)
+        self.is_undoing = False
+        self.setFocus() # [추가] 포커스 강제 확보
+        
+        if hasattr(mw, 'save_script_data'):
+            # 저장 시 resizeRowsToContents가 호출되므로 여기서 따로 호출하지 않음
+            mw.save_script_data()
+
+    def save_state_for_undo(self):
+        """현재 상태를 undo_stack에 저장"""
+        if self.is_undoing:
+            return
+        state = self.get_table_state()
+        
+        # [최적화] 마지막 저장 상태와 동일하면 저장하지 않음
+        if self.undo_stack and self.undo_stack[-1] == state:
+            return
+            
+        self.undo_stack.append(state)
+        self.redo_stack.clear()
+        
+        if len(self.undo_stack) > 50:
+            self.undo_stack.pop(0)
+
+    def undo(self):
+        if not self.undo_stack:
+            return
+            
+        # 편집 중이라면 현재 내용을 확정
+        if self.state() == QAbstractItemView.EditingState:
+            self.setCurrentIndex(QModelIndex()) 
+            
+        current_state = self.get_table_state()
+        
+        # [지능형 Undo] 현재와 다른 상태가 나올 때까지 스택을 거슬러 올라감
+        while self.undo_stack:
+            previous_state = self.undo_stack.pop()
+            if previous_state != current_state:
+                self.redo_stack.append(current_state)
+                self.restore_table_state(previous_state)
+                return
+
+    def redo(self):
+        if not self.redo_stack:
+            return
+            
+        # 편집 중이라면 현재 내용을 확정
+        if self.state() == QAbstractItemView.EditingState:
+            self.setCurrentIndex(QModelIndex())
+
+        current_state = self.get_table_state()
+        
+        # [지능형 Redo] 현재와 다른 상태가 나올 때까지 스택을 앞으로 보냄
+        while self.redo_stack:
+            next_state = self.redo_stack.pop()
+            if next_state != current_state:
+                self.undo_stack.append(current_state)
+                self.restore_table_state(next_state)
+                return
+
+    def dragEnterEvent(self, event):
+        if event.source() == self:
+            event.accept()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if event.source() == self:
+            event.setDropAction(Qt.MoveAction)
+            event.accept()
+            row = self.rowAt(event.pos().y())
+            if row == -1: row = self.rowCount()
+            
+            if self.drop_target_row != row:
+                self.drop_target_row = row
+                self.viewport().update()
+        else:
+            super().dragMoveEvent(event)
+
+    def dragLeaveEvent(self, event):
+        self.drop_target_row = None
+        self.viewport().update()
+        super().dragLeaveEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        # [추가] 드래그 중일 때 삽입될 위치에 파란색 선(인디케이터) 그리기
+        if self.drop_target_row is not None:
+            painter = QPainter(self.viewport())
+            pen = QPen(QColor("#1a73e8"), 3) # 파란색, 두께 3px
+            painter.setPen(pen)
+            
+            if self.drop_target_row < self.rowCount():
+                y = self.rowViewportPosition(self.drop_target_row)
+            else:
+                last_row = self.rowCount() - 1
+                y = self.rowViewportPosition(last_row) + self.rowHeight(last_row)
+                
+            painter.drawLine(0, y, self.viewport().width(), y)
+
+    def dropEvent(self, event):
+        """드래그 앤 드롭으로 행 전체를 이동시키는 로직 (커스텀 위젯 대응)"""
+        self.drop_target_row = None
+        self.viewport().update()
+
+        if event.source() != self or not (event.dropAction() & (Qt.MoveAction | Qt.CopyAction)):
+            return
+
+        # [추가] 상태 저장 (드롭 전)
+        self.save_state_for_undo()
+
+        # 1. 대상 위치 파악
+        target_row = self.rowAt(event.pos().y())
+        if target_row == -1: target_row = self.rowCount()
+        
+        # 2. 선택된 행들 파악
+        selected_rows = sorted(list(set(index.row() for index in self.selectedIndexes())), reverse=True)
+        if not selected_rows: return
+        
+        # 3. 데이터 백업 (콤보박스 포함)
+        rows_data = []
+        for r in sorted(selected_rows):
+            row_content = []
+            for c in range(self.columnCount()):
+                item = self.item(r, c)
+                text = item.text() if item else ""
+                
+                # 0번 컬럼(캐릭터)의 콤보박스 상태 저장
+                combo_text = ""
+                if c == 0:
+                    widget = self.cellWidget(r, c)
+                    if isinstance(widget, QComboBox):
+                        combo_text = widget.currentText()
+                
+                row_content.append({"text": text, "combo": combo_text})
+            rows_data.append(row_content)
+            
+        # 4. 행 삭제 및 삽입
+        # 삭제 전 target_row 보정 (삭제되는 행이 target 위에 있으면 인덱스 감소)
+        for r in selected_rows:
+            if r < target_row:
+                target_row -= 1
+            self.removeRow(r)
+            
+        # 삽입
+        for i, row_content in enumerate(rows_data):
+            new_r = target_row + i
+            self.insertRow(new_r)
+            for c, data in enumerate(row_content):
+                # 텍스트 복구
+                new_item = QTableWidgetItem(data["text"])
+                self.setItem(new_r, c, new_item)
+                
+                # 캐릭터 콤보박스 복구
+                if c == 0:
+                    # 메인 윈도우의 캐릭터 목록을 가져와야 함 (부모의 부모... 접근)
+                    mw = self.window()
+                    char_names = []
+                    # [수정] main.py와 함수 이름 통일
+                    if hasattr(mw, 'get_character_list'):
+                        char_names = mw.get_character_list()
+                    
+                    # main.py의 create_table_combo와 유사한 로직
+                    if hasattr(mw, 'create_table_combo'):
+                        combo = mw.create_table_combo(char_names, data["combo"])
+                        self.setCellWidget(new_r, c, combo)
+        
+        # [추가] 이동 완료 후 자동 저장 호출
+        mw = self.window()
+        if hasattr(mw, 'save_script_data'):
+            mw.save_script_data()
+
+        self.selectRow(target_row) # 이동 후 선택 상태 유지
+        self.setFocus() # [추가] 단축키가 바로 작동하도록 포커스 확보
+        
+        # [핵심] 이동이 완전히 끝난 상태를 다음 편집을 위한 기준점으로 강제 저장하지 않고,
+        # 다음 액션이 발생할 때 현재(이동 후) 상태가 이전(이동 전) 상태와 다르다는 것을 
+        # 확실히 인지하도록 처리합니다.
+        
+        # [핵심 수정] Qt의 기본 MoveAction이 원본을 한 번 더 지우지 않도록 Ignore 처리
+        event.setDropAction(Qt.IgnoreAction)
+        event.accept()
+        
+        # [추가] 이동이 완전히 끝난 후의 상태를 스택에 한 번 더 기록하여
+        # 이후의 텍스트 수정이 이 '이동된 위치'를 기준으로 취소될 수 있게 합니다.
+        self.save_state_for_undo()
 
     def keyPressEvent(self, event):
+        # [추가] Undo / Redo 단축키 감지
+        if event.modifiers() & Qt.ControlModifier:
+            if event.modifiers() & Qt.ShiftModifier and event.key() == Qt.Key_Z:
+                self.redo()
+                event.accept()
+                return
+            elif event.key() == Qt.Key_Z:
+                self.undo()
+                event.accept()
+                return
+
         if event.matches(QKeySequence.Copy):
             self.copy_selection()
             return
         if event.matches(QKeySequence.Paste):
+            self.save_state_for_undo() # [추가] 붙여넣기 전 상태 저장
             self.paste_selection()
+            return
+        if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
+            self.save_state_for_undo() # [추가] 지우기 전 상태 저장
+            self.delete_selection()
             return
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
             current_row = self.currentRow()
@@ -487,6 +800,22 @@ class SpreadsheetTable(QTableWidget):
                 item.setText("")
             return
         super().keyPressEvent(event)
+
+    def delete_selection(self):
+        """선택된 셀들의 내용을 지웁니다 (콤보박스 포함)"""
+        for item in self.selectedItems():
+            item.setText("")
+        # 콤보박스 지우기 (선택된 셀이 0번 컬럼인 경우)
+        for index in self.selectedIndexes():
+            if index.column() == 0:
+                widget = self.cellWidget(index.row(), 0)
+                if isinstance(widget, QComboBox):
+                    widget.setCurrentIndex(-1)
+        
+        # 저장 유도
+        mw = self.window()
+        if hasattr(mw, 'save_script_data'):
+            mw.save_script_data()
 
     def copy_selection(self):
         selection = self.selectedRanges()
@@ -919,11 +1248,183 @@ class HoverIconButton(QPushButton):
         self.setIcon(self.normal_icon)
         super().leaveEvent(event)
 
+# --- [회차 목록용 커스텀 위젯] ---
+class EpisodeItemWidget(QWidget):
+    def __init__(self, name, status, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(60) # 전체 셀 높이 약간 축소
+        
+        # 메인 레이아웃 (아이템 간의 간격을 위해 여백 설정)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(5, 4, 5, 4)
+        
+        # [그룹화 상자] 실제 아이템의 배경과 테두리를 담당
+        self.container = QFrame()
+        self.container.setObjectName("itemContainer")
+        
+        container_layout = QHBoxLayout(self.container)
+        container_layout.setContentsMargins(15, 0, 15, 0)
+        container_layout.setSpacing(10)
+
+        self.lbl_name = QLabel(name)
+        self.lbl_name.setStyleSheet("font-weight: bold; font-size: 15px; color: #374151; background: transparent;")
+        
+        self.lbl_status = QLabel(status)
+        self.lbl_status.setFixedSize(80, 26)
+        self.lbl_status.setAlignment(Qt.AlignCenter)
+        self.lbl_status.setStyleSheet(self.get_status_style(status))
+
+        container_layout.addWidget(self.lbl_name)
+        container_layout.addStretch()
+        container_layout.addWidget(self.lbl_status)
+        
+        self.set_style(False) # [위치 수정] 라벨 생성 후 스타일 설정
+        main_layout.addWidget(self.container)
+
+    def set_style(self, selected):
+        if selected:
+            self.container.setStyleSheet("""
+                QFrame#itemContainer {
+                    background-color: #E0F2FE;
+                    border: 2px solid #7DD3FC;
+                    border-radius: 10px;
+                }
+            """)
+            self.lbl_name.setStyleSheet("font-weight: bold; font-size: 15px; color: #0369A1; background: transparent;")
+        else:
+            self.container.setStyleSheet("""
+                QFrame#itemContainer {
+                    background-color: #F9FAFB;
+                    border: 1px solid #D1D5DB;
+                    border-radius: 10px;
+                }
+            """)
+            self.lbl_name.setStyleSheet("font-weight: bold; font-size: 15px; color: #374151; background: transparent;")
+
+    def get_status_style(self, status):
+        if status == "분석 완료":
+            return """
+                background-color: #ECFDF5;
+                color: #059669;
+                border: 1px solid #10B981;
+                border-radius: 13px;
+                font-size: 11px;
+                font-weight: bold;
+            """
+        elif status == "분석 대기중":
+            return """
+                background-color: #EFF6FF;
+                color: #2563EB;
+                border: 1px solid #3B82F6;
+                border-radius: 13px;
+                font-size: 11px;
+                font-weight: bold;
+            """
+        else: # 대기중
+            return """
+                background-color: #F3F4F6;
+                color: #6B7280;
+                border: 1px solid #D1D5DB;
+                border-radius: 13px;
+                font-size: 11px;
+                font-weight: bold;
+            """
+
+import os
+
+class ImageViewerDialog(QDialog):
+    def __init__(self, epi_dir, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"이미지 보기 - {os.path.basename(epi_dir)}")
+        self.resize(600, 800)
+        self.setMinimumSize(400, 400)
+        self.setWindowFlags(Qt.Window | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setStyleSheet("""
+            QScrollArea { background-color: #F9FAFB; border: none; }
+            QScrollBar:vertical {
+                border: none;
+                background: #F3F4F6;
+                width: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #D1D5DB;
+                min-height: 20px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #9CA3AF;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
+        """)
+        self.scroll_area.verticalScrollBar().setSingleStep(150) # 스크롤 간격 넓게 조정
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff) # 가로 스크롤바 완전히 숨김
+        
+        self.image_labels = []
+        self.original_pixmaps = []
+        
+        self.content_widget = QWidget()
+        self.content_layout = QVBoxLayout(self.content_widget)
+        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setSpacing(0)
+        
+        self.load_images(epi_dir)
+        self.content_layout.addStretch()
+        
+        self.scroll_area.setWidget(self.content_widget)
+        layout.addWidget(self.scroll_area)
+
+    def load_images(self, epi_dir):
+        img_dir = os.path.join(epi_dir, "images")
+        if not os.path.exists(img_dir):
+            return
+            
+        valid_exts = {'.png', '.jpg', '.jpeg'}
+        files = sorted([f for f in os.listdir(img_dir) if os.path.splitext(f.lower())[1] in valid_exts])
+        
+        for f in files:
+            lbl = QLabel()
+            lbl.setAlignment(Qt.AlignCenter)
+            pixmap = QPixmap(os.path.join(img_dir, f))
+            if not pixmap.isNull():
+                self.image_labels.append(lbl)
+                self.original_pixmaps.append(pixmap)
+                
+                # 초기 렌더링은 resizeEvent가 담당하므로 임시로 빈 라벨만 추가
+                self.content_layout.addWidget(lbl)
+                
+        # 뷰포트 크기 변화 감지를 위한 이벤트 필터 설치
+        self.scroll_area.viewport().installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if obj == self.scroll_area.viewport() and event.type() == QEvent.Resize:
+            self.adjust_images()
+        return super().eventFilter(obj, event)
+
+    def adjust_images(self):
+        target_width = self.scroll_area.viewport().width()
+        if target_width > 0:
+            for lbl, pixmap in zip(self.image_labels, self.original_pixmaps):
+                lbl.setPixmap(pixmap.scaledToWidth(target_width, Qt.SmoothTransformation))
+
 class ProjectManagementDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("작품 및 회차 관리")
         self.setFixedSize(700, 700)
+        # MSWindowsFixedSizeDialogHint를 사용하여 윈도우 네이티브 비활성화 처리 시도
+        self.setWindowFlags(Qt.Dialog | Qt.MSWindowsFixedSizeDialogHint | Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint)
         
         # 1. UI를 먼저 생성 (self.list_titles 등이 여기서 만들어짐)
         self.init_ui()
@@ -933,140 +1434,225 @@ class ProjectManagementDialog(QDialog):
     def init_ui(self):
         # 메인 레이아웃
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(20, 15, 20, 20)
-        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(20)
+
+        # 공통 버튼 스타일
+        btn_style = """
+            QPushButton {
+                background-color: white;
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-weight: bold;
+                color: #374151;
+            }
+            QPushButton:hover {
+                background-color: #F9FAFB;
+                border-color: #9CA3AF;
+            }
+            QPushButton:pressed {
+                background-color: #F3F4F6;
+            }
+        """
+        
+        del_btn_style = btn_style + " QPushButton { color: #EF4444; }"
 
         # --- [왼쪽: 작품(Title) 관리] ---
-        left_layout = QVBoxLayout()
-        # [수정] "📚 작품 목록" 라벨을 아이콘+텍스트 컨테이너로 교체
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(10)
+
+        # 헤더
         title_list_header = QWidget()
         title_list_layout = QHBoxLayout(title_list_header)
-        title_list_layout.setContentsMargins(0, 5, 0, 5) # 상하 여백 살짝 조절
-        title_list_layout.setSpacing(4)
+        title_list_layout.setContentsMargins(0, 0, 0, 5)
+        title_list_layout.setSpacing(6)
 
-        # 1. 아이콘 라벨 (상수: ICON_LIBRARY)
         icon_lib = QLabel()
         icon_lib.setPixmap(get_icon(config.ICON_LIBRARY).pixmap(20, 20))
-
-        # 2. 텍스트 라벨 (이모지 제거)
         lbl_lib_text = QLabel("작품 목록")
-        lbl_lib_text.setStyleSheet("font-weight: bold; color: #333;")
+        lbl_lib_text.setStyleSheet("font-weight: bold; font-size: 15px; color: #111827;")
 
         title_list_layout.addWidget(icon_lib)
         title_list_layout.addWidget(lbl_lib_text)
         title_list_layout.addStretch()
-
         left_layout.addWidget(title_list_header)
+
+        # 검색바
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("🔍 작품 검색...")
+        self.search_bar.setFixedHeight(34)
+        self.search_bar.setClearButtonEnabled(True) # [추가] 지우기 버튼 활성화
+        self.search_bar.setStyleSheet("""
+            QLineEdit {
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                padding-left: 10px;
+                padding-right: 5px; /* [수정] 25px -> 5px로 대폭 축소 */
+                background-color: #F9FAFB;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border: 2px solid #FF5722;
+                background-color: white;
+            }
+        """)
+        self.search_bar.textChanged.connect(self.filter_projects)
+        left_layout.addWidget(self.search_bar)
         
-        # --- [왼쪽: 작품 목록 스타일 수정] ---
+        # 작품 목록
         self.list_titles = QListWidget()
         self.list_titles.setStyleSheet("""
             QListWidget {
-                font-family: 'Pretendard'; /* [핵심] 폰트 지정 */
-                font-size: 14px;
-                color: #333;
-                outline: none;
+                background-color: white;
                 border: 1px solid #D1D5DB;
-                border-radius: 6px;
+                border-radius: 8px;
+                outline: none;
                 padding: 5px;
             }
             QListWidget::item {
-                height: 30px; /* 항목 높이 확보 */
-                padding-left: 8px;
-                border-bottom: 1px solid #F3F4F6;
-                border-radius: 4px;
-                margin-bottom: 1px;
+                height: 32px;
+                padding-left: 12px;
+                border-radius: 6px;
+                margin-bottom: 2px;
+                font-size: 13px;
             }
             QListWidget::item:hover {
-                background-color: #F9FAFB;
+                background-color: #F3F4F6;
             }
             QListWidget::item:selected {
-                background-color: #FFECEC; /* 진우님 포인트 컬러 연한 배경 */
-                color: #FF4B4B;           /* 진우님 포인트 컬러 글자 */
+                background-color: #FFECEC;
+                color: #FF5722;
                 font-weight: bold;
             }
         """)
         self.list_titles.currentTextChanged.connect(self.load_episodes)
         left_layout.addWidget(self.list_titles)
 
+        # 버튼 행
         btn_row_title = QHBoxLayout()
         self.btn_add_title = QPushButton("작품 추가")
-        self.btn_del_title = QPushButton("작품 삭제")
-        self.btn_del_title.setStyleSheet("color: #ff4b4b; font-weight: bold;")
+        self.btn_rename_title = QPushButton("이름 변경")
+        self.btn_del_title = QPushButton("삭제")
+        
+        for btn in [self.btn_add_title, self.btn_rename_title]:
+            btn.setStyleSheet(btn_style)
+        self.btn_del_title.setStyleSheet(del_btn_style)
         
         self.btn_add_title.clicked.connect(self.add_title)
+        self.btn_rename_title.clicked.connect(self.rename_title)
         self.btn_del_title.clicked.connect(self.delete_title)
         
         btn_row_title.addWidget(self.btn_add_title)
+        btn_row_title.addWidget(self.btn_rename_title)
         btn_row_title.addWidget(self.btn_del_title)
         left_layout.addLayout(btn_row_title)
         
-        layout.addLayout(left_layout, 1)
+        layout.addWidget(left_panel, 2)
 
         # --- [오른쪽: 회차(Episode) 관리] ---
-        right_layout = QVBoxLayout()
-        # 1. 아이콘 헤더 영역 (🎬 이모지 대신 SVG 아이콘)
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(10)
+
+        # 헤더
         epi_list_header = QWidget()
         epi_list_layout = QHBoxLayout(epi_list_header)
-        epi_list_layout.setContentsMargins(0, 5, 0, 5)
+        epi_list_layout.setContentsMargins(0, 0, 0, 5)
         epi_list_layout.setSpacing(6)
 
-        # 아이콘 (상수: ICON_MOVIE)
         icon_epi = QLabel()
         icon_epi.setPixmap(get_icon(config.ICON_MOVIE).pixmap(20, 20))
-
-        # 텍스트 라벨
-        lbl_epi_text = QLabel("회차 및 생성 현황")
-        lbl_epi_text.setStyleSheet("font-weight: bold; color: #333;")
+        lbl_epi_text = QLabel("회차 목록")
+        lbl_epi_text.setStyleSheet("font-weight: bold; font-size: 15px; color: #111827;")
 
         epi_list_layout.addWidget(icon_epi)
         epi_list_layout.addWidget(lbl_epi_text)
         epi_list_layout.addStretch()
-
         right_layout.addWidget(epi_list_header)
         
-        # --- [오른쪽: 회차 목록 스타일 수정] ---
+        # 회차 목록 스택 (Empty State 지원)
+        self.epi_stack = QStackedWidget()
+        
+        # 1. Empty State
+        self.empty_widget = QWidget()
+        empty_box = QVBoxLayout(self.empty_widget)
+        lbl_empty = QLabel("왼쪽 목록에서 작품을 선택해 주세요.")
+        lbl_empty.setAlignment(Qt.AlignCenter)
+        lbl_empty.setStyleSheet("color: #9CA3AF; font-size: 14px;")
+        empty_box.addStretch()
+        empty_box.addWidget(lbl_empty)
+        empty_box.addStretch()
+        
+        # 2. 리스트 위젯
         self.list_episodes = QListWidget()
+        self.list_episodes.setSpacing(5) # [수정] 간격을 5px로 조정
+        self.list_episodes.setContextMenuPolicy(Qt.CustomContextMenu) # 컨텍스트 메뉴 활성화
+        self.list_episodes.customContextMenuRequested.connect(self.show_episode_context_menu)
+        self.list_episodes.itemSelectionChanged.connect(self.on_episode_selection_changed)
         self.list_episodes.setStyleSheet("""
             QListWidget {
-                font-family: 'Pretendard'; /* [핵심] 폰트 지정 */
-                font-size: 14px;
-                color: #333;
-                outline: none;
+                background-color: white;
                 border: 1px solid #D1D5DB;
-                border-radius: 6px;
+                border-radius: 8px;
+                outline: none;
                 padding: 5px;
             }
             QListWidget::item {
-                height: 34px;
-                padding-left: 8px;
-                border-bottom: 1px solid #F3F4F6;
-                border-radius: 4px;
-                margin-bottom: 1px;
+                background: transparent;
+                border: none;
+                padding: 0;
             }
             QListWidget::item:selected {
-                background-color: #E1F5FE;
-                color: #0288D1;
-                font-weight: bold;
+                background: transparent;
+                border: none;
             }
         """)
-        right_layout.addWidget(self.list_episodes)
+        
+        self.epi_stack.addWidget(self.empty_widget)
+        self.epi_stack.addWidget(self.list_episodes)
+        right_layout.addWidget(self.epi_stack)
 
+        # 버튼 행
         btn_row_epi = QHBoxLayout()
         self.btn_add_epi = QPushButton("회차 추가")
-        self.btn_del_epi = QPushButton("회차 삭제")
-        self.btn_del_epi.setStyleSheet("color: #ff4b4b;")
+        self.btn_rename_epi = QPushButton("이름 변경")
+        self.btn_del_epi = QPushButton("삭제")
+        
+        for btn in [self.btn_add_epi, self.btn_rename_epi]:
+            btn.setStyleSheet(btn_style)
+        self.btn_del_epi.setStyleSheet(del_btn_style)
         
         self.btn_add_epi.clicked.connect(self.add_episode)
+        self.btn_rename_epi.clicked.connect(self.rename_episode)
         self.btn_del_epi.clicked.connect(self.delete_episode)
         
         btn_row_epi.addWidget(self.btn_add_epi)
+        btn_row_epi.addWidget(self.btn_rename_epi)
         btn_row_epi.addWidget(self.btn_del_epi)
         right_layout.addLayout(btn_row_epi)
 
-        layout.addLayout(right_layout, 2)
+        layout.addWidget(right_panel, 3)
+
 
     # --- [비즈니스 로직] ---
+
+    def filter_projects(self, text):
+        """작품 목록 실시간 필터링"""
+        for i in range(self.list_titles.count()):
+            item = self.list_titles.item(i)
+            item.setHidden(text.lower() not in item.text().lower())
+
+    def on_episode_selection_changed(self):
+        """회차 선택 변경 시 커스텀 위젯의 스타일 갱신"""
+        for i in range(self.list_episodes.count()):
+            item = self.list_episodes.item(i)
+            widget = self.list_episodes.itemWidget(item)
+            if widget:
+                widget.set_style(item.isSelected())
 
     def refresh_projects(self):
         """프로젝트 폴더를 스캔하여 좌측 리스트를 갱신"""
@@ -1075,29 +1661,75 @@ class ProjectManagementDialog(QDialog):
             titles = sorted([d for d in os.listdir(PROJECTS_DIR) 
                            if os.path.isdir(os.path.join(PROJECTS_DIR, d))])
             self.list_titles.addItems(titles)
+        self.load_episodes("") # 초기화
 
     def load_episodes(self, title):
-        """선택한 작품의 회차 목록을 우측 리스트에 표시"""
+        """선택한 작품의 회차 목록을 우측 리스트에 표시 (커스텀 위젯 적용)"""
         self.list_episodes.clear()
-        if not title: return
+        if not title:
+            self.epi_stack.setCurrentIndex(0)
+            return
         
+        self.epi_stack.setCurrentIndex(1)
         t_path = os.path.join(PROJECTS_DIR, title)
         if os.path.exists(t_path):
             episodes = sorted([d for d in os.listdir(t_path) 
                              if os.path.isdir(os.path.join(t_path, d))])
             
             for epi in episodes:
-                img_path = os.path.join(t_path, epi, "images")
-                # '준비됨' 대신 더 직관적인 상태 표시
-                status = "✅ 생성완료" if os.path.exists(img_path) and os.listdir(img_path) else "⏳ 대기중"
-                self.list_episodes.addItem(f"{epi}  |  {status}")
+                epi_dir = os.path.join(t_path, epi)
+                img_path = os.path.join(epi_dir, "images")
+                script_path = os.path.join(epi_dir, "script_data.csv")
+                
+                # 3단계 상태 로직
+                has_images = os.path.exists(img_path) and os.listdir(img_path)
+                has_txt = os.path.exists(os.path.join(epi_dir, "script.txt"))
+                has_csv = os.path.exists(os.path.join(epi_dir, "script_data.csv"))
+                
+                if not has_images:
+                    status = "대기중"
+                elif not (has_txt or has_csv):
+                    status = "분석 대기중"
+                else:
+                    status = "분석 완료"
+                
+                item = QListWidgetItem(self.list_episodes)
+                widget = EpisodeItemWidget(epi, status)
+                item.setSizeHint(QSize(0, 60)) # [수정] 60px로 조정
+                self.list_episodes.addItem(item)
+                self.list_episodes.setItemWidget(item, widget)
+                # 데이터 보관용
+                item.setData(Qt.UserRole, epi)
 
     def add_title(self):
         name, ok = QInputDialog.getText(self, "작품 추가", "새로운 작품 이름을 입력하세요:")
         if ok and name.strip():
             path = os.path.join(PROJECTS_DIR, name.strip())
+            if os.path.exists(path):
+                QMessageBox.warning(self, "중복", "이미 존재하는 작품 이름입니다.")
+                return
             os.makedirs(path, exist_ok=True)
             self.refresh_projects()
+
+    def rename_title(self):
+        current_item = self.list_titles.currentItem()
+        if not current_item: return
+        
+        old_name = current_item.text()
+        new_name, ok = QInputDialog.getText(self, "작품 이름 변경", f"'{old_name}'의 새로운 이름:", text=old_name)
+        if ok and new_name.strip() and new_name.strip() != old_name:
+            old_path = os.path.join(PROJECTS_DIR, old_name)
+            new_path = os.path.join(PROJECTS_DIR, new_name.strip())
+            
+            if os.path.exists(new_path):
+                QMessageBox.warning(self, "중복", "이미 존재하는 이름입니다.")
+                return
+            
+            try:
+                os.rename(old_path, new_path)
+                self.refresh_projects()
+            except Exception as e:
+                QMessageBox.critical(self, "오류", f"이름 변경 실패: {e}")
 
     def delete_title(self):
         """작품 삭제: 폴더 존재 여부를 체크하여 에러 방지"""
@@ -1112,22 +1744,13 @@ class ProjectManagementDialog(QDialog):
         
         if reply == QMessageBox.Yes:
             project_path = os.path.join(PROJECTS_DIR, title)
-            
             try:
-                # 1. 실제 폴더가 존재하는지 먼저 확인!
                 if os.path.exists(project_path):
+                    import shutil
                     shutil.rmtree(project_path)
-                    print(f"물리적 삭제 완료: {project_path}")
-                else:
-                    # 폴더가 없으면 메시지만 출력하고 넘어감
-                    print(f"이미 삭제된 폴더입니다: {project_path}")
-
-                # 2. 어떤 경우든 UI 리스트는 최신화 (유령 항목 제거)
                 self.refresh_projects()
-                self.list_episodes.clear()
-                
             except Exception as e:
-                QMessageBox.critical(self, "삭제 오류", f"삭제 중 예상치 못한 오류 발생:\n{e}")
+                QMessageBox.critical(self, "삭제 오류", f"삭제 중 오류 발생:\n{e}")
 
     def add_episode(self):
         title_item = self.list_titles.currentItem()
@@ -1137,42 +1760,151 @@ class ProjectManagementDialog(QDialog):
         name, ok = QInputDialog.getText(self, "회차 추가", f"[{title}]의 새로운 회차 이름:")
         if ok and name.strip():
             path = os.path.join(PROJECTS_DIR, title, name.strip(), "images")
+            if os.path.exists(os.path.join(PROJECTS_DIR, title, name.strip())):
+                QMessageBox.warning(self, "중복", "이미 존재하는 회차입니다.")
+                return
             os.makedirs(path, exist_ok=True)
             self.load_episodes(title)
 
-    def delete_episode(self):
-        """회차 삭제 로직: 폴더 존재 여부를 체크하여 유령 항목 에러 방지"""
+    def rename_episode(self):
         title_item = self.list_titles.currentItem()
         epi_item = self.list_episodes.currentItem()
+        if not title_item or not epi_item: return
         
-        if title_item and epi_item:
-            title = title_item.text()
-            # "55화 | ✅ 생성완료" 형태에서 회차명(55화)만 추출
-            epi = epi_item.text().split('|')[0].strip()
+        title = title_item.text()
+        old_name = epi_item.data(Qt.UserRole)
+        new_name, ok = QInputDialog.getText(self, "회차 이름 변경", f"'{old_name}'의 새로운 이름:", text=old_name)
+        
+        if ok and new_name.strip() and new_name.strip() != old_name:
+            old_path = os.path.join(PROJECTS_DIR, title, old_name)
+            new_path = os.path.join(PROJECTS_DIR, title, new_name.strip())
             
-            reply = QMessageBox.warning(self, "회차 삭제", 
-                                      f"'{epi}' 회차의 모든 데이터를 삭제하시겠습니까?",
-                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if os.path.exists(new_path):
+                QMessageBox.warning(self, "중복", "이미 존재하는 이름입니다.")
+                return
             
-            if reply == QMessageBox.Yes:
-                # 삭제할 회차의 전체 경로 생성
-                epi_path = os.path.join(PROJECTS_DIR, title, epi)
-                
-                try:
-                    # 1. [핵심] 폴더가 실제로 하드디스크에 존재하는지 확인
-                    if os.path.exists(epi_path):
-                        shutil.rmtree(epi_path)
-                        print(f"회차 삭제 완료: {epi_path}")
-                    else:
-                        # 폴더가 없더라도 당황하지 않고 리스트에서만 지우도록 유도
-                        print(f"이미 삭제된 경로입니다: {epi_path}")
+            try:
+                os.rename(old_path, new_path)
+                self.load_episodes(title)
+            except Exception as e:
+                QMessageBox.critical(self, "오류", f"이름 변경 실패: {e}")
 
-                    # 2. 어떤 경우든 UI 리스트를 새로고침하여 '유령 항목' 제거
-                    self.load_episodes(title)
-                    
-                except Exception as e:
-                    # 권한 문제나 파일 사용 중일 때를 대비한 알림
-                    QMessageBox.critical(self, "삭제 오류", f"회차 삭제 중 오류가 발생했습니다:\n{e}")
+    def show_episode_context_menu(self, pos):
+        item = self.list_episodes.itemAt(pos)
+        if not item: return
+        
+        title_item = self.list_titles.currentItem()
+        if not title_item: return
+        
+        title = title_item.text()
+        epi_name = item.data(Qt.UserRole)
+        epi_dir = os.path.join(PROJECTS_DIR, title, epi_name)
+        
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu { 
+                background-color: white; 
+                border: 1px solid #D1D5DB; 
+                border-radius: 0px; 
+                padding: 3px; 
+            }
+            QMenu::item { 
+                padding: 8px 10px 8px 22px; 
+                border-radius: 4px; 
+                color: #374151; 
+                font-size: 14px;
+                margin: 2px 5px;
+            }
+            QMenu::icon {
+                position: absolute;
+                left: 12px;
+            }
+            QMenu::item:selected { 
+                background-color: #FFECEC; 
+                color: #FF4B4B; 
+            }
+            QMenu::item:disabled { 
+                color: #D1D5DB; 
+            }
+            QMenu::separator { 
+                height: 1px; 
+                background: #E5E7EB; 
+                margin: 5px 10px; 
+            }
+        """)
+        
+        # 1. 폴더 이동
+        action_open_folder = menu.addAction(get_icon(config.ICON_FOLDER), "폴더 열기")
+        
+        # 2. 이미지 보기
+        action_view_image = menu.addAction(get_icon(config.ICON_FILE), "이미지 보기")
+        
+        # 3. 텍스트 파일 저장
+        action_save_text = menu.addAction(get_icon(config.ICON_SAVE), "텍스트 파일 저장")
+        txt_path = os.path.join(epi_dir, "script.txt")
+        if not os.path.exists(txt_path):
+            action_save_text.setEnabled(False)
+            
+        # 4. 엑셀 파일 저장
+        action_save_excel = menu.addAction(get_icon(config.ICON_EXCEL), "엑셀 파일 저장")
+        csv_path = os.path.join(epi_dir, "script_data.csv")
+        if not os.path.exists(csv_path):
+            action_save_excel.setEnabled(False)
+            
+        menu.addSeparator()
+        
+        # 5. 회차 삭제
+        action_delete = menu.addAction(get_icon(config.ICON_DELETE), "회차 삭제")
+        
+        action = menu.exec_(self.list_episodes.mapToGlobal(pos))
+        
+        if action == action_open_folder:
+            if os.path.exists(epi_dir):
+                os.startfile(epi_dir)
+        elif action == action_view_image:
+            viewer = ImageViewerDialog(epi_dir, self)
+            viewer.exec_()
+        elif action == action_save_text:
+            if os.path.exists(txt_path):
+                save_path, _ = QFileDialog.getSaveFileName(self, "텍스트 파일 저장", f"{title}_{epi_name}_텍스트.txt", "Text Files (*.txt)")
+                if save_path:
+                    import shutil
+                    try:
+                        shutil.copy2(txt_path, save_path)
+                        QMessageBox.information(self, "저장 완료", "텍스트 파일이 저장되었습니다.")
+                    except Exception as e:
+                        QMessageBox.critical(self, "저장 실패", f"파일 저장 중 오류가 발생했습니다:\\n{e}")
+        elif action == action_save_excel:
+            from excel_handler import export_episode_to_excel_core
+            # 메인화면과 동일한 로직(템플릿 적용, 드롭다운 적용 등)으로 엑셀 저장
+            main_window = self.parent() if hasattr(self.parent(), 'toast') else self
+            export_episode_to_excel_core(self, epi_dir, title, epi_name, toast_target=main_window)
+        elif action == action_delete:
+            # 삭제 대상 선택 후 기존 삭제 로직 호출
+            self.list_episodes.setCurrentItem(item)
+            self.delete_episode()
+
+    def delete_episode(self):
+        title_item = self.list_titles.currentItem()
+        epi_item = self.list_episodes.currentItem()
+        if not title_item or not epi_item: return
+        
+        title = title_item.text()
+        epi_name = epi_item.data(Qt.UserRole)
+        
+        reply = QMessageBox.warning(self, "회차 삭제", 
+                                  f"⚠️ '{epi_name}'의 모든 데이터가 삭제됩니다.\n진행하시겠습니까?",
+                                  QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        
+        if reply == QMessageBox.Yes:
+            epi_path = os.path.join(PROJECTS_DIR, title, epi_name)
+            try:
+                if os.path.exists(epi_path):
+                    import shutil
+                    shutil.rmtree(epi_path)
+                self.load_episodes(title)
+            except Exception as e:
+                QMessageBox.critical(self, "오류", f"삭제 중 오류 발생:\n{e}")
 
 
 # [main.py] FileDropListWidget 클래스 (수정)
@@ -1574,6 +2306,8 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("API 키 프리셋 관리")
         self.setFixedSize(550, 400)
+        # MSWindowsFixedSizeDialogHint를 사용하여 윈도우 네이티브 비활성화 처리 시도
+        self.setWindowFlags(Qt.Dialog | Qt.MSWindowsFixedSizeDialogHint | Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint)
         
         self.local_presets = config.API_PRESETS.copy()
         self.local_active = config.ACTIVE_PRESET_NAME

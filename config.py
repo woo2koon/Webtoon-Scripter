@@ -21,6 +21,7 @@ MY_DEFAULT_AI_KEY = ""   # <-- 여기에 직접 입력하지 마세요!
 
 # 1. 앱 이름 (이 이름으로 사용자의 컴퓨터에 폴더가 생깁니다)
 APP_NAME = "Webtoon_Script_Manager"
+APP_VERSION = "2.1.0"
 
 if getattr(sys, 'frozen', False):
     # [읽기전용] EXE 내부에 압축된 아이콘 등 (임시 폴더)
@@ -71,6 +72,8 @@ ICON_ARROW_UP = os.path.join(ASSETS_DIR, "arrow-up.svg")
 ICON_ARROW_DOWN = os.path.join(ASSETS_DIR, "arrow-down.svg")
 ICON_KEY = os.path.join(ASSETS_DIR, "key.svg")
 ICON_MENU = os.path.join(ASSETS_DIR, "menu.svg")
+ICON_UNDO = os.path.join(ASSETS_DIR, "undo.svg")
+ICON_REDO = os.path.join(ASSETS_DIR, "redo.svg")
 # =================================================================
 
 OCR_API_KEY = ""
@@ -230,8 +233,8 @@ QMenu::icon {
 }
 
 QMenu::item:selected { 
-    background-color: #ff4b4b; 
-    color: white; 
+    background-color: #FFECEC; 
+    color: #FF4B4B; 
 }
 
 QMenu::separator {

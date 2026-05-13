@@ -21,11 +21,28 @@ def export_to_excel(main_window):
     try:
         main_window.save_char_data()
         main_window.save_script_data()
+        
+        export_episode_to_excel_core(main_window, e_path, main_window.current_title, main_window.current_episode, toast_target=main_window)
+    except Exception as e:
+        QMessageBox.critical(main_window, "오류", f"저장 중 오류 발생: {e}")
+
+def export_episode_to_excel_core(parent_widget, e_path, title, episode, toast_target=None):
+    """
+    지정된 회차의 CSV를 읽어 엑셀로 내보내는 핵심 로직.
+    """
+    try:
         c_csv = os.path.join(e_path, "character_info.csv")
         s_csv = os.path.join(e_path, "script_data.csv")
         
-        char_df = pd.read_csv(c_csv, keep_default_na=False)
-        script_df = pd.read_csv(s_csv, keep_default_na=False)
+        if os.path.exists(c_csv):
+            char_df = pd.read_csv(c_csv, keep_default_na=False)
+        else:
+            char_df = pd.DataFrame(columns=['Character', 'Age', 'Gender', 'Role'])
+            
+        if os.path.exists(s_csv):
+            script_df = pd.read_csv(s_csv, keep_default_na=False)
+        else:
+            script_df = pd.DataFrame(columns=['Character', 'Line'])
         
         if not os.path.exists(config.TEMPLATE_PATH): restore_template()
         wb = load_workbook(config.TEMPLATE_PATH)
@@ -67,11 +84,12 @@ def export_to_excel(main_window):
                     copy_style(src_cells[1], c2)
                     copy_style(src_cells[2], c3)
         
-        save_path, _ = QFileDialog.getSaveFileName(main_window, "엑셀 저장", os.path.join(e_path, f"{main_window.current_title}_{main_window.current_episode}_스크립트.xlsx"), "Excel Files (*.xlsx)")
+        save_path, _ = QFileDialog.getSaveFileName(parent_widget, "엑셀 저장", os.path.join(e_path, f"{title}_{episode}_스크립트.xlsx"), "Excel Files (*.xlsx)")
         
         if save_path:
-            main_window.toast.show_message("💾 엑셀 파일 저장 및 최적화 중...", 10000)
-            main_window.toast.opacity_effect.setOpacity(1.0)
+            if toast_target and hasattr(toast_target, 'toast'):
+                toast_target.toast.show_message("💾 엑셀 파일 저장 및 최적화 중...", 10000)
+                toast_target.toast.opacity_effect.setOpacity(1.0)
             QApplication.processEvents()
             QApplication.processEvents()
             
@@ -124,9 +142,11 @@ def export_to_excel(main_window):
             shutil.move(temp_file_path, final_nas_path)
             
             if auto_save_success:
-                main_window.toast.show_message("📄 엑셀파일 추출 완료", 3000)
+                if toast_target and hasattr(toast_target, 'toast'):
+                    toast_target.toast.show_message("📄 엑셀파일 추출 완료", 3000)
             else:
-                main_window.toast.show_message("⚠️ 추출 완료 (수동 저장 필요)", 4000)
+                if toast_target and hasattr(toast_target, 'toast'):
+                    toast_target.toast.show_message("⚠️ 추출 완료 (수동 저장 필요)", 4000)
                 try:
                     if sys.platform == "win32":
                         os.startfile(final_nas_path)
@@ -137,4 +157,4 @@ def export_to_excel(main_window):
                     print(f"파일 열기 실패: {e}")
 
     except Exception as e:
-        QMessageBox.critical(main_window, "오류", f"저장 중 오류 발생: {e}")
+        QMessageBox.critical(parent_widget, "오류", f"저장 중 오류 발생: {e}")
