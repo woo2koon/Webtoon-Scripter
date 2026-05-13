@@ -1108,20 +1108,20 @@ class WebtoonManager(QMainWindow):
         self.btn_simple_start = QToolButton()
         self.btn_simple_start.setText("분석 시작")
         self.btn_simple_start.setPopupMode(QToolButton.MenuButtonPopup)
-        self.btn_simple_start.setFixedSize(140, 34)
+        self.btn_simple_start.setFixedSize(140, 32)
         self.btn_simple_start.setCursor(Qt.PointingHandCursor)
         self.btn_simple_start.setStyleSheet("""
             QToolButton {
                 background-color: #FF5722; color: white;
-                font-weight: bold; border-radius: 6px; font-size: 14px; border: none;
+                font-weight: bold; border-radius: 4px; font-size: 14px; border: none;
                 padding-right: 30px;
             }
             QToolButton:hover { background-color: #F97316; }
             QToolButton::menu-button {
                 border-left: 1px solid rgba(255, 255, 255, 0.4);
                 width: 30px;
-                border-top-right-radius: 6px;
-                border-bottom-right-radius: 6px;
+                border-top-right-radius: 4px;
+                border-bottom-right-radius: 4px;
             }
             QToolButton::menu-arrow {
                 subcontrol-position: center center;
@@ -1560,8 +1560,10 @@ class WebtoonManager(QMainWindow):
             """)
             self.clear_workspace()
             self.load_images()
+            self.load_data()
+            
             if show_toast:
-                self.toast.show_message("📦 프로젝트 모드로 돌아왔습니다.", 3000)
+                self.toast.show_message("🏢 전체 모드로 전환되었습니다.", 3000)
                 
         # 상태를 설정 파일에 저장
         config.save_settings(config.API_PRESETS, config.ACTIVE_PRESET_NAME, is_simple_mode=self.is_simple_mode)
@@ -2278,6 +2280,11 @@ class WebtoonManager(QMainWindow):
 if __name__ == "__main__":
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.Round)
     app = QApplication(sys.argv)
+    
+    # [추가] 메뉴 및 드롭다운 애니메이션 효과 끄기 (즉시 표시)
+    app.setEffectEnabled(Qt.UI_AnimateMenu, False)
+    app.setEffectEnabled(Qt.UI_AnimateCombo, False)
+    app.setEffectEnabled(Qt.UI_AnimateTooltip, False) # 툴팁도 즉시 나타나게 함
     
     app.setFont(QFont("Pretendard", 10))
     

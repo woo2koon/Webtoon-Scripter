@@ -241,11 +241,29 @@ QMenu::separator {
 }
 QWidget#Sidebar { background-color: #f8f9fa; border-right: 1px solid #e0e0e0; }
 QLabel#SidebarTitle { font-size: 16px; font-weight: bold; color: #1f2937; margin: 10px 0; }
-QLabel#LabelBold { font-weight: bold; color: #555; margin-bottom: 4px; }
-QLineEdit, QComboBox { font-family: 'Pretendard'; border: 1px solid #d1d5db; border-radius: 4px; background-color: #ffffff; min-height: 36px; padding-left: 10px; color: #333; }
+QLineEdit, QComboBox { 
+    font-family: 'Pretendard'; 
+    border: 1px solid #d1d5db; 
+    border-radius: 6px; 
+    background-color: #ffffff; 
+    min-height: 38px; 
+    padding-left: 12px; 
+    color: #333; 
+}
 QLineEdit:focus, QComboBox:focus, QComboBox:on { border: 1px solid #ff4b4b; }
-QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 30px; border-left: 1px solid #f0f0f0; background-color: transparent; }
-QComboBox::down-arrow { image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMCAYAAABWdVznAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAVklEQVR4nGP8//8/AyUYiBEwYFPIzMz8j0uPhYGBgQmXIgZ0A6gV/6H4P7p8Fqp8FqrikA2gO4GBAZuFDMzMzP9RxHBKMeBTxIAPo0k2C+RZgM0EZEUAMtwfyna046AAAAAASUVORK5CYII=); width: 12px; height: 12px; opacity: 0.6; }
+
+QComboBox::drop-down { 
+    border: none; 
+    background-color: #f9fafb; 
+    width: 30px; 
+    border-top-right-radius: 5px; 
+    border-bottom-right-radius: 5px; 
+}
+QComboBox::down-arrow { 
+    image: url(assets/dropdown-arrow.svg);
+    width: 12px; 
+    height: 12px; 
+}
 QComboBox QAbstractItemView { font-family: 'Pretendard'; border: 1px solid #d1d5db; border-radius: 4px; background-color: white; selection-background-color: #ffecec; selection-color: #ff4b4b; outline: none; }
 QComboBox QAbstractItemView::item { font-family: 'Pretendard'; min-height: 30px; padding: 5px; margin: 2px 0px; }
 QTableWidget { border: 1px solid #d1d5db; gridline-color: #d0d0d0; font-family: 'Pretendard', 'AppleGothic'; font-size: 10pt; selection-background-color: transparent; selection-color: black; }

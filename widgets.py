@@ -45,13 +45,22 @@ class ClickableComboBox(QComboBox):
         super().__init__(parent)
         self.setEditable(True) 
         self.lineEdit().setReadOnly(True)
-        self.lineEdit().setCursor(Qt.PointingHandCursor)
+        self.lineEdit().setCursor(Qt.ArrowCursor)
         self.lineEdit().installEventFilter(self)
         self.setView(QListView())
         
         delegate = QStyledItemDelegate()
         self.setItemDelegate(delegate)
         self.refresh_callback = None 
+        self._popup_hidden_recently = False
+
+    def hidePopup(self):
+        super().hidePopup()
+        self._popup_just_hidden = True
+        QTimer.singleShot(50, self._clear_popup_just_hidden)
+
+    def _clear_popup_just_hidden(self):
+        self._popup_just_hidden = False
 
     def wheelEvent(self, event):
         # 이벤트를 ignore() 하면 콤보박스 값이 바뀌는 대신, 
@@ -63,22 +72,19 @@ class ClickableComboBox(QComboBox):
 
     def eventFilter(self, obj, event):
         if obj == self.lineEdit():
-            import sys
-            is_mac = sys.platform == "darwin"
+            if event.type() == QEvent.MouseButtonPress:
+                if getattr(self, '_popup_just_hidden', False):
+                    # 마우스 클릭으로 인해 방금 팝업이 닫혔다면, 다가오는 릴리스 이벤트를 무시합니다.
+                    self._ignore_next_release = True
+                    self._popup_just_hidden = False
+                return True
             
-            if is_mac:
-                # Mac: Press 시 팝업을 열면 곧이은 Release 이벤트를 팝업창이 흡수해 즉시 닫히는 현상 발생
-                # 따라서 Press 이벤트를 먹어치우고(소비), 실제 팝업 오픈은 Release에서 처리
-                if event.type() == QEvent.MouseButtonPress:
-                    return True
-                elif event.type() == QEvent.MouseButtonRelease:
+            elif event.type() == QEvent.MouseButtonRelease:
+                if getattr(self, '_ignore_next_release', False):
+                    self._ignore_next_release = False
+                else:
                     self._toggle_popup()
-                    return True
-            else:
-                # Windows 등: 기존처럼 Press에서 바로 열어도 무방함
-                if event.type() == QEvent.MouseButtonPress:
-                    self._toggle_popup()
-                    return True
+                return True
                     
         return super().eventFilter(obj, event)
 
@@ -330,7 +336,14 @@ class CharacterRow(QFrame):
         FULL_COMBO_STYLE = f"""
             QComboBox {{ {BASIC_BOX_STYLE} }}
             QComboBox:focus {{ {FOCUS_STYLE} }}
-            QComboBox::drop-down {{ border: none; width: 30px; background: transparent; }}
+            QComboBox::drop-down {{ 
+                border: none; background-color: #f9fafb; width: 30px; 
+                border-top-right-radius: 5px; border-bottom-right-radius: 5px; 
+            }}
+            QComboBox::down-arrow {{ 
+                image: url(assets/dropdown-arrow.svg);
+                width: 12px; height: 12px; 
+            }}
             QComboBox QAbstractItemView {{ font-family: 'Pretendard'; background-color: white; border: 1px solid #d1d5db; selection-background-color: #ffecec; selection-color: #ff4b4b; outline: none; padding: 4px; }}
             QComboBox QAbstractItemView::item {{ min-height: 35px; padding: 5px; margin: 2px 0px; }}
         """
