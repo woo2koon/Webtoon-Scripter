@@ -46,7 +46,7 @@ restore_template()
 
 
 
-from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog
+from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog
 
 # 메인 윈도우
 # =======================================================
@@ -64,6 +64,8 @@ class WebtoonManager(QMainWindow):
         
         self.init_ui()
         self.refresh_project_list()
+        self.idiom_shortcuts = []
+        self.setup_idiom_shortcuts()
 
         self.sidebar_anim = QPropertyAnimation(self.sidebar, b"maximumWidth")
         self.sidebar_anim.setDuration(300)
@@ -75,6 +77,9 @@ class WebtoonManager(QMainWindow):
         self.shortcut_sidebar.activated.connect(self.toggle_sidebar)
 
         self.update_button_pos()
+        
+        # [추가] 모든 UI가 생성된 후 API 호출수 로드
+        self.load_api_count()
         
         # 앱 실행 시 기존 작업 내역 확인 및 모드 복원
         # 2단계: 모드 체크 및 기존 작업 확인 (지연 호출)
@@ -367,7 +372,8 @@ class WebtoonManager(QMainWindow):
                 background-color: white; 
                 color: black; 
                 border: 1px solid #D1D5DB; 
-                padding: 5px; 
+                padding: 3px 8px; 
+                border-radius: 4px;
                 font-family: 'Pretendard'; 
                 font-size: 12px;
             }
@@ -379,7 +385,8 @@ class WebtoonManager(QMainWindow):
                 background-color: #374151; 
                 color: white; 
                 border: 1px solid #1F2937;
-                padding: 4px;
+                padding: 3px 8px;
+                border-radius: 4px;
                 border-radius: 4px;
                 font-size: 12px;
             }
@@ -622,7 +629,8 @@ class WebtoonManager(QMainWindow):
                 background-color: white; 
                 color: black; 
                 border: 1px solid #D1D5DB; 
-                padding: 5px; 
+                padding: 3px 8px; 
+                border-radius: 4px;
                 font-family: 'Pretendard'; 
                 font-size: 12px;
             }
@@ -1162,7 +1170,8 @@ class WebtoonManager(QMainWindow):
                 background-color: white; 
                 color: black; 
                 border: 1px solid #D1D5DB; 
-                padding: 5px; 
+                padding: 3px 8px; 
+                border-radius: 4px;
                 font-family: 'Pretendard'; 
                 font-size: 12px;
             }
@@ -1469,6 +1478,15 @@ class WebtoonManager(QMainWindow):
 
         # 설정 메뉴
         settings_menu = menubar.addMenu("설정(&S)")
+
+        # [순서 변경] 관용구 설정을 맨 위로
+        action_idiom = QAction("관용구(지문) 설정", self)
+        action_idiom.triggered.connect(self.open_idiom_settings_dialog)
+        settings_menu.addAction(action_idiom)
+
+        settings_menu.addSeparator()
+
+        # API 키 설정을 아래로
         action_settings = QAction("API 키 설정", self)
         action_settings.setShortcut("Ctrl+,")
         action_settings.triggered.connect(self.open_settings_dialog)
@@ -1477,6 +1495,39 @@ class WebtoonManager(QMainWindow):
     def open_settings_dialog(self):
         dlg = SettingsDialog(self)
         dlg.exec()
+
+    def open_idiom_settings_dialog(self):
+        dlg = IdiomSettingsDialog(self)
+        if dlg.exec() == QDialog.Accepted:
+            self.setup_idiom_shortcuts()
+            self.toast.show_message("✅ 관용구 설정이 저장되었습니다.", 2000)
+
+    def setup_idiom_shortcuts(self):
+        """설정된 관용구들에 대해 Alt + 숫자 단축키를 생성합니다."""
+        # 기존 단축키 제거
+        for sc in self.idiom_shortcuts:
+            sc.setEnabled(False)
+            sc.deleteLater()
+        self.idiom_shortcuts = []
+
+        # 신규 단축키 등록
+        for item in config.IDIOMS:
+            key_seq = f"Alt+{item['key']}"
+            shortcut = QShortcut(QKeySequence(key_seq), self)
+            # lambda 캡처 문제를 피하기 위해 default value 사용
+            shortcut.activated.connect(lambda t=item['text']: self.handle_idiom_trigger(t))
+            self.idiom_shortcuts.append(shortcut)
+
+    def handle_idiom_trigger(self, text):
+        """단축키가 눌렸을 때의 동작: 포커스된 에디터가 있으면 삽입, 없으면 클립보드 복사"""
+        focused_widget = QApplication.focusWidget()
+        
+        # 1. 텍스트 입력 위젯(SmartTextEdit, QTextEdit, QLineEdit 등)인 경우
+        if isinstance(focused_widget, (QTextEdit, QLineEdit, SmartTextEdit)):
+            focused_widget.insertPlainText(text) if hasattr(focused_widget, 'insertPlainText') else focused_widget.insert(text)
+        else:
+            # 2. 그 외의 경우 클립보드에 복사
+            QApplication.clipboard().setText(text)
 
     def toggle_simple_mode(self, show_toast=True, check_work=True):
         # 모드 전환 전 현재 모드의 스크롤 위치 저장
@@ -1488,6 +1539,11 @@ class WebtoonManager(QMainWindow):
             self.action_simple_mode.setText("전체 모드 전환" if self.is_simple_mode else "심플 모드 전환")
         if hasattr(self, 'action_new_simple'):
             self.action_new_simple.setVisible(self.is_simple_mode)
+        
+        # [수정] 위젯이 존재하는지 확인 후 로드
+        if hasattr(self, 'lbl_api_count'):
+            self.load_api_count()
+            
         if self.is_simple_mode:
             self.sidebar.hide()
             self.btn_toggle.hide()
@@ -1665,8 +1721,9 @@ class WebtoonManager(QMainWindow):
         self.load_images()
         self.load_data()
         
-        # [추가] 새 회차의 스크롤 위치 복구
+        # [추가] 새 회차의 스크롤 위치 복구 및 API 호출수 불러오기
         self.load_viewer_state()
+        self.load_api_count()
 
     def save_viewer_state(self):
         """현재 웹툰 뷰어의 스크롤 위치(비율)를 파일로 저장합니다."""
@@ -1934,7 +1991,45 @@ class WebtoonManager(QMainWindow):
 
     def increment_api_counter(self):
         self.api_call_count += 1
-        self.lbl_api_count.setText(f"{self.api_call_count}회")
+        if hasattr(self, 'lbl_api_count'):
+            self.lbl_api_count.setText(f"{self.api_call_count}회")
+        self.save_api_count() # [추가] 호출 시마다 즉시 저장
+
+    def load_api_count(self):
+        """현재 회차의 API 호출 수를 파일에서 불러옵니다."""
+        self.api_call_count = 0
+        try:
+            if getattr(self, 'is_simple_mode', False):
+                e_path = os.path.join(CACHE_DIR, "simple_mode")
+            else:
+                e_path, _, _ = self.get_paths()
+            
+            if e_path and os.path.exists(os.path.join(e_path, "api_count.json")):
+                import json
+                with open(os.path.join(e_path, "api_count.json"), "r", encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.api_call_count = data.get("api_call_count", 0)
+        except Exception as e:
+            print(f"Error loading API count: {e}")
+        
+        if hasattr(self, 'lbl_api_count'):
+            self.lbl_api_count.setText(f"{self.api_call_count}회")
+
+    def save_api_count(self):
+        """현재 회차의 API 호출 수를 파일로 저장합니다."""
+        try:
+            if getattr(self, 'is_simple_mode', False):
+                e_path = os.path.join(CACHE_DIR, "simple_mode")
+            else:
+                e_path, _, _ = self.get_paths()
+            
+            if e_path:
+                os.makedirs(e_path, exist_ok=True)
+                import json
+                with open(os.path.join(e_path, "api_count.json"), "w", encoding='utf-8') as f:
+                    json.dump({"api_call_count": self.api_call_count}, f)
+        except Exception as e:
+            print(f"Error saving API count: {e}")
 
     def on_ocr_finished(self, lines):
         text = "\n".join(lines)
@@ -2012,7 +2107,9 @@ class WebtoonManager(QMainWindow):
 
         self.table_script.setCellWidget(row_idx, 0, combo)
         self.table_script.setItem(row_idx, 1, QTableWidgetItem(""))
-        self.save_script_data()
+        
+        # [추가] 행 추가 직후 즉시 저장은 충돌 위험이 있으므로 아주 짧게 지연 호출
+        QTimer.singleShot(10, self.save_script_data)
 
     def get_character_list(self):
         chars = []
@@ -2234,11 +2331,46 @@ class WebtoonManager(QMainWindow):
         if not content.strip():
             self.toast.show_message("⚠️ 저장할 텍스트 내용이 없습니다.", 2000) # 토스트 사용
             return
-        default_name = "script.txt"
         if self.current_title and self.current_episode:
-            default_name = f"{self.current_title}_{self.current_episode}_전체텍스트.txt"
-        save_path, _ = QFileDialog.getSaveFileName(self, "텍스트 파일로 저장", default_name, "Text Files (*.txt);;All Files (*)")
+            default_filename = f"{self.current_title}_{self.current_episode}_텍스트.txt"
+        else:
+            default_filename = "script.txt"
+            
+        # 마지막 저장 경로를 고려한 기본 경로 설정
+        default_path = os.path.join(config.get_initial_dir(), default_filename)
+        
+        # [맥 네이티브 창 복구]
+        options = QFileDialog.Option(0) if platform.system() == "Darwin" else QFileDialog.DontConfirmOverwrite
+        save_path, _ = QFileDialog.getSaveFileName(self, "텍스트 파일로 저장", default_path, "Text Files (*.txt);;All Files (*)", options=options)
+        
         if save_path:
+            config.update_last_save_dir(save_path)
+            if os.path.exists(save_path):
+                msg_box = QMessageBox(self)
+                msg_box.setWindowTitle("파일 중복 확인")
+                msg_box.setText(f"'{os.path.basename(save_path)}' 파일이 이미 존재합니다.")
+                msg_box.setInformativeText("기존 파일을 대체할까요, 아니면 새 이름으로 저장할까요?")
+                
+                # 버튼 순서 조정: [덮어쓰기] [새 이름으로 저장] [취소]
+                btn_yes = msg_box.addButton("덮어쓰기", QMessageBox.ActionRole)
+                btn_rename = msg_box.addButton("새 이름으로 저장", QMessageBox.ActionRole)
+                btn_cancel = msg_box.addButton("취소", QMessageBox.RejectRole)
+                msg_box.setDefaultButton(btn_rename)
+                
+                msg_box.exec()
+                clicked = msg_box.clickedButton()
+                
+                if clicked == btn_yes:
+                    pass 
+                elif clicked == btn_rename:
+                    base, ext = os.path.splitext(save_path)
+                    counter = 1
+                    while os.path.exists(f"{base}({counter}){ext}"):
+                        counter += 1
+                    save_path = f"{base}({counter}){ext}"
+                else: # 취소
+                    return
+
             try:
                 with open(save_path, 'w', encoding='utf-8') as f: f.write(content)
                 self.toast.show_message("✅ 텍스트 파일이 저장되었습니다!", 2000) # 토스트 사용
@@ -2387,20 +2519,15 @@ if __name__ == "__main__":
 
     TOOLTIP_STYLE = """
         QToolTip {
-        /* background-color가 아닌 background 속성 사용 */
         background: #2D3748; 
         color: white;
-        
-        /* ★ 테두리를 반드시 1px 이상 주어야 배경이 나타납니다 */
         border: 1px solid #FFFFFF; 
-        border-radius: 0px; /* 둥근 모서리보다 '표시' 우선을 위해 일단 0 */
-        
-        padding: 10px;
+        border-radius: 4px;
+        padding: 3px 8px;
         font-family: 'Pretendard';
         font-size: 13px;
     }
 """
-
     app.setStyleSheet(MODERN_STYLE + "\n" + TOOLTIP_STYLE)
     
     window = WebtoonManager()

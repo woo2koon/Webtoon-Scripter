@@ -1,6 +1,7 @@
 # ai_worker.py
 import requests
 import json
+import time
 from PySide6.QtCore import QThread, Signal
 import config 
 
@@ -13,6 +14,7 @@ class SpellCheckWorker(QThread):
         self.original_text = original_text
 
     def run(self):
+        start_time = time.time()
         # config에서 활성화된 키를 가져옵니다. 
         active_key = config.AI_API_KEY
         
@@ -47,17 +49,28 @@ class SpellCheckWorker(QThread):
         headers = {'Content-Type': 'application/json'}
 
         try:
-            response = requests.post(url, headers=headers, data=json.dumps(payload))
+            # 타임아웃 30초 추가
+            response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=30)
+            duration = time.time() - start_time
+            print(f"DEBUG: [SpellCheck] AI 응답 수신 완료 (소요 시간: {duration:.2f}초, 상태 코드: {response.status_code})")
+            
             if response.status_code == 200:
                 result = response.json()
                 try:
                     corrected_text = result['candidates'][0]['content']['parts'][0]['text'].strip()
                     self.finished.emit(corrected_text)
-                except (KeyError, IndexError):
-                    self.error.emit("AI 응답 해석 실패: 데이터 구조가 변경되었을 수 있습니다.")
+                except (KeyError, IndexError, TypeError):
+                    print("DEBUG: [SpellCheck] AI 응답 구조 해석 실패")
+                    self.error.emit("AI 응답 해석 실패: 데이터 구조가 변경되었거나 내용이 없습니다.")
             elif response.status_code == 429:
-                self.error.emit("AI 호출 한도 초과: 일일 할당량(500회)을 확인해주세요.")
+                print("DEBUG: [SpellCheck] AI 호출 한도 초과 (429)")
+                self.error.emit("AI 호출 한도 초과: 잠시 후 다시 시도해주세요.")
             else:
+                print(f"DEBUG: [SpellCheck] AI 호출 실패 ({response.status_code}): {response.text}")
                 self.error.emit(f"AI 호출 실패 ({response.status_code}): {response.text}")
+        except requests.exceptions.Timeout:
+            print("DEBUG: [SpellCheck] AI 응답 시간 초과 (Timeout)")
+            self.error.emit("AI 응답 시간 초과: 네트워크 상태를 확인해주세요.")
         except Exception as e:
-            self.error.emit(f"네트워크 오류: {e}")
+            print(f"DEBUG: [SpellCheck] 네트워크 오류 발생: {str(e)}")
+            self.error.emit(f"네트워크 오류: {str(e)}")

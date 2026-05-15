@@ -4,8 +4,8 @@ from PySide6.QtWidgets import (QLabel, QComboBox, QListView, QStyledItemDelegate
                                QPushButton, QWidget, QSizePolicy, QTextEdit,
                                QTableWidget, QAbstractItemView, QTableWidgetItem, QApplication, QHeaderView,
                                QGraphicsOpacityEffect, QMenu, QDialog, QVBoxLayout, QMessageBox, QInputDialog,
-                               QListWidget, QListWidgetItem, QStackedWidget, QFileDialog)
-from PySide6.QtCore import Qt, QEvent, Signal, QTimer, QSize, QEasingCurve, QPropertyAnimation, QRect, QRectF, QMimeData
+                               QListWidget, QListWidgetItem, QStackedWidget, QFileDialog, QCheckBox)
+from PySide6.QtCore import Qt, QEvent, Signal, QTimer, QSize, QEasingCurve, QPropertyAnimation, QRect, QRectF, QMimeData, QModelIndex
 from PySide6.QtGui import (
     QPixmap, QDrag, QPainter, QColor, QPen, QFont, QAction, QIcon,
     QRegion, QBrush, QLinearGradient, QTextCharFormat, QTextFormat,
@@ -15,9 +15,12 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtCore import QByteArray
 import re
 import unicodedata
+import os
+import platform
 from config import ROLE_OPTIONS, AGE_OPTIONS, GENDER_OPTIONS, PROJECTS_DIR
 from utils import get_icon, get_colored_icon
 import config
+import excel_handler
 
 # =================================================================
 # 이미지 비율 유지 라벨
@@ -530,23 +533,30 @@ class SpreadsheetTable(QTableWidget):
     def get_table_state(self):
         """현재 테이블의 전체 상태(캐릭터 콤보, 대사)를 리스트로 반환"""
         state = []
-        for r in range(self.rowCount()):
-            combo_text = ""
-            widget = self.cellWidget(r, 0)
-            if isinstance(widget, QComboBox):
-                combo_text = widget.currentText()
-            
-            item = self.item(r, 1)
-            text = item.text() if item else ""
-            
-            state.append({"combo": combo_text, "text": text})
+        try:
+            for r in range(self.rowCount()):
+                combo_text = ""
+                widget = self.cellWidget(r, 0)
+                if isinstance(widget, QComboBox):
+                    combo_text = widget.currentText()
+                
+                item = self.item(r, 1)
+                text = item.text() if item else ""
+                
+                state.append({"combo": combo_text, "text": text})
+        except Exception as e:
+            print(f"Error in get_table_state: {e}")
         return state
 
     def restore_table_state(self, state):
         """주어진 상태(state)로 테이블을 복구 (성능 최적화 버전)"""
+        # [추가] 편집 중인 에디터가 있다면 안전하게 닫기 (commitData 경고 방지)
+        if self.state() == QAbstractItemView.EditingState:
+            self.setCurrentIndex(QModelIndex()) 
+            
         self.is_undoing = True
         self.blockSignals(True)
-        self.setUpdatesEnabled(False) # [추가] 화면 갱신 일시 중지
+        self.setUpdatesEnabled(False)
         
         # 행 개수가 다르면 조정
         if self.rowCount() != len(state):
@@ -849,8 +859,11 @@ class SpreadsheetTable(QTableWidget):
                     self.setItem(r, c, QTableWidgetItem(col_text.strip()))
 
     # widgets.py 맨 아래에 추가하세요
+import re
 import difflib
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, QLabel, QPushButton, QMessageBox, QFrame, QWidget
+import time
+from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, 
+QLabel, QPushButton, QMessageBox, QFrame, QWidget)
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QTextCharFormat, QTextCursor, QColor, QFont, QTextFormat
 
@@ -891,7 +904,7 @@ class SpellCheckDialog(QDialog):
         layout = QVBoxLayout(self)
         
         # 안내 문구
-        info_label = QLabel("💡 수정된 부분에 커서를 두면 '원래대로' 되돌릴 수 있는 버튼이 나타납니다.")
+        info_label = QLabel("💡 수정된 부분에 커서를 두면 '원래대로' 되돌릴 수 있습니다 (✓: 띄어쓰기, ⁀: 붙여쓰기).")
         info_label.setStyleSheet("color: #2563EB; margin-bottom: 10px; font-weight: bold;")
         layout.addWidget(info_label)
 
@@ -981,6 +994,9 @@ class SpellCheckDialog(QDialog):
         layout.addLayout(btn_layout)
 
     def show_diff(self, text1, text2):
+        start_time = time.time()
+        print(f"DEBUG: [SpellCheck] 결과 렌더링 시작 (원본 길이: {len(text1)}, 교정본 길이: {len(text2)})")
+        
         self.diff_data = []
         d = difflib.SequenceMatcher(None, text1, text2)
         
@@ -994,83 +1010,92 @@ class SpellCheckDialog(QDialog):
         cursor_org = self.edit_org.textCursor()
         cursor_new = self.edit_new.textCursor()
         
+        diff_start = time.time()
+        opcodes = d.get_opcodes()
+        print(f"DEBUG: [SpellCheck] Diff 분석 완료 (소요 시간: {time.time() - diff_start:.4f}초, Opcode 수: {len(opcodes)})")
+        
         current_idx = 0
-        for tag, i1, i2, j1, j2 in d.get_opcodes():
+        opcodes = d.get_opcodes()
+        
+        # [기능 개선] 띄어쓰기와 글자 교정을 완벽히 분리하기 위한 정밀 분할 로직
+        def get_granular_segments(org, new, tag_type):
+            if tag_type == 'equal':
+                return [('equal', org, new)]
+            
+            # 1. 공통 접두사/접미사 추출하여 equal로 분리
+            pre_i = 0
+            while pre_i < len(org) and pre_i < len(new) and org[pre_i] == new[pre_i]:
+                pre_i += 1
+            prefix = org[:pre_i]
+            
+            suf_i = 0
+            while suf_i < len(org)-pre_i and suf_i < len(new)-pre_i and org[-1-suf_i] == new[-1-suf_i]:
+                suf_i += 1
+            suffix = org[len(org)-suf_i:] if suf_i > 0 else ""
+            
+            mid_org = org[pre_i:len(org)-suf_i] if suf_i > 0 else org[pre_i:]
+            mid_new = new[pre_i:len(new)-suf_i] if suf_i > 0 else new[pre_i:]
+            
+            res = []
+            if prefix: res.append(('equal', prefix, prefix))
+            
+            # 2. 중간 부분(실제 차이점)을 공백과 글자 단위로 강제 분리
+            if not mid_org and not mid_new:
+                pass
+            elif not mid_org:
+                for p in re.findall(r' +|[^ ]+', mid_new):
+                    res.append(('insert', '', p))
+            elif not mid_new:
+                for p in re.findall(r' +|[^ ]+', mid_org):
+                    res.append(('delete', p, ''))
+            else:
+                # 교체(replace) 구역: 공백과 글자 덩어리를 분리하여 각각 매칭
+                org_parts = re.findall(r' +|[^ ]+', mid_org)
+                new_parts = re.findall(r' +|[^ ]+', mid_new)
+                
+                o_idx = 0
+                for n_p in new_parts:
+                    if n_p.strip() == "": # 공백 덩어리인 경우
+                        if o_idx < len(org_parts) and org_parts[o_idx].strip() == "":
+                            res.append(('replace', org_parts[o_idx], n_p))
+                            o_idx += 1
+                        else:
+                            res.append(('insert', '', n_p))
+                    else: # 글자 덩어리인 경우
+                        while o_idx < len(org_parts) and org_parts[o_idx].strip() == "":
+                            res.append(('delete', org_parts[o_idx], ''))
+                            o_idx += 1
+                        
+                        if o_idx < len(org_parts):
+                            res.append(('replace', org_parts[o_idx], n_p))
+                            o_idx += 1
+                        else:
+                            res.append(('insert', '', n_p))
+                while o_idx < len(org_parts):
+                    res.append(('delete', org_parts[o_idx], ''))
+            
+            if suffix: res.append(('equal', suffix, suffix))
+            return res
+
+        for idx, (tag, i1, i2, j1, j2) in enumerate(opcodes):
+            # 대량 작업 시 GUI 응답성 유지 (5개 opcode마다 이벤트 처리)
+            if idx % 5 == 0:
+                QApplication.processEvents()
+
             org_full = text1[i1:i2]
             new_full = text2[j1:j2]
-
-            # [기능 개선] 띄어쓰기와 글자 교정을 완벽히 분리하기 위한 정밀 분할 로직
-            def get_granular_segments(org, new, tag_type):
-                if tag_type == 'equal':
-                    return [('equal', org, new)]
-                
-                # 1. 공통 접두사/접미사 추출하여 equal로 분리
-                pre_i = 0
-                while pre_i < len(org) and pre_i < len(new) and org[pre_i] == new[pre_i]:
-                    pre_i += 1
-                prefix = org[:pre_i]
-                
-                suf_i = 0
-                while suf_i < len(org)-pre_i and suf_i < len(new)-pre_i and org[-1-suf_i] == new[-1-suf_i]:
-                    suf_i += 1
-                suffix = org[len(org)-suf_i:] if suf_i > 0 else ""
-                
-                mid_org = org[pre_i:len(org)-suf_i] if suf_i > 0 else org[pre_i:]
-                mid_new = new[pre_i:len(new)-suf_i] if suf_i > 0 else new[pre_i:]
-                
-                res = []
-                if prefix: res.append(('equal', prefix, prefix))
-                
-                # 2. 중간 부분(실제 차이점)을 공백과 글자 단위로 강제 분리
-                if not mid_org and not mid_new:
-                    pass
-                elif not mid_org:
-                    for p in re.findall(r' +|[^ ]+', mid_new):
-                        res.append(('insert', '', p))
-                elif not mid_new:
-                    for p in re.findall(r' +|[^ ]+', mid_org):
-                        res.append(('delete', p, ''))
-                else:
-                    # 교체(replace) 구역: 공백과 글자 덩어리를 분리하여 각각 매칭
-                    org_parts = re.findall(r' +|[^ ]+', mid_org)
-                    new_parts = re.findall(r' +|[^ ]+', mid_new)
-                    
-                    o_idx = 0
-                    for n_p in new_parts:
-                        if n_p.strip() == "": # 공백 덩어리인 경우
-                            # 공백은 별도의 삽입/삭제 또는 교체로 처리
-                            if o_idx < len(org_parts) and org_parts[o_idx].strip() == "":
-                                res.append(('replace', org_parts[o_idx], n_p))
-                                o_idx += 1
-                            else:
-                                res.append(('insert', '', n_p))
-                        else: # 글자 덩어리인 경우
-                            # 앞선 공백들을 먼저 처리(삭제)
-                            while o_idx < len(org_parts) and org_parts[o_idx].strip() == "":
-                                res.append(('delete', org_parts[o_idx], ''))
-                                o_idx += 1
-                            
-                            if o_idx < len(org_parts):
-                                res.append(('replace', org_parts[o_idx], n_p))
-                                o_idx += 1
-                            else:
-                                res.append(('insert', '', n_p))
-                    # 남은 원본 덩어리 삭제 처리
-                    while o_idx < len(org_parts):
-                        res.append(('delete', org_parts[o_idx], ''))
-                
-                if suffix: res.append(('equal', suffix, suffix))
-                return res
-
             segments = get_granular_segments(org_full, new_full, tag)
 
             for s_tag, s_org, s_new in segments:
+                # 세그먼트 단위에서도 가끔 이벤트 처리
+                if current_idx % 20 == 0:
+                    QApplication.processEvents()
+
                 if s_tag == 'equal':
                     cursor_org.insertText(s_org, QTextCharFormat())
                     cursor_new.insertText(s_new, QTextCharFormat())
                     continue
 
-                # 개별 세그먼트에 대한 메타데이터 저장 (독립적인 ID 부여)
                 diff_item = {'tag': s_tag, 'org': s_org, 'new': s_new, 'id': current_idx}
                 self.diff_data.append(diff_item)
 
@@ -1096,6 +1121,13 @@ class SpellCheckDialog(QDialog):
                     fmt_org.setFontStrikeOut(True)
                     cursor_org.insertText(s_org.replace(' ', '✓'), fmt_org)
                     
+                    if s_org.strip() == "":
+                        fmt_new.setBackground(QColor("#E0E7FF"))
+                        fmt_new.setForeground(QColor("#4338CA"))
+                        fmt_new.setFontWeight(QFont.Bold)
+                        fmt_new.setProperty(QTextFormat.UserProperty + 1, current_idx)
+                        cursor_new.insertText("⁀", fmt_new)
+                    
                 elif s_tag == 'insert':
                     fmt_new.setBackground(QColor("#FFB74D"))
                     fmt_new.setForeground(QColor("#000000"))
@@ -1107,6 +1139,8 @@ class SpellCheckDialog(QDialog):
 
         self.edit_org.blockSignals(False)
         self.edit_new.blockSignals(False)
+        
+        print(f"DEBUG: [SpellCheck] 전체 렌더링 프로세스 완료 (총 소요 시간: {time.time() - start_time:.2f}초)")
 
         # [추가] 처음 실행 시 맨 위로 스크롤 고정 (또는 이전 위치 복구)
         if self.initial_vscroll > 0:
@@ -1214,8 +1248,11 @@ class SpellCheckDialog(QDialog):
     def apply_changes(self):
         # HTML 태그가 섞일 수 있으므로 toPlainText()로 순수 텍스트만 가져옴
         text = self.edit_new.toPlainText()
-        # 시각적 피드백을 위해 넣은 체크 표시를 다시 띄어쓰기로 복구
-        self.result_text = text.replace("✓", " ")
+        # 시각적 피드백을 위해 넣은 부호들을 다시 복구/제거
+        text = text.replace("✓", " ")
+        text = text.replace("⁀", "")
+        
+        self.result_text = text
         self.accept()
 
 import os
@@ -1267,6 +1304,7 @@ class EpisodeItemWidget(QWidget):
         container_layout.setSpacing(10)
 
         self.lbl_name = QLabel(name)
+        self.lbl_name.setFont(QFont("Pretendard", 15))
         self.lbl_name.setStyleSheet("font-weight: bold; font-size: 15px; color: #374151; background: transparent;")
         
         self.lbl_status = QLabel(status)
@@ -1290,7 +1328,7 @@ class EpisodeItemWidget(QWidget):
                     border-radius: 10px;
                 }
             """)
-            self.lbl_name.setStyleSheet("font-weight: bold; font-size: 15px; color: #0369A1; background: transparent;")
+            self.lbl_name.setStyleSheet("font-weight: bold; font-size: 15px; color: #0369A1; background: transparent; font-family: 'Pretendard';")
         else:
             self.container.setStyleSheet("""
                 QFrame#itemContainer {
@@ -1299,7 +1337,7 @@ class EpisodeItemWidget(QWidget):
                     border-radius: 10px;
                 }
             """)
-            self.lbl_name.setStyleSheet("font-weight: bold; font-size: 15px; color: #374151; background: transparent;")
+            self.lbl_name.setStyleSheet("font-weight: bold; font-size: 15px; color: #374151; background: transparent; font-family: 'Pretendard';")
 
     def get_status_style(self, status):
         if status == "분석 완료":
@@ -1446,6 +1484,7 @@ class ProjectManagementDialog(QDialog):
                 padding: 6px 12px;
                 font-weight: bold;
                 color: #374151;
+                font-family: 'Pretendard';
             }
             QPushButton:hover {
                 background-color: #F9FAFB;
@@ -1473,7 +1512,7 @@ class ProjectManagementDialog(QDialog):
         icon_lib = QLabel()
         icon_lib.setPixmap(get_icon(config.ICON_LIBRARY).pixmap(20, 20))
         lbl_lib_text = QLabel("작품 목록")
-        lbl_lib_text.setStyleSheet("font-weight: bold; font-size: 15px; color: #111827;")
+        lbl_lib_text.setStyleSheet("font-weight: bold; font-size: 15px; color: #111827; font-family: 'Pretendard';")
 
         title_list_layout.addWidget(icon_lib)
         title_list_layout.addWidget(lbl_lib_text)
@@ -1482,6 +1521,7 @@ class ProjectManagementDialog(QDialog):
 
         # 검색바
         self.search_bar = QLineEdit()
+        self.search_bar.setFont(QFont("Pretendard", 13))
         self.search_bar.setPlaceholderText("🔍 작품 검색...")
         self.search_bar.setFixedHeight(34)
         self.search_bar.setClearButtonEnabled(True) # [추가] 지우기 버튼 활성화
@@ -1490,9 +1530,10 @@ class ProjectManagementDialog(QDialog):
                 border: 1px solid #D1D5DB;
                 border-radius: 6px;
                 padding-left: 10px;
-                padding-right: 5px; /* [수정] 25px -> 5px로 대폭 축소 */
+                padding-right: 5px;
                 background-color: #F9FAFB;
                 font-size: 13px;
+                font-family: 'Pretendard';
             }
             QLineEdit:focus {
                 border: 2px solid #FF5722;
@@ -1504,6 +1545,7 @@ class ProjectManagementDialog(QDialog):
         
         # 작품 목록
         self.list_titles = QListWidget()
+        self.list_titles.setFont(QFont("Pretendard", 10))
         self.list_titles.setStyleSheet("""
             QListWidget {
                 background-color: white;
@@ -1511,6 +1553,7 @@ class ProjectManagementDialog(QDialog):
                 border-radius: 8px;
                 outline: none;
                 padding: 5px;
+                font-family: 'Pretendard';
             }
             QListWidget::item {
                 height: 32px;
@@ -1518,6 +1561,7 @@ class ProjectManagementDialog(QDialog):
                 border-radius: 6px;
                 margin-bottom: 2px;
                 font-size: 13px;
+                font-family: 'Pretendard';
             }
             QListWidget::item:hover {
                 background-color: #F3F4F6;
@@ -1526,6 +1570,7 @@ class ProjectManagementDialog(QDialog):
                 background-color: #FFECEC;
                 color: #FF5722;
                 font-weight: bold;
+                font-family: 'Pretendard';
             }
         """)
         self.list_titles.currentTextChanged.connect(self.load_episodes)
@@ -1534,19 +1579,15 @@ class ProjectManagementDialog(QDialog):
         # 버튼 행
         btn_row_title = QHBoxLayout()
         self.btn_add_title = QPushButton("작품 추가")
-        self.btn_rename_title = QPushButton("이름 변경")
         self.btn_del_title = QPushButton("삭제")
         
-        for btn in [self.btn_add_title, self.btn_rename_title]:
-            btn.setStyleSheet(btn_style)
+        self.btn_add_title.setStyleSheet(btn_style)
         self.btn_del_title.setStyleSheet(del_btn_style)
         
         self.btn_add_title.clicked.connect(self.add_title)
-        self.btn_rename_title.clicked.connect(self.rename_title)
         self.btn_del_title.clicked.connect(self.delete_title)
         
         btn_row_title.addWidget(self.btn_add_title)
-        btn_row_title.addWidget(self.btn_rename_title)
         btn_row_title.addWidget(self.btn_del_title)
         left_layout.addLayout(btn_row_title)
         
@@ -1567,7 +1608,7 @@ class ProjectManagementDialog(QDialog):
         icon_epi = QLabel()
         icon_epi.setPixmap(get_icon(config.ICON_MOVIE).pixmap(20, 20))
         lbl_epi_text = QLabel("회차 목록")
-        lbl_epi_text.setStyleSheet("font-weight: bold; font-size: 15px; color: #111827;")
+        lbl_epi_text.setStyleSheet("font-weight: bold; font-size: 15px; color: #111827; font-family: 'Pretendard';")
 
         epi_list_layout.addWidget(icon_epi)
         epi_list_layout.addWidget(lbl_epi_text)
@@ -1589,6 +1630,7 @@ class ProjectManagementDialog(QDialog):
         
         # 2. 리스트 위젯
         self.list_episodes = QListWidget()
+        self.list_episodes.setSelectionMode(QListWidget.ExtendedSelection) # [추가] 다중 선택 활성화
         self.list_episodes.setSpacing(5) # [수정] 간격을 5px로 조정
         self.list_episodes.setContextMenuPolicy(Qt.CustomContextMenu) # 컨텍스트 메뉴 활성화
         self.list_episodes.customContextMenuRequested.connect(self.show_episode_context_menu)
@@ -1600,6 +1642,7 @@ class ProjectManagementDialog(QDialog):
                 border-radius: 8px;
                 outline: none;
                 padding: 5px;
+                font-family: 'Pretendard';
             }
             QListWidget::item {
                 background: transparent;
@@ -1617,21 +1660,18 @@ class ProjectManagementDialog(QDialog):
         right_layout.addWidget(self.epi_stack)
 
         # 버튼 행
+        # 버튼 행 (필수 버튼만 남김)
         btn_row_epi = QHBoxLayout()
         self.btn_add_epi = QPushButton("회차 추가")
-        self.btn_rename_epi = QPushButton("이름 변경")
         self.btn_del_epi = QPushButton("삭제")
         
-        for btn in [self.btn_add_epi, self.btn_rename_epi]:
-            btn.setStyleSheet(btn_style)
+        self.btn_add_epi.setStyleSheet(btn_style)
         self.btn_del_epi.setStyleSheet(del_btn_style)
         
         self.btn_add_epi.clicked.connect(self.add_episode)
-        self.btn_rename_epi.clicked.connect(self.rename_episode)
         self.btn_del_epi.clicked.connect(self.delete_episode)
         
         btn_row_epi.addWidget(self.btn_add_epi)
-        btn_row_epi.addWidget(self.btn_rename_epi)
         btn_row_epi.addWidget(self.btn_del_epi)
         right_layout.addLayout(btn_row_epi)
 
@@ -1700,6 +1740,7 @@ class ProjectManagementDialog(QDialog):
                 self.list_episodes.setItemWidget(item, widget)
                 # 데이터 보관용
                 item.setData(Qt.UserRole, epi)
+                item.setData(Qt.UserRole + 1, status)
 
     def add_title(self):
         name, ok = QInputDialog.getText(self, "작품 추가", "새로운 작품 이름을 입력하세요:")
@@ -1710,26 +1751,6 @@ class ProjectManagementDialog(QDialog):
                 return
             os.makedirs(path, exist_ok=True)
             self.refresh_projects()
-
-    def rename_title(self):
-        current_item = self.list_titles.currentItem()
-        if not current_item: return
-        
-        old_name = current_item.text()
-        new_name, ok = QInputDialog.getText(self, "작품 이름 변경", f"'{old_name}'의 새로운 이름:", text=old_name)
-        if ok and new_name.strip() and new_name.strip() != old_name:
-            old_path = os.path.join(PROJECTS_DIR, old_name)
-            new_path = os.path.join(PROJECTS_DIR, new_name.strip())
-            
-            if os.path.exists(new_path):
-                QMessageBox.warning(self, "중복", "이미 존재하는 이름입니다.")
-                return
-            
-            try:
-                os.rename(old_path, new_path)
-                self.refresh_projects()
-            except Exception as e:
-                QMessageBox.critical(self, "오류", f"이름 변경 실패: {e}")
 
     def delete_title(self):
         """작품 삭제: 폴더 존재 여부를 체크하여 에러 방지"""
@@ -1766,145 +1787,350 @@ class ProjectManagementDialog(QDialog):
             os.makedirs(path, exist_ok=True)
             self.load_episodes(title)
 
-    def rename_episode(self):
-        title_item = self.list_titles.currentItem()
-        epi_item = self.list_episodes.currentItem()
-        if not title_item or not epi_item: return
-        
-        title = title_item.text()
-        old_name = epi_item.data(Qt.UserRole)
-        new_name, ok = QInputDialog.getText(self, "회차 이름 변경", f"'{old_name}'의 새로운 이름:", text=old_name)
-        
-        if ok and new_name.strip() and new_name.strip() != old_name:
-            old_path = os.path.join(PROJECTS_DIR, title, old_name)
-            new_path = os.path.join(PROJECTS_DIR, title, new_name.strip())
-            
-            if os.path.exists(new_path):
-                QMessageBox.warning(self, "중복", "이미 존재하는 이름입니다.")
-                return
-            
-            try:
-                os.rename(old_path, new_path)
-                self.load_episodes(title)
-            except Exception as e:
-                QMessageBox.critical(self, "오류", f"이름 변경 실패: {e}")
-
     def show_episode_context_menu(self, pos):
-        item = self.list_episodes.itemAt(pos)
-        if not item: return
+        selected_items = self.list_episodes.selectedItems()
+        if not selected_items: return
         
         title_item = self.list_titles.currentItem()
         if not title_item: return
-        
         title = title_item.text()
-        epi_name = item.data(Qt.UserRole)
-        epi_dir = os.path.join(PROJECTS_DIR, title, epi_name)
+        
+        is_multiple = len(selected_items) > 1
+        count = len(selected_items)
+        epi_names = [item.data(Qt.UserRole) for item in selected_items]
         
         menu = QMenu(self)
         menu.setStyleSheet("""
-            QMenu { 
-                background-color: white; 
-                border: 1px solid #D1D5DB; 
-                border-radius: 0px; 
-                padding: 3px; 
-            }
-            QMenu::item { 
-                padding: 8px 10px 8px 22px; 
-                border-radius: 4px; 
-                color: #374151; 
-                font-size: 14px;
-                margin: 2px 5px;
-            }
-            QMenu::icon {
-                position: absolute;
-                left: 12px;
-            }
-            QMenu::item:selected { 
-                background-color: #FFECEC; 
-                color: #FF4B4B; 
-            }
-            QMenu::item:disabled { 
-                color: #D1D5DB; 
-            }
-            QMenu::separator { 
-                height: 1px; 
-                background: #E5E7EB; 
-                margin: 5px 10px; 
-            }
+            QMenu { background-color: white; border: 1px solid #D1D5DB; padding: 3px; }
+            QMenu::item { padding: 8px 10px 8px 25px; border-radius: 4px; color: #374151; font-size: 14px; margin: 2px 5px; }
+            QMenu::item:selected { background-color: #FFECEC; color: #FF4B4B; }
+            QMenu::item:disabled { color: #9CA3AF; }
+            QMenu::separator { height: 1px; background: #E5E7EB; margin: 5px 10px; }
         """)
         
-        # 1. 폴더 이동
         action_open_folder = menu.addAction(get_icon(config.ICON_FOLDER), "폴더 열기")
-        
-        # 2. 이미지 보기
         action_view_image = menu.addAction(get_icon(config.ICON_FILE), "이미지 보기")
+        action_view_image.setEnabled(not is_multiple)
         
-        # 3. 텍스트 파일 저장
-        action_save_text = menu.addAction(get_icon(config.ICON_SAVE), "텍스트 파일 저장")
-        txt_path = os.path.join(epi_dir, "script.txt")
-        if not os.path.exists(txt_path):
-            action_save_text.setEnabled(False)
-            
-        # 4. 엑셀 파일 저장
-        action_save_excel = menu.addAction(get_icon(config.ICON_EXCEL), "엑셀 파일 저장")
-        csv_path = os.path.join(epi_dir, "script_data.csv")
-        if not os.path.exists(csv_path):
-            action_save_excel.setEnabled(False)
-            
         menu.addSeparator()
+        txt_label = f"일괄 텍스트 저장 ({count}개)" if is_multiple else "텍스트 파일 저장"
+        action_save_text = menu.addAction(get_icon(config.ICON_SAVE), txt_label)
         
-        # 5. 회차 삭제
-        action_delete = menu.addAction(get_icon(config.ICON_DELETE), "회차 삭제")
+        excel_label = f"일괄 엑셀 저장 ({count}개)" if is_multiple else "엑셀 파일 저장"
+        action_save_excel = menu.addAction(get_icon(config.ICON_EXCEL), excel_label)
         
-        action = menu.exec_(self.list_episodes.mapToGlobal(pos))
+        # [추가] 대기중 상태(데이터 없음)인 경우 저장 버튼 비활성화
+        has_ready = False
+        for item in selected_items:
+            status = item.data(Qt.UserRole + 1)
+            if status and status != "대기중":
+                has_ready = True
+                break
+        
+        action_save_text.setEnabled(has_ready)
+        action_save_excel.setEnabled(has_ready)
+        action_view_image.setEnabled(not is_multiple and has_ready)
+        
+        menu.addSeparator()
+        del_label = f"회차 삭제 ({count}개)" if is_multiple else "회차 삭제"
+        action_delete = menu.addAction(get_icon(config.ICON_DELETE), del_label)
+        
+        action = menu.exec(self.list_episodes.mapToGlobal(pos))
+        if not action: return
         
         if action == action_open_folder:
-            if os.path.exists(epi_dir):
-                os.startfile(epi_dir)
+            for name in epi_names:
+                epi_dir = os.path.join(PROJECTS_DIR, title, name)
+                if os.path.exists(epi_dir): os.startfile(epi_dir)
         elif action == action_view_image:
-            viewer = ImageViewerDialog(epi_dir, self)
-            viewer.exec_()
+            epi_dir = os.path.join(PROJECTS_DIR, title, epi_names[0])
+            dialog = ImageViewerDialog(epi_dir, self)
+            dialog.exec()
         elif action == action_save_text:
-            if os.path.exists(txt_path):
-                save_path, _ = QFileDialog.getSaveFileName(self, "텍스트 파일 저장", f"{title}_{epi_name}_텍스트.txt", "Text Files (*.txt)")
-                if save_path:
-                    import shutil
-                    try:
-                        shutil.copy2(txt_path, save_path)
-                        QMessageBox.information(self, "저장 완료", "텍스트 파일이 저장되었습니다.")
-                    except Exception as e:
-                        QMessageBox.critical(self, "저장 실패", f"파일 저장 중 오류가 발생했습니다:\\n{e}")
+            self.batch_save_text()
         elif action == action_save_excel:
-            from excel_handler import export_episode_to_excel_core
-            # 메인화면과 동일한 로직(템플릿 적용, 드롭다운 적용 등)으로 엑셀 저장
-            main_window = self.parent() if hasattr(self.parent(), 'toast') else self
-            export_episode_to_excel_core(self, epi_dir, title, epi_name, toast_target=main_window)
+            self.batch_save_excel()
         elif action == action_delete:
-            # 삭제 대상 선택 후 기존 삭제 로직 호출
-            self.list_episodes.setCurrentItem(item)
             self.delete_episode()
 
     def delete_episode(self):
         title_item = self.list_titles.currentItem()
-        epi_item = self.list_episodes.currentItem()
-        if not title_item or not epi_item: return
+        selected_items = self.list_episodes.selectedItems()
+        if not title_item or not selected_items: return
         
         title = title_item.text()
-        epi_name = epi_item.data(Qt.UserRole)
+        count = len(selected_items)
         
-        reply = QMessageBox.warning(self, "회차 삭제", 
-                                  f"⚠️ '{epi_name}'의 모든 데이터가 삭제됩니다.\n진행하시겠습니까?",
+        if count == 1:
+            msg = f"⚠️ '{selected_items[0].data(Qt.UserRole)}'의 모든 데이터가 삭제됩니다.\n진행하시겠습니까?"
+        else:
+            msg = f"⚠️ 선택한 {count}개의 회차와 모든 데이터가 삭제됩니다.\n진행하시겠습니까?"
+
+        reply = QMessageBox.warning(self, "회차 삭제", msg,
                                   QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         
         if reply == QMessageBox.Yes:
-            epi_path = os.path.join(PROJECTS_DIR, title, epi_name)
-            try:
-                if os.path.exists(epi_path):
-                    import shutil
-                    shutil.rmtree(epi_path)
-                self.load_episodes(title)
-            except Exception as e:
-                QMessageBox.critical(self, "오류", f"삭제 중 오류 발생:\n{e}")
+            import shutil
+            success_count = 0
+            for item in selected_items:
+                epi_name = item.data(Qt.UserRole)
+                epi_path = os.path.join(PROJECTS_DIR, title, epi_name)
+                try:
+                    if os.path.exists(epi_path):
+                        shutil.rmtree(epi_path)
+                    success_count += 1
+                except Exception as e:
+                    print(f"Delete failed for {epi_name}: {e}")
+
+            self.load_episodes(title)
+            if success_count < count:
+                QMessageBox.warning(self, "삭제 완료", f"{count}개 중 {success_count}개 삭제 완료 (일부 실패)")
+
+    def batch_save_text(self):
+        """선택한 회차들을 개별 텍스트 파일로 저장"""
+        title_item = self.list_titles.currentItem()
+        selected_items = self.list_episodes.selectedItems()
+        if not title_item or not selected_items: return
+        
+        title = title_item.text()
+        count = len(selected_items)
+        
+        save_dir = None
+        single_save_path = None
+        
+        if count == 1:
+            epi_name = selected_items[0].data(Qt.UserRole)
+            # 마지막 저장 경로를 고려한 기본 경로 설정
+            default_path = os.path.join(config.get_initial_dir(), f"{title}_{epi_name}_텍스트.txt")
+            # [맥 네이티브 창 복구] 
+            options = QFileDialog.Option(0) if platform.system() == "Darwin" else QFileDialog.DontConfirmOverwrite
+            single_save_path, _ = QFileDialog.getSaveFileName(self, "텍스트 파일 저장", default_path, "Text Files (*.txt)", options=options)
+            if not single_save_path: return
+            config.update_last_save_dir(single_save_path)
+            
+            if os.path.exists(single_save_path):
+                msg_box = QMessageBox(self)
+                msg_box.setWindowTitle("파일 중복 확인")
+                msg_box.setText(f"'{os.path.basename(single_save_path)}' 파일이 이미 존재합니다.")
+                msg_box.setInformativeText("기존 파일을 대체할까요, 아니면 새 이름으로 저장할까요?")
+                
+                # 버튼 순서: [덮어쓰기] [새 이름으로 저장] [취소]
+                btn_yes = msg_box.addButton("덮어쓰기", QMessageBox.ActionRole)
+                btn_rename = msg_box.addButton("새 이름으로 저장", QMessageBox.ActionRole)
+                btn_cancel = msg_box.addButton("취소", QMessageBox.RejectRole)
+                
+                msg_box.setDefaultButton(btn_rename)
+                
+                msg_box.exec()
+                clicked = msg_box.clickedButton()
+                
+                if clicked == btn_yes:
+                    pass 
+                elif clicked == btn_rename:
+                    single_save_path = get_unique_path(single_save_path)
+                else:
+                    return
+        else:
+            save_dir = QFileDialog.getExistingDirectory(self, "텍스트 파일을 저장할 폴더 선택", config.get_initial_dir())
+            if not save_dir: return
+            config.update_last_save_dir(save_dir)
+        
+        success_count = 0
+        overwrite_all = False
+        skip_all = False
+        auto_rename = False
+
+        def get_unique_path(path):
+            if not os.path.exists(path):
+                return path
+            base, ext = os.path.splitext(path)
+            counter = 1
+            while os.path.exists(f"{base}({counter}){ext}"):
+                counter += 1
+            return f"{base}({counter}){ext}"
+
+        for item in selected_items:
+            epi_name = item.data(Qt.UserRole)
+            src_path = os.path.join(PROJECTS_DIR, title, epi_name, "script.txt")
+            if os.path.exists(src_path):
+                if count == 1:
+                    dest_path = single_save_path
+                else:
+                    dest_filename = f"{title}_{epi_name}_텍스트.txt"
+                    dest_path = os.path.join(save_dir, dest_filename)
+                
+                # 일괄 저장일 때만 중복 체크 로직 실행 (개별 저장은 대화창에서 이미 처리함)
+                if count > 1 and os.path.exists(dest_path) and not overwrite_all:
+                    if skip_all: continue
+                    if overwrite_all: pass # 아래 로직 실행
+                    elif auto_rename:
+                        dest_path = get_unique_path(dest_path)
+                    else:
+                        msg_box = QMessageBox(self)
+                        msg_box.setWindowTitle("파일 중복 확인")
+                        msg_box.setText(f"파일이 이미 존재합니다:\n{dest_filename}")
+                        msg_box.setInformativeText("어떻게 처리할까요?")
+                        
+                        cb_apply_all = QCheckBox("이후 모든 중복 파일에 동일하게 적용")
+                        msg_box.setCheckBox(cb_apply_all)
+                        
+                        btn_yes = msg_box.addButton("덮어쓰기", QMessageBox.YesRole)
+                        btn_rename = msg_box.addButton("새 이름으로 저장", QMessageBox.ActionRole)
+                        btn_no = msg_box.addButton("건너뛰기", QMessageBox.NoRole)
+                        btn_cancel = msg_box.addButton("취소", QMessageBox.RejectRole)
+                        msg_box.setDefaultButton(btn_rename)
+                        
+                        msg_box.exec()
+                        clicked = msg_box.clickedButton()
+                        is_checked = cb_apply_all.isChecked()
+                        
+                        if clicked == btn_yes:
+                            if is_checked: overwrite_all = True
+                        elif clicked == btn_rename:
+                            if is_checked: auto_rename = True
+                            dest_path = get_unique_path(dest_path)
+                        elif clicked == btn_no:
+                            if is_checked: skip_all = True
+                            continue
+                        elif clicked == btn_cancel:
+                            break
+                        # btn_yes는 그냥 통과하여 아래 저장 로직 실행
+
+                try:
+                    with open(src_path, "r", encoding="utf-8") as src_f:
+                        content = src_f.read()
+                    with open(dest_path, "w", encoding="utf-8") as dest_f:
+                        dest_f.write(content)
+                    success_count += 1
+                except Exception as e:
+                    print(f"Save failed for {epi_name}: {e}")
+        
+        if success_count == len(selected_items):
+            if hasattr(self.parent(), 'toast'):
+                self.parent().toast.show_message(f"📄 {success_count}개의 텍스트 파일 저장 완료")
+        elif success_count > 0:
+            QMessageBox.warning(self, "저장 완료 (일부 실패)", f"{len(selected_items)}개 중 {success_count}개 저장 성공\n(일부 파일 저장에 실패했습니다.)")
+
+    def batch_save_excel(self):
+        """선택한 회차들을 템플릿 기반 엑셀 파일로 저장"""
+        title_item = self.list_titles.currentItem()
+        selected_items = self.list_episodes.selectedItems()
+        if not title_item or not selected_items: return
+        
+        title = title_item.text()
+        count = len(selected_items)
+        
+        save_dir = None
+        single_save_path = None
+        
+        if count == 1:
+            epi_name = selected_items[0].data(Qt.UserRole)
+            # 마지막 저장 경로를 고려한 기본 경로 설정
+            default_path = os.path.join(config.get_initial_dir(), f"{title}_{epi_name}_스크립트.xlsx")
+            # [맥 네이티브 창 복구]
+            options = QFileDialog.Option(0) if platform.system() == "Darwin" else QFileDialog.DontConfirmOverwrite
+            single_save_path, _ = QFileDialog.getSaveFileName(self, "엑셀 파일 저장", default_path, "Excel Files (*.xlsx)", options=options)
+            if not single_save_path: return
+            config.update_last_save_dir(single_save_path)
+            
+            if os.path.exists(single_save_path):
+                msg_box = QMessageBox(self)
+                msg_box.setWindowTitle("파일 중복 확인")
+                msg_box.setText(f"'{os.path.basename(single_save_path)}' 파일이 이미 존재합니다.")
+                msg_box.setInformativeText("기존 파일을 대체할까요, 아니면 새 이름으로 저장할까요?")
+                
+                btn_yes = msg_box.addButton("덮어쓰기", QMessageBox.ActionRole)
+                btn_rename = msg_box.addButton("새 이름으로 저장", QMessageBox.ActionRole)
+                btn_cancel = msg_box.addButton("취소", QMessageBox.RejectRole)
+                
+                msg_box.setDefaultButton(btn_rename)
+                
+                msg_box.exec()
+                clicked = msg_box.clickedButton()
+                
+                if clicked == btn_yes:
+                    pass 
+                elif clicked == btn_rename:
+                    single_save_path = get_unique_path(single_save_path)
+                else:
+                    return
+        else:
+            save_dir = QFileDialog.getExistingDirectory(self, "엑셀 파일을 저장할 폴더 선택", config.get_initial_dir())
+            if not save_dir: return
+            config.update_last_save_dir(save_dir)
+        
+        success_count = 0
+        overwrite_all = False
+        skip_all = False
+        auto_rename = False
+
+        def get_unique_path(path):
+            if not os.path.exists(path):
+                return path
+            base, ext = os.path.splitext(path)
+            counter = 1
+            while os.path.exists(f"{base}({counter}){ext}"):
+                counter += 1
+            return f"{base}({counter}){ext}"
+
+        for item in selected_items:
+            epi_name = item.data(Qt.UserRole)
+            epi_dir = os.path.join(PROJECTS_DIR, title, epi_name)
+            
+            # script.txt나 script_data.csv 중 하나라도 있어야 저장 가능
+            if os.path.exists(os.path.join(epi_dir, "script.txt")) or os.path.exists(os.path.join(epi_dir, "script_data.csv")):
+                if count == 1:
+                    dest_path = single_save_path
+                else:
+                    dest_filename = f"{title}_{epi_name}_스크립트.xlsx"
+                    dest_path = os.path.join(save_dir, dest_filename)
+                
+                # 일괄 저장일 때만 중복 체크
+                if count > 1 and os.path.exists(dest_path) and not overwrite_all:
+                    if skip_all: continue
+                    if overwrite_all: pass
+                    elif auto_rename:
+                        dest_path = get_unique_path(dest_path)
+                    else:
+                        msg_box = QMessageBox(self)
+                        msg_box.setWindowTitle("파일 중복 확인")
+                        msg_box.setText(f"파일이 이미 존재합니다:\n{os.path.basename(dest_path)}")
+                        msg_box.setInformativeText("어떻게 처리할까요?")
+                        
+                        cb_apply_all = QCheckBox("이후 모든 중복 파일에 동일하게 적용")
+                        msg_box.setCheckBox(cb_apply_all)
+                        
+                        btn_yes = msg_box.addButton("덮어쓰기", QMessageBox.YesRole)
+                        btn_rename = msg_box.addButton("새 이름으로 저장", QMessageBox.ActionRole)
+                        btn_no = msg_box.addButton("건너뛰기", QMessageBox.NoRole)
+                        btn_cancel = msg_box.addButton("취소", QMessageBox.RejectRole)
+                        msg_box.setDefaultButton(btn_rename)
+                        
+                        msg_box.exec()
+                        clicked = msg_box.clickedButton()
+                        is_checked = cb_apply_all.isChecked()
+                        
+                        if clicked == btn_yes:
+                            if is_checked: overwrite_all = True
+                        elif clicked == btn_rename:
+                            if is_checked: auto_rename = True
+                            dest_path = get_unique_path(dest_path)
+                        elif clicked == btn_no:
+                            if is_checked: skip_all = True
+                            continue
+                        elif clicked == btn_cancel:
+                            break
+                
+                # 템플릿 기반 저장 로직 호출 (excel_handler 사용)
+                if excel_handler.save_episode_to_excel_final(self, epi_dir, title, epi_name, dest_path):
+                    success_count += 1
+
+        if count > 1:
+            if success_count == count:
+                if hasattr(self.parent(), 'toast'):
+                    self.parent().toast.show_message(f"📊 {success_count}개의 엑셀 파일 저장 완료")
+            else:
+                QMessageBox.warning(self, "저장 완료 (일부 실패)", f"{count}개 중 {success_count}개 저장 성공\n(일부 파일 저장에 실패했습니다.)")
 
 
 # [main.py] FileDropListWidget 클래스 (수정)
@@ -2218,28 +2444,51 @@ class SmartTextEdit(QTextEdit):
 # =======================================================
 # 토스트 메시지 (애니메이션 충돌 방지 완벽 버전)
 # =======================================================
-class ToastMessage(QLabel):
+class ToastMessage(QWidget):
     def __init__(self, parent):
-        super().__init__(parent)
-        self.setAlignment(Qt.AlignCenter)
-        self.setStyleSheet("""
-            QLabel {
-                background-color: rgba(40, 44, 52, 230);
-                color: white;
-                padding: 10px 25px;
+        super().__init__(parent, Qt.ToolTip | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        
+        # 메인 레이아웃
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 배경 프레임
+        self.bg_frame = QFrame()
+        self.bg_frame.setStyleSheet("""
+            QFrame {
+                background-color: #282C34;
                 border-radius: 18px;
+            }
+        """)
+        frame_layout = QVBoxLayout(self.bg_frame)
+        frame_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 메시지 라벨
+        self.lbl_text = QLabel()
+        self.lbl_text.setAlignment(Qt.AlignCenter)
+        self.lbl_text.setStyleSheet("""
+            QLabel {
+                color: white;
+                padding: 10px 18px;
                 font-size: 14px;
                 font-weight: bold;
                 font-family: 'Pretendard';
+                background: transparent;
             }
         """)
+        frame_layout.addWidget(self.lbl_text)
+        layout.addWidget(self.bg_frame)
+        
         self.hide()
         
         # 1. 투명도 효과 설정
         self.opacity_effect = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self.opacity_effect)
         
-        # 2. 애니메이션 설정 (opacity_effect를 대상으로 함)
+        # 2. 애니메이션 설정
         self.anim = QPropertyAnimation(self.opacity_effect, b"opacity")
         self.anim.setEasingCurve(QEasingCurve.InOutSine) 
         
@@ -2253,20 +2502,18 @@ class ToastMessage(QLabel):
         self.timer.stop()
         self.anim.stop()
         
-        # [안정성] 연결된 시그널을 안전하게 해제하여 중복 실행 에러 방지
-        try:
-            self.anim.finished.disconnect()
-        except (TypeError, RuntimeError):
-            pass
+        # 기존에 남아있을 수 있는 '숨기기' 예약 취소
+        # (시그널 연결 대신 타이머를 사용하여 경고 발생 원인을 제거함)
             
-        self.setText(text)
+        self.lbl_text.setText(text)
+        self.lbl_text.adjustSize()
         self.adjustSize()
         
-        # 부모 위젯의 하단 중앙에 배치
+        # 부모 위젯의 하단 중앙에 배치 (스크린 좌표 기준)
         if self.parent():
-            parent_rect = self.parent().geometry()
-            x = (parent_rect.width() - self.width()) // 2
-            y = parent_rect.height() - self.height() - 80
+            parent_geom = self.parent().frameGeometry()
+            x = parent_geom.x() + (parent_geom.width() - self.width()) // 2
+            y = parent_geom.y() + parent_geom.height() - self.height() - 80
             self.move(x, y)
         
         self.show()
@@ -2290,13 +2537,12 @@ class ToastMessage(QLabel):
         self.anim.setEndValue(0.0)
         
         # [핵심] 애니메이션이 완전히 끝난 뒤에만 위젯을 숨기도록 연결
-        try:
-            self.anim.finished.disconnect()
-        except (TypeError, RuntimeError):
-            pass
-            
-        self.anim.finished.connect(self.hide)
+        # 애니메이션 시작
         self.anim.start()
+        
+        # 애니메이션이 끝나는 시점(600ms)에 맞춰서 위젯을 숨기도록 타이머 설정
+        # (시그널 연결 해제 시 발생하는 RuntimeWarning을 원천 차단)
+        QTimer.singleShot(600, self.hide)
 
 # =======================================================
 # 설정창 (프리셋)
@@ -2311,6 +2557,7 @@ class SettingsDialog(QDialog):
         
         self.local_presets = config.API_PRESETS.copy()
         self.local_active = config.ACTIVE_PRESET_NAME
+        self.is_unified = False # 통합 사용 여부 플래그
         
         self.init_ui()
     
@@ -2449,7 +2696,14 @@ class SettingsDialog(QDialog):
         
         keys_layout.addWidget(lbl_ocr)
         keys_layout.addLayout(row_ocr_input)
-        keys_layout.addSpacing(10)
+        
+        # [신규] 키 통합 체크박스
+        self.check_unified = QCheckBox("OCR/맞춤법 키 동일하게 사용 (GCP 통합 키 권장)")
+        self.check_unified.setStyleSheet("color: #666; font-size: 12px; margin: 5px 0;")
+        self.check_unified.toggled.connect(self.on_unified_toggled)
+        keys_layout.addWidget(self.check_unified)
+        
+        keys_layout.addSpacing(5)
 
         # [AI 키]
         lbl_ai = QLabel("aistudio.google.com (맞춤법용)")
@@ -2461,6 +2715,9 @@ class SettingsDialog(QDialog):
         self.input_ai.setEchoMode(QLineEdit.Password)
         self.input_ai.setFixedHeight(36)
         self.input_ai.textChanged.connect(self.save_temp_data)
+        
+        # OCR 키 변경 시 통합 모드면 AI 키도 자동 업데이트
+        self.input_ocr.textChanged.connect(self.sync_keys)
         
         # SVG 아이콘을 적용한 AI 키 전용 눈 버튼
         self.btn_toggle_ai = QPushButton()
@@ -2511,19 +2768,44 @@ class SettingsDialog(QDialog):
             self.load_preset_to_ui(text)
 
     def load_preset_to_ui(self, preset_name):
-        data = self.local_presets.get(preset_name, {"ocr": "", "ai": ""})
+        data = self.local_presets.get(preset_name, {"ocr": "", "ai": "", "unified": False})
+        self.is_unified = data.get("unified", False)
+        
         self.input_ocr.blockSignals(True)
         self.input_ai.blockSignals(True)
+        self.check_unified.blockSignals(True)
+        
         self.input_ocr.setText(data.get("ocr", ""))
         self.input_ai.setText(data.get("ai", ""))
+        self.check_unified.setChecked(self.is_unified)
+        
         self.input_ocr.blockSignals(False)
         self.input_ai.blockSignals(False)
+        self.check_unified.blockSignals(False)
+        
+        self.on_unified_toggled(self.is_unified)
+
+    def on_unified_toggled(self, checked):
+        self.is_unified = checked
+        self.input_ai.setEnabled(not checked)
+        self.btn_toggle_ai.setEnabled(not checked)
+        if checked:
+            self.input_ai.setText(self.input_ocr.text())
+            self.input_ai.setPlaceholderText("OCR 키와 동일하게 설정됨")
+        else:
+            self.input_ai.setPlaceholderText("Google AI Studio API Key")
+        self.save_temp_data()
+
+    def sync_keys(self):
+        if self.is_unified:
+            self.input_ai.setText(self.input_ocr.text())
 
     def save_temp_data(self):
         if self.local_active:
             self.local_presets[self.local_active] = {
                 "ocr": self.input_ocr.text().strip(),
-                "ai": self.input_ai.text().strip()
+                "ai": self.input_ai.text().strip(),
+                "unified": self.is_unified
             }
 
     def add_preset(self):
@@ -2554,3 +2836,279 @@ class SettingsDialog(QDialog):
         self.accept()
 
 # =======================================================
+# =======================================================
+# 관용구 개별 카드 위젯
+# =======================================================
+class IdiomCard(QFrame):
+    delete_signal = Signal(dict)
+
+    def __init__(self, data, parent=None):
+        super().__init__(parent)
+        self.data = data
+        self.setFixedHeight(40) # 높이 살짝 축소
+        self.setStyleSheet("background-color: transparent; border: none;")
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0) # 메인 레이아웃 여백 제거
+        layout.setSpacing(8) # 박스 간 간격
+        
+        # 1. 지문 내용 박스
+        self.frame_text = QFrame()
+        self.frame_text.setStyleSheet("""
+            QFrame { background-color: white; border: 1px solid #e5e7eb; border-radius: 6px; }
+            QFrame:hover { border: 1px solid #FF5722; background-color: #fff9f7; }
+        """)
+        text_layout = QHBoxLayout(self.frame_text)
+        text_layout.setContentsMargins(15, 0, 15, 0)
+        self.lbl_text = QLabel(data["text"])
+        self.lbl_text.setAlignment(Qt.AlignCenter) # 중앙 정렬 추가
+        self.lbl_text.setStyleSheet("font-size: 14px; color: #1f2937; border: none; background: transparent;")
+        text_layout.addWidget(self.lbl_text)
+        layout.addWidget(self.frame_text, 1)
+        
+        # 2. 단축키 박스
+        self.frame_key = QFrame()
+        self.frame_key.setFixedWidth(100)
+        self.frame_key.setStyleSheet("""
+            QFrame { background-color: white; border: 1px solid #e5e7eb; border-radius: 6px; }
+            QFrame:hover { border: 1px solid #FF5722; }
+        """)
+        key_layout = QHBoxLayout(self.frame_key)
+        key_layout.setContentsMargins(0, 0, 0, 0)
+        self.lbl_key = QLabel(f"Alt + {data['key'].upper()}")
+        self.lbl_key.setAlignment(Qt.AlignCenter)
+        self.lbl_key.setStyleSheet("color: #4b5563; font-weight: bold; font-size: 12px; border: none; background: transparent;")
+        key_layout.addWidget(self.lbl_key)
+        layout.addWidget(self.frame_key)
+        
+        # 3. 삭제 버튼 박스
+        self.frame_del = QFrame()
+        self.frame_del.setFixedWidth(40)
+        self.frame_del.setStyleSheet("""
+            QFrame { background-color: #e5e7eb; border: 1px solid #d1d5db; border-radius: 6px; }
+            QFrame:hover { border: 1px solid #ef4444; background-color: #fee2e2; }
+        """)
+        del_layout = QHBoxLayout(self.frame_del)
+        del_layout.setContentsMargins(0, 0, 0, 0)
+        self.btn_del = QPushButton("✕")
+        self.btn_del.setFixedSize(38, 38)
+        self.btn_del.setCursor(Qt.PointingHandCursor)
+        self.btn_del.setStyleSheet("""
+            QPushButton { border: none; color: #9ca3af; font-size: 18px; background: transparent; }
+            QPushButton:hover { color: #ef4444; }
+        """)
+        self.btn_del.clicked.connect(lambda: self.delete_signal.emit(self.data))
+        del_layout.addWidget(self.btn_del)
+        layout.addWidget(self.frame_del)
+
+# 관용구 설정 다이얼로그
+# =======================================================
+class IdiomSettingsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("관용구(지문) 설정")
+        self.setFixedSize(520, 500) # 너비와 높이를 약간 조절
+        self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint)
+        
+        # 로컬 데이터 복사본 (취소 시 복구용)
+        self.local_idioms = [item.copy() for item in config.IDIOMS]
+        
+        self.init_ui()
+        self.refresh_list()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(25, 20, 25, 20)
+        layout.setSpacing(15)
+
+        # 1. 상단 제목 및 설명
+        header_layout = QVBoxLayout()
+        header_layout.setSpacing(5)
+        
+        lbl_title = QLabel("자주 사용하는 괄호 지문과 단축키를 관리하세요.")
+        lbl_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #1f2937;")
+        header_layout.addWidget(lbl_title)
+
+        lbl_desc = QLabel("Alt + [키]를 누르면 해당 지문이 즉시 입력됩니다.")
+        lbl_desc.setStyleSheet("color: #6b7280; font-size: 13px;")
+        header_layout.addWidget(lbl_desc)
+        
+        layout.addLayout(header_layout)
+
+        # 2. [수정] 입력 영역 (박스 제거 및 높이 축소)
+        input_layout = QHBoxLayout()
+        input_layout.setContentsMargins(0, 5, 0, 5)
+        input_layout.setSpacing(8)
+
+        self.input_text = QLineEdit()
+        self.input_text.setPlaceholderText("예: (속)") 
+        self.input_text.setFixedHeight(36) 
+        
+        self.input_key = QLineEdit()
+        self.input_key.setPlaceholderText("단축키(숫자/영문)")
+        self.input_key.setFixedWidth(140) 
+        self.input_key.setFixedHeight(36) 
+        self.input_key.setMaxLength(1) 
+        self.input_key.setAlignment(Qt.AlignLeft | Qt.AlignVCenter) # 다시 왼쪽 정렬로 변경
+        
+        btn_add = QPushButton("추가")
+        btn_add.setFixedSize(70, 36) 
+        btn_add.setCursor(Qt.PointingHandCursor)
+        btn_add.setStyleSheet("""
+            QPushButton {
+                background-color: #FF5722;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+                padding: 0px; /* 패딩 제거하여 시스템 기본 중앙 정렬 유도 */
+                text-align: center;
+            }
+            QPushButton:hover {
+                background-color: #E64A19;
+            }
+        """)
+        btn_add.clicked.connect(self.add_idiom)
+
+        input_layout.addWidget(self.input_text, 1)
+        input_layout.addWidget(self.input_key)
+        input_layout.addWidget(btn_add)
+        layout.addLayout(input_layout)
+
+        # 3. 리스트 영역 (테두리와 헤더를 포함하는 메인 컨테이너)
+        self.scroll_container = QFrame()
+        self.scroll_container.setStyleSheet("""
+            QFrame { border: 1px solid #e5e7eb; border-radius: 8px; background-color: #f9fafb; }
+        """)
+        container_layout = QVBoxLayout(self.scroll_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+
+        # [최종 해결] 헤더를 컨테이너 내부 최상단에 배치하여 너비 동기화
+        self.header_widget = QWidget()
+        self.header_widget.setFixedHeight(35)
+        self.header_widget.setStyleSheet("""
+            QWidget { background-color: #f3f4f6; border: none; border-bottom: 1px solid #e5e7eb; border-top-left-radius: 7px; border-top-right-radius: 7px; }
+        """)
+        self.header_layout = QHBoxLayout(self.header_widget)
+        self.header_layout.setContentsMargins(10, 0, 10, 0) # 리스트 여백(10)과 일치
+        self.header_layout.setSpacing(8)
+        
+        def create_header_box(text, width=None):
+            box = QFrame()
+            box.setStyleSheet("background: transparent; border: none;")
+            lay = QHBoxLayout(box)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lbl = QLabel(text)
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setStyleSheet("color: #4b5563; font-size: 11px; font-weight: bold; border: none;")
+            lay.addWidget(lbl)
+            if width: box.setFixedWidth(width)
+            return box
+
+        self.header_layout.addWidget(create_header_box("지문 내용"), 1)
+        self.header_layout.addWidget(create_header_box("단축키", width=100))
+        self.header_layout.addWidget(create_header_box("삭제", width=40))
+        
+        # [정렬 핵심] 스크롤바(12px) 공간만큼 헤더 우측에도 고정 여백 추가
+        self.header_layout.addSpacing(12)
+        
+        container_layout.addWidget(self.header_widget)
+
+        # 4. 스크롤 영역
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.NoFrame)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn) # 항상 표시하여 정렬 고정
+        self.scroll_area.setStyleSheet("""
+            QScrollArea { background-color: transparent; border: none; }
+            QScrollBar:vertical { 
+                border: none; background: transparent; width: 12px; margin: 0;
+            }
+            QScrollBar::handle:vertical { 
+                background: #d1d5db; border-radius: 6px; min-height: 20px; margin: 2px;
+            }
+            QScrollBar::handle:vertical:hover { background: #9ca3af; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+        """)
+        
+        self.list_widget = QWidget()
+        self.list_widget.setStyleSheet("background-color: transparent;")
+        self.list_layout = QVBoxLayout(self.list_widget)
+        self.list_layout.setContentsMargins(10, 10, 10, 10)
+        self.list_layout.setSpacing(8)
+        self.list_layout.addStretch()
+        
+        self.scroll_area.setWidget(self.list_widget)
+        container_layout.addWidget(self.scroll_area)
+        layout.addWidget(self.scroll_container)
+
+        # 4. 하단 버튼
+        bottom_layout = QHBoxLayout()
+        bottom_layout.addStretch()
+        
+        btn_save = QPushButton("설정 저장")
+        btn_save.setObjectName("PrimaryBtn")
+        btn_save.setFixedSize(110, 38)
+        btn_save.setCursor(Qt.PointingHandCursor)
+        btn_save.clicked.connect(self.save_and_close)
+        
+        btn_close = QPushButton("닫기")
+        btn_close.setFixedSize(80, 38)
+        btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.clicked.connect(self.reject)
+        
+        bottom_layout.addWidget(btn_save)
+        bottom_layout.addWidget(btn_close)
+        layout.addLayout(bottom_layout)
+
+    def refresh_list(self):
+        # 기존 위젯들 제거 (Stretch 제외)
+        while self.list_layout.count() > 1:
+            item = self.list_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        # 카드 추가
+        for idiom in self.local_idioms:
+            card = IdiomCard(idiom)
+            card.delete_signal.connect(self.delete_idiom_by_data)
+            self.list_layout.insertWidget(self.list_layout.count() - 1, card)
+
+    def delete_idiom_by_data(self, data):
+        if data in self.local_idioms:
+            self.local_idioms.remove(data)
+            self.refresh_list()
+
+    def add_idiom(self):
+        text = self.input_text.text().strip()
+        key = self.input_key.text().strip().upper() # 대문자로 통일
+
+        if not text or not key:
+            QMessageBox.warning(self, "알림", "내용과 단축키를 모두 입력해주세요.")
+            return
+
+        # [수정] 영문자 또는 숫자만 허용
+        if not key.isalnum():
+            QMessageBox.warning(self, "알림", "단축키는 숫자 또는 영문자 1글자만 가능합니다.")
+            return
+
+        # 중복 체크 (대소문자 구분 없이)
+        if any(item["key"].upper() == key for item in self.local_idioms):
+            QMessageBox.warning(self, "알림", f"단축키 '{key}'는 이미 사용 중입니다.")
+            return
+
+        self.local_idioms.append({"text": text, "key": key})
+        self.input_text.clear()
+        self.input_key.clear()
+        self.refresh_list()
+
+    def delete_idiom(self):
+        # 개별 카드에서 삭제 버튼을 누르므로 이 함수는 더 이상 사용되지 않거나
+        # 다른 용도로 변경될 수 있습니다. 현재는 delete_idiom_by_data가 담당합니다.
+        pass
+
+    def save_and_close(self):
+        config.IDIOMS = self.local_idioms
+        config.save_settings(config.API_PRESETS, config.ACTIVE_PRESET_NAME)
+        self.accept()
