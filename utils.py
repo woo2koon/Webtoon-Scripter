@@ -2,6 +2,8 @@
 import re
 import os
 import base64
+import subprocess
+import platform
 from config import TEMPLATE_PATH, EXCEL_TEMPLATE_BASE64
 
 from PySide6.QtCore import Qt, QByteArray, QSize # Qt, QByteArray는 여기에
@@ -126,8 +128,17 @@ def clean_korean_text(text):
     
     return text.strip()
 
-import os
-import platform
+def open_path(path):
+    """
+    시스템 기본 프로그램으로 파일이나 폴더를 엽니다. (윈도우, 맥, 리눅스 공용)
+    """
+    if platform.system() == "Windows":
+        os.startfile(path)
+    elif platform.system() == "Darwin": # macOS
+        subprocess.run(["open", path])
+    else: # Linux
+        subprocess.run(["xdg-open", path])
+
 import xlwings as xw
 
 def safe_excel_clean(file_path):
@@ -169,11 +180,7 @@ def safe_excel_clean(file_path):
         print(f"❌ 엑셀 앱 실행 실패: {e}")
         # 실패 시 차선책으로 일반 실행 시도
         try:
-            if platform.system() == "Windows":
-                os.startfile(abs_path)
-            else:
-                import subprocess
-                subprocess.run(['open', abs_path])
+            open_path(abs_path)
         except:
             pass
         return False

@@ -21,7 +21,7 @@ MY_DEFAULT_AI_KEY = ""   # <-- 여기에 직접 입력하지 마세요!
 
 # 1. 앱 이름 (이 이름으로 사용자의 컴퓨터에 폴더가 생깁니다)
 APP_NAME = "Webtoon_Script_Manager"
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.2.1"
 
 if getattr(sys, 'frozen', False):
     # [읽기전용] EXE 내부에 압축된 아이콘 등 (임시 폴더)
@@ -74,6 +74,7 @@ ICON_KEY = os.path.join(ASSETS_DIR, "key.svg")
 ICON_MENU = os.path.join(ASSETS_DIR, "menu.svg")
 ICON_UNDO = os.path.join(ASSETS_DIR, "undo.svg")
 ICON_REDO = os.path.join(ASSETS_DIR, "redo.svg")
+ICON_IDIOM = ICON_LIBRARY # 관용구 아이콘 별칭 추가
 # =================================================================
 
 OCR_API_KEY = ""
@@ -182,6 +183,9 @@ def load_settings():
 
     OCR_API_KEY = current_set.get("ocr", "")
     AI_API_KEY = current_set.get("ai", "")
+    # [추가] AI 키가 비어있으면 OCR 키를 기본값으로 사용 (구글 클라우드 통합 키 대응)
+    if not AI_API_KEY:
+        AI_API_KEY = OCR_API_KEY
 
 def save_settings(presets=None, active_name=None, is_simple_mode=None):
     global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR
@@ -196,6 +200,9 @@ def save_settings(presets=None, active_name=None, is_simple_mode=None):
     current_set = API_PRESETS.get(ACTIVE_PRESET_NAME, {"ocr": "", "ai": ""})
     OCR_API_KEY = current_set.get("ocr", "")
     AI_API_KEY = current_set.get("ai", "")
+    # [추가] AI 키가 비어있으면 OCR 키를 기본값으로 사용 (구글 클라우드 통합 키 대응)
+    if not AI_API_KEY:
+        AI_API_KEY = OCR_API_KEY
     
     data = {
         "presets": API_PRESETS,
@@ -283,6 +290,7 @@ QLineEdit, QComboBox {
     padding-left: 12px; 
     color: #333; 
 }
+QComboBox { combobox-popup: 0; }
 QLineEdit:focus, QComboBox:focus, QComboBox:on { border: 1px solid #ff4b4b; }
 
 QComboBox::drop-down { 
@@ -297,7 +305,7 @@ QComboBox::down-arrow {
     width: 12px; 
     height: 12px; 
 }
-QComboBox QAbstractItemView { font-family: 'Pretendard'; border: 1px solid #d1d5db; border-radius: 4px; background-color: white; selection-background-color: #ffecec; selection-color: #ff4b4b; outline: none; }
+QComboBox QAbstractItemView { font-family: 'Pretendard'; border: 1px solid #9CA3AF; border-radius: 8px; background-color: white; selection-background-color: #ffecec; selection-color: #ff4b4b; outline: none; }
 QComboBox QAbstractItemView::item { font-family: 'Pretendard'; min-height: 30px; padding: 5px; margin: 2px 0px; }
 QTableWidget { border: 1px solid #d1d5db; gridline-color: #d0d0d0; font-family: 'Pretendard', 'AppleGothic'; font-size: 10pt; selection-background-color: transparent; selection-color: black; }
 QTableWidget::item:selected, QTableWidget::item:focus { border: 2px solid #ff4b4b; background-color: transparent; color: black; }

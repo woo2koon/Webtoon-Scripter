@@ -46,10 +46,18 @@ restore_template()
 
 
 
-from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog
+from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer
 
 # 메인 윈도우
 # =======================================================
+class AlwaysUpComboBox(QComboBox):
+    def showPopup(self):
+        super().showPopup()
+        popup = self.view().window()
+        if popup:
+            point = self.mapToGlobal(QPoint(0, 0))
+            popup.move(point.x(), point.y() - popup.height() - 2)
+
 class WebtoonManager(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -59,9 +67,11 @@ class WebtoonManager(QMainWindow):
         self.current_episode = ""
         self.is_simple_mode = False
         self.api_call_count = 0 
+        self.daily_api_count = 0 # [추가] 오늘 전체 API 사용량
         self.zoom_step = 0
         self.overlay = DropOverlay(self)
         
+        self.idiom_viewer = None
         self.init_ui()
         self.refresh_project_list()
         self.idiom_shortcuts = []
@@ -368,29 +378,10 @@ class WebtoonManager(QMainWindow):
             QPushButton:hover { 
                 background-color: #F3F4F6; 
             }
-            QToolTip { 
-                background-color: white; 
-                color: black; 
-                border: 1px solid #D1D5DB; 
-                padding: 3px 8px; 
-                border-radius: 4px;
-                font-family: 'Pretendard'; 
-                font-size: 12px;
-            }
         """)
         self.btn_toggle.clicked.connect(self.toggle_sidebar)
 
-        self.setStyleSheet(self.styleSheet() + """
-            QToolTip { 
-                background-color: #374151; 
-                color: white; 
-                border: 1px solid #1F2937;
-                padding: 3px 8px;
-                border-radius: 4px;
-                border-radius: 4px;
-                font-size: 12px;
-            }
-        """)
+        self.setStyleSheet(self.styleSheet())
         
         # 버튼을 일단 맨 위로 올립니다.
         self.btn_toggle.raise_()
@@ -406,9 +397,9 @@ class WebtoonManager(QMainWindow):
         # 실제 내용물이 들어갈 레이아웃 (기존 side_layout 역할을 함)
         body_layout = QVBoxLayout(self.sidebar_body)
         body_layout.setContentsMargins(20, 0, 20, 20)
-        body_layout.setSpacing(12)
+        body_layout.setSpacing(0) # [핵심] 자동 간격 기능을 끄고 수동으로 제어합니다.
 
-        # --- [기존 사이드바 요소들을 body_layout에 추가] ---
+        # --- [슬림 & 타이트 수동 간격 시스템] ---
         
         lbl_p = QLabel("작품 선택")
         lbl_p.setObjectName("LabelBold")
@@ -420,19 +411,20 @@ class WebtoonManager(QMainWindow):
         self.combo_project.currentTextChanged.connect(self.on_project_change)
         self.combo_project.set_refresh_callback(self.get_project_list)
         body_layout.addWidget(self.combo_project)
+        body_layout.addSpacing(-3) # 음수 간격으로 초밀착
         
         row_proj = QHBoxLayout()
         row_proj.setSpacing(6)
         self.input_new_project = QLineEdit()
         self.input_new_project.setPlaceholderText("새 작품명")
-        self.input_new_project.setFixedHeight(38)
+        self.input_new_project.setFixedHeight(36) 
         self.input_new_project.setStyleSheet("border: 1px solid #D1D5DB; border-radius: 4px; padding-left: 10px;")
         
         btn_add_proj = QPushButton() 
-        btn_add_proj.setFixedSize(38, 38)
+        btn_add_proj.setFixedSize(36, 36)
         plus_icon_path = os.path.join(ASSETS_DIR, "plus.svg")
         if os.path.exists(plus_icon_path): btn_add_proj.setIcon(QIcon(plus_icon_path))
-        btn_add_proj.setIconSize(QSize(22, 22))
+        btn_add_proj.setIconSize(QSize(20, 20))
         btn_add_proj.setStyleSheet("background-color: #FF5722; border-radius: 3px;")
         btn_add_proj.clicked.connect(self.create_project)
         
@@ -440,10 +432,17 @@ class WebtoonManager(QMainWindow):
         row_proj.addWidget(btn_add_proj)
         body_layout.addLayout(row_proj)
         
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("color: #e5e7eb; margin: 10px 0;")
-        body_layout.addWidget(line)
+        body_layout.addSpacing(4) # 간격 축소
+        
+        # [복구] 섹션 구분선 (선명도 강화)
+        line_mid = QFrame()
+        line_mid.setFrameShape(QFrame.HLine)
+        line_mid.setFrameShadow(QFrame.Plain)
+        line_mid.setFixedHeight(1)
+        line_mid.setStyleSheet("background-color: #D1D5DB; border: none;")
+        body_layout.addWidget(line_mid)
+        
+        body_layout.addSpacing(4) 
         
         lbl_e = QLabel("회차 선택")
         lbl_e.setObjectName("LabelBold")
@@ -455,18 +454,19 @@ class WebtoonManager(QMainWindow):
         self.combo_episode.currentTextChanged.connect(self.on_episode_change)
         self.combo_episode.set_refresh_callback(self.get_episode_list)
         body_layout.addWidget(self.combo_episode)
+        body_layout.addSpacing(-3) 
         
         row_ep = QHBoxLayout()
         row_ep.setSpacing(6)
         self.input_new_episode = QLineEdit()
         self.input_new_episode.setPlaceholderText("새 회차명")
-        self.input_new_episode.setFixedHeight(38)
+        self.input_new_episode.setFixedHeight(36)
         self.input_new_episode.setStyleSheet("border: 1px solid #D1D5DB; border-radius: 4px; padding-left: 10px;")
 
         btn_add_ep = QPushButton()
-        btn_add_ep.setFixedSize(38, 38)
+        btn_add_ep.setFixedSize(36, 36)
         if os.path.exists(plus_icon_path): btn_add_ep.setIcon(QIcon(plus_icon_path))
-        btn_add_ep.setIconSize(QSize(22, 22))
+        btn_add_ep.setIconSize(QSize(20, 20))
         btn_add_ep.setStyleSheet("background-color: #FF5722; border-radius: 3px;")
         btn_add_ep.clicked.connect(self.create_episode)
         
@@ -474,9 +474,8 @@ class WebtoonManager(QMainWindow):
         row_ep.addWidget(btn_add_ep)
         body_layout.addLayout(row_ep)
         
-        body_layout.addSpacing(15)
+        body_layout.addSpacing(8) 
         
-        # 1. 파일 목록 제목 및 아이콘 (기존 유지)
         files_title_container = QWidget()
         files_title_layout = QHBoxLayout(files_title_container)
         files_title_layout.setContentsMargins(0, 0, 0, 0)
@@ -492,144 +491,62 @@ class WebtoonManager(QMainWindow):
         files_title_layout.addStretch()
         body_layout.addWidget(files_title_container)
 
-        # 2. 파일 목록 리스트 (숫자 3을 지우거나 1로 수정하여 너무 커지지 않게 함)
         self.file_list_widget = FileDropListWidget(self)
-        self.file_list_widget.setStyleSheet("""
-            QListWidget {
-                border: 2px solid #E5E7EB; 
-                border-radius: 8px;
-                background-color: white;
-                outline: 0;
-                padding: 5px;
-            }
-            QListWidget::item {
-                padding: 10px;
-                border-radius: 1px;
-                color: #374151;
-            }
-            /* 선택되었을 때의 스타일: 배경색을 더 진하게, 테두리 추가 */
-            QListWidget::item:selected {
-                background-color: #FFEDD5; /* 연한 오렌지(Orange 100) - 기존보다 진함 */
-                color: #EA580C;           /* 진한 오렌지 글씨색 */
-                border: 1px solid #FB923C; /* 선택된 항목에 얇은 실선 테두리 추가 */
-                font-weight: bold;         /* 선택된 항목은 굵게 표시 */
-            }
-
-            /* 마우스 올렸을 때(Hover)도 약간 더 진하게 */
-            QListWidget::item:hover {
-                background-color: #F3F4F6;
-            }
-
-            /* --- 가로 스크롤바 심플하게 스타일링 --- */
-            QScrollBar:horizontal {
-                height: 8px;            /* 스크롤바 두께 (얇게) */
-                background: #F1F1F1;
-                border-radius: 4px;
-                margin: 0px 0px 0px 0px;
-            }
-            QScrollBar::handle:horizontal {
-                background: #D1D5DB;    /* 스크롤바 바 컬러 */
-                min-width: 20px;
-                border-radius: 4px;
-            }
-            QScrollBar::handle:horizontal:hover {
-                background: #9CA3AF;
-            }
-            /* 화살표 버튼 제거 */
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-                width: 0px;
-                height: 0px;
-            }
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-                background: none;
-            }
-        """)
-
-        # 추가 팁: 포커스 되었을 때의 점선 테두리 아예 안 보이게 설정
         self.file_list_widget.setFocusPolicy(Qt.NoFocus)
-        body_layout.addWidget(self.file_list_widget, 1) # 숫자 1은 '적당히 늘어나라'는 뜻입니다.
+        body_layout.addWidget(self.file_list_widget, 1) 
+        body_layout.addSpacing(-1) # 초밀착
 
-       # 3. [수정] QPushButton 대신 QToolButton으로 교체하여 스플릿 기능 구현
         self.btn_start = QToolButton()
         self.btn_start.setText("분석 시작")
-        self.btn_start.setPopupMode(QToolButton.MenuButtonPopup) # 이 설정이 '좌우 분리'를 만듭니다.
-        self.btn_start.setFixedHeight(50)
+        self.btn_start.setPopupMode(QToolButton.MenuButtonPopup)
+        self.btn_start.setFixedHeight(40) 
         self.btn_start.setCursor(Qt.PointingHandCursor)
-        # 사이드바 너비에 맞춰 꽉 차게 설정
         self.btn_start.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
         self.btn_start.setStyleSheet("""
             QToolButton {
                 background-color: #FF5722;
                 color: white;
-                font-size: 16px;
+                font-size: 15px;
                 font-weight: bold;
                 border-radius: 4px;
-                padding: 5px;
+                padding: 4px;
                 border: none;
-                margin: 5px 0px;
                 padding-right: 35px;
             }
             QToolButton:hover { background-color: #F97316; }
-            
-            /* 화살표가 담기는 오른쪽 영역 */
             QToolButton::menu-button {
                 border-left: 1px solid rgba(255, 255, 255, 0.4);
                 width: 35px;
-                border-top-right-radius: 8px;
-                border-bottom-right-radius: 8px;
             }
-
-            /* [수정] 화살표 아이콘 설정 */
-            QToolButton::menu-arrow {
-                /* image: none; <- 이 줄을 삭제하거나 아래처럼 기본 위치를 잡아줍니다 */
-                subcontrol-position: center center;
-                subcontrol-origin: padding;
-                width: 12px;
-                height: 12px;
-                /* 흰색 화살표 아이콘 파일이 있다면 여기에 경로를 넣으세요 */
-                /* image: url(white_arrow.png); */
-            }
+            QToolButton::menu-arrow { subcontrol-position: center center; width: 11px; height: 11px; }
         """)
 
-        # 2. 드롭다운 메뉴 및 내부 위젯 구성
         self.analysis_menu = QMenu(self)
-        self.analysis_menu.setStyleSheet("""
-            QMenu {
-                background-color: white;
-                border: 1px solid #111827;
-                border-radius: 8px;
-                padding: 5px;
-            }
-        """)
+        self.analysis_menu.setWindowFlags(self.analysis_menu.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        self.analysis_menu.setAttribute(Qt.WA_TranslucentBackground)
+        self.analysis_menu.setStyleSheet("QMenu { background-color: white; border: 1px solid #111827; border-radius: 12px; padding: 5px; }")
 
-        # 메뉴 안에 들어갈 커스텀 컨테이너
         menu_widget = QWidget()
+        menu_widget.setCursor(Qt.PointingHandCursor)
         menu_layout = QVBoxLayout(menu_widget)
         menu_layout.setContentsMargins(10, 10, 10, 10)
         menu_layout.setSpacing(8)
 
-        # 기존 변수명(self.radio_fast 등)을 그대로 써서 분석 로직이 깨지지 않게 합니다.
         self.radio_fast = QRadioButton("빠른모드(고정 절단)")
         self.radio_smart = QRadioButton("스마트 모드(컷 단위)")
-        
-        line = QFrame() # 구분선
-        line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("color: #E5E7EB; margin: 4px 0;")
-        
+        line_m = QFrame()
+        line_m.setFrameShape(QFrame.HLine)
+        line_m.setStyleSheet("color: #D1D5DB; margin: 4px 0;")
         self.check_reanalyze = QCheckBox("새로 분석하기")
-
-        # [추가] 마우스를 올렸을 때 나타날 툴팁 설정
         self.check_reanalyze.setToolTip("기존 결과를 무시하고 새로 분석합니다. API가 소모됩니다.")
         
-        # 스타일 설정
         option_style = """
             QRadioButton, QCheckBox { font-size: 13px; color: #374151; }
             QToolTip { 
                 background-color: white; 
                 color: black; 
                 border: 1px solid #D1D5DB; 
-                padding: 3px 8px; 
+                padding: 1px 4px; 
                 border-radius: 4px;
                 font-family: 'Pretendard'; 
                 font-size: 12px;
@@ -642,61 +559,103 @@ class WebtoonManager(QMainWindow):
 
         menu_layout.addWidget(self.radio_fast)
         menu_layout.addWidget(self.radio_smart)
-        menu_layout.addWidget(line)
+        menu_layout.addWidget(line_m)
         menu_layout.addWidget(self.check_reanalyze)
 
-        # 3. 위젯을 메뉴에 심기
         menu_action = QWidgetAction(self.analysis_menu)
         menu_action.setDefaultWidget(menu_widget)
         self.analysis_menu.addAction(menu_action)
 
-        # 4. 버튼과 메뉴 연결 및 레이아웃 추가
         self.btn_start.setMenu(self.analysis_menu)
         self.btn_start.clicked.connect(self.run_ocr)
         body_layout.addWidget(self.btn_start)
-
+        
+        # [추가] 메뉴가 열릴 때 위치를 강제로 위로 조정 (aboutToShow에 연결)
         self.analysis_menu.aboutToShow.connect(self.adjust_menu_position)
+        self.analysis_menu.aboutToShow.connect(lambda: self.btn_start.setCursor(Qt.PointingHandCursor))
 
-        # 4. [중요] 구분선을 버튼 바로 아래에 추가
+        body_layout.addSpacing(1) # 버튼과 구분선 사이 (초밀착)
+
         line_bottom = QFrame()
         line_bottom.setFrameShape(QFrame.HLine)
-        line_bottom.setFrameShadow(QFrame.Plain) # 3D 입체감을 없애고 평면으로 설정
-        line_bottom.setFixedHeight(1)            # 높이를 딱 1픽셀로 고정
-        
-        # color 대신 background-color를 쓰는 것이 훨씬 확실합니다.
-        line_bottom.setStyleSheet("""
-            background-color: #E5E7EB; 
-            margin: 15px 0; /* 위아래 여백을 15px로 줘서 숨통을 틔워줍니다 */
-        """)
+        line_bottom.setFrameShadow(QFrame.Plain) 
+        line_bottom.setFixedHeight(1)            
+        line_bottom.setStyleSheet("background-color: #D1D5DB; border: none;")
         body_layout.addWidget(line_bottom)
 
-        # 5. [핵심] 여기서 스트레치를 넣어서 위 요소들을 모두 위로 밀어올립니다!
+        body_layout.setSpacing(15) 
         body_layout.addStretch()
 
-        # 6. API 호출 수 (타이틀 크기 업 + 왼쪽 정렬 최적화)
-        lbl_api_title = QLabel("이번 작업 API 호출 수")
-        lbl_api_title.setStyleSheet("""
-            color: #6B7280; 
-            font-size: 14px;      /* 12px에서 14px로 살짝 키웠습니다 */
-            font-weight: 500;
-            margin-left: 0px;
-            padding-left: 0px;
+        # 6. API 호출 수 (그룹화하여 정렬 최적화)
+        api_stat_group = QWidget()
+        api_stat_layout = QVBoxLayout(api_stat_group)
+        api_stat_layout.setContentsMargins(0, 0, 0, 5) # 가로선과 맞추기 위해 좌측 여백 0으로 설정
+        api_stat_layout.setSpacing(0)
+
+        self.combo_api_type = AlwaysUpComboBox()
+        self.combo_api_type.addItems(["현재 회차 API 호출 수", "오늘 총 API 사용 횟수"])
+        self.combo_api_type.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.combo_api_type.view().window().setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        self.combo_api_type.view().window().setAttribute(Qt.WA_TranslucentBackground)
+        self.combo_api_type.setStyleSheet("""
+            QComboBox {
+                combobox-popup: 0;
+                color: #6B7280; 
+                font-size: 13px;
+                font-weight: 600;
+                background: transparent;
+                border: 1px solid transparent; 
+                padding: 0px;
+                padding-right: 15px;
+                min-width: 0px; 
+                min-height: 20px;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 15px;
+                subcontrol-origin: padding;
+                subcontrol-position: center right;
+            }
+            QComboBox::down-arrow {
+                image: url("assets/dropdown-arrow.svg");
+                width: 12px;
+                height: 12px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                border: 1px solid #9CA3AF;
+                border-radius: 8px;
+                selection-background-color: #F3F4F6;
+                selection-color: #111827;
+                outline: none;
+                padding: 2px;
+                margin: 0px;
+            }
+            QComboBox QAbstractItemView::item {
+                padding: 4px 10px;
+                min-height: 22px;
+                border-radius: 4px;
+            }
         """)
-        # 레이아웃 안에서 확실히 왼쪽으로 붙도록 설정
-        lbl_api_title.setAlignment(Qt.AlignLeft) 
-        body_layout.addWidget(lbl_api_title)
+        self.combo_api_type.setCursor(Qt.PointingHandCursor)
+        self.combo_api_type.currentIndexChanged.connect(self.update_api_display)
+        api_stat_layout.addWidget(self.combo_api_type, 0, Qt.AlignLeft)
 
         self.lbl_api_count = QLabel("0회")
         self.lbl_api_count.setStyleSheet("""
             color: #111827; 
             font-size: 38px;      
             font-weight: 900; 
-            padding-bottom: 5px;
-            margin-left: -9px;    /* [핵심] 시각적으로 왼쪽 벽에 딱 붙게 음수 마진 적용 */
-            padding-left: 0px;
+            margin-top: 1px;     
+            margin-left: -10px;    /* 드롭다운 글자와 시작점을 맞추기 위해 미세 조정 */
+            padding-left: 2px;
+            padding-bottom: 0px;
         """)
         self.lbl_api_count.setAlignment(Qt.AlignLeft)
-        body_layout.addWidget(self.lbl_api_count)
+        api_stat_layout.addWidget(self.lbl_api_count)
+        
+        body_layout.addSpacing(-7)
+        body_layout.addWidget(api_stat_group)
 
         # 7. [마무리] 완성된 body가 담긴 sidebar_body를 side_layout에 추가
         # 여기서 추가적인 addStretch()는 필요 없습니다. 이미 body_layout 안에서 해결했으니까요!
@@ -1013,33 +972,13 @@ class WebtoonManager(QMainWindow):
         # ★ [핵심] 빈 공간(스프링)을 맨 앞에 둡니다. -> 모든 요소를 오른쪽으로 밀어버림
         top_toolbar.addStretch() 
         
-        # [번호 제거 버튼] (이제 오른쪽 그룹에 합류)
-        btn_remove_num = QPushButton("번호제거")
-        btn_remove_num.setFixedSize(80, 32)
-        btn_remove_num.setCursor(Qt.PointingHandCursor)
-        btn_remove_num.setStyleSheet("""
-            QPushButton { 
-                border: 1px solid #D1D5DB; 
-                background-color: white; 
-                border-radius: 4px; 
-                color: #374151; 
-                font-size: 13px; 
-                font-weight: bold;
-            } 
-            QPushButton:hover { background-color: #F3F4F6; border-color: #9CA3AF; } 
-            QPushButton:pressed { background-color: #E5E7EB; }
-        """)
-        btn_remove_num.clicked.connect(self.remove_line_numbers)
-        top_toolbar.addWidget(btn_remove_num)
-        
-        # [간격 추가] 번호제거 버튼과 줌 컨트롤 사이를 조금 띄워줍니다.
-        top_toolbar.addSpacing(20) 
-        
         # [줌 컨트롤 그룹]
         lbl_zoom = QLabel("텍스트 배율:")
         lbl_zoom.setStyleSheet("color: #4B5563; font-size: 13px; font-weight: bold; margin-right: 5px;")
         
         self.lbl_zoom_val = QLabel("100%")
+        self.lbl_zoom_val.setFixedWidth(50)
+        self.lbl_zoom_val.setAlignment(Qt.AlignCenter)
         self.lbl_zoom_val.setStyleSheet("color: #111827; font-weight: 800; font-size: 13px; margin-right: 10px;")
 
         # 줌 버튼 스타일
@@ -1080,6 +1019,31 @@ class WebtoonManager(QMainWindow):
         top_toolbar.addWidget(btn_zoom_reset)
         top_toolbar.addWidget(btn_zoom_in)
         
+        # [간격 추가] 줌 컨트롤과 관용구 버튼 사이
+        top_toolbar.addSpacing(10)
+
+        # [관용구 보기 버튼] 추가
+        btn_view_idioms = QPushButton(" 관용구 보기")
+        btn_view_idioms.setFixedSize(115, 32)
+        btn_view_idioms.setCursor(Qt.PointingHandCursor)
+        btn_view_idioms.setIcon(get_icon(config.ICON_IDIOM)) 
+        btn_view_idioms.setStyleSheet("""
+            QPushButton { 
+                border: 1px solid #D1D5DB; 
+                background-color: #FDF2F2; 
+                border-radius: 4px; 
+                color: #EF4444; 
+                font-size: 13px; 
+                font-weight: bold;
+            } 
+            QPushButton:hover { background-color: #FEE2E2; border-color: #FCA5A5; } 
+            QPushButton:pressed { background-color: #FECACA; }
+        """)
+        btn_view_idioms.clicked.connect(self.toggle_idiom_viewer)
+        top_toolbar.addWidget(btn_view_idioms)
+        
+        top_toolbar.addSpacing(10)
+
         tab1_layout.addLayout(top_toolbar)
 
         # ---------------------------------------------------------
@@ -1166,15 +1130,6 @@ class WebtoonManager(QMainWindow):
             }
             QPushButton:hover { background-color: #FFF59D; }
             QPushButton:pressed { background-color: #FFF176; }
-            QToolTip { 
-                background-color: white; 
-                color: black; 
-                border: 1px solid #D1D5DB; 
-                padding: 3px 8px; 
-                border-radius: 4px;
-                font-family: 'Pretendard'; 
-                font-size: 12px;
-            }
         """)
         btn_ai_check.clicked.connect(self.run_spell_check)
 
@@ -1292,30 +1247,18 @@ class WebtoonManager(QMainWindow):
         tab3_layout.setContentsMargins(15, 15, 15, 15) # 1. 전체 여백을 넉넉하게 줍니다.
         tab3_layout.setSpacing(15) # 각 요소 간 간격
 
-        # A. 상단 툴바 (기존과 동일)
+        # A. 상단 툴바
         top_bar = QHBoxLayout()
-        self.lbl_step3_status = QLabel("")
-        self.lbl_step3_status.setStyleSheet("color: #27ae60; font-weight: bold; font-size: 13px;")
-        top_bar.addWidget(self.lbl_step3_status)
-        top_bar.addStretch()
         
-        btn_add_script_row = QPushButton("+ 행 추가")
-        btn_add_script_row.setObjectName("PrimaryBtn")
-        btn_add_script_row.setFixedWidth(85)
-        btn_add_script_row.clicked.connect(self.add_script_row)
-        
-        # [수정] QPushButton 대신 HoverIconButton 사용
+        # 1. Step 1 가져오기 (가장 왼쪽으로 이동)
         self.btn_load_script = HoverIconButton(
             " Step 1 가져오기", 
             config.ICON_REFRESH,
-            normal_color="#333333", # 평소 색상
-            hover_color="#FF4B4B"    # 호버 시 변할 색상 (포인트 레드)
+            normal_color="#333333",
+            hover_color="#FF4B4B"
         )
         self.btn_load_script.setIconSize(QSize(16, 16))
-        self.btn_load_script.setFixedHeight(32) # 높이 유지
-
-        # 기존 테두리와 배경 스타일 유지
-        # (글자색 color 속성은 HoverIconButton 내부에서 자동으로 관리하므로 제외합니다)
+        self.btn_load_script.setFixedHeight(32)
         self.btn_load_script.setStyleSheet("""
             QPushButton { 
                 border: 1px solid #D1D5DB; 
@@ -1333,10 +1276,30 @@ class WebtoonManager(QMainWindow):
                 background-color: #E5E7EB; 
             }
         """)
+        self.btn_load_script.clicked.connect(self.load_script_to_table)
+
+        # 3. 관용구 보기 (스텝 3 추가)
+        btn_view_idioms_step3 = QPushButton(" 관용구 보기")
+        btn_view_idioms_step3.setIcon(get_icon(config.ICON_IDIOM))
+        btn_view_idioms_step3.setFixedWidth(115)
+        btn_view_idioms_step3.setFixedHeight(32)
+        btn_view_idioms_step3.setCursor(Qt.PointingHandCursor)
+        btn_view_idioms_step3.setStyleSheet("""
+            QPushButton { 
+                border: 1px solid #D1D5DB; 
+                background-color: #FDF2F2; 
+                border-radius: 4px; 
+                color: #EF4444; 
+                font-size: 13px; 
+                font-weight: bold;
+            } 
+            QPushButton:hover { background-color: #FEE2E2; border-color: #FCA5A5; } 
+            QPushButton:pressed { background-color: #FECACA; }
+        """)
+        btn_view_idioms_step3.clicked.connect(self.toggle_idiom_viewer)
         
-        self.btn_load_script.clicked.connect(self.load_script_to_table) # 연결 유지
-        
-        top_bar.addWidget(btn_add_script_row)
+        top_bar.addStretch() # 왼쪽을 비워서 버튼들을 오른쪽으로 밀어냅니다.
+        top_bar.addWidget(btn_view_idioms_step3)
         top_bar.addWidget(self.btn_load_script)
         tab3_layout.addLayout(top_bar)
 
@@ -1500,7 +1463,35 @@ class WebtoonManager(QMainWindow):
         dlg = IdiomSettingsDialog(self)
         if dlg.exec() == QDialog.Accepted:
             self.setup_idiom_shortcuts()
+            if self.idiom_viewer:
+                self.idiom_viewer.refresh_list()
             self.toast.show_message("✅ 관용구 설정이 저장되었습니다.", 2000)
+
+    def toggle_idiom_viewer(self):
+        """관용구 플로팅 뷰어를 토글합니다."""
+        if not self.idiom_viewer:
+            self.idiom_viewer = FloatingIdiomViewer(self)
+            self.idiom_viewer.idiom_selected.connect(self.handle_idiom_viewer_select)
+            
+            # 메인 윈도우 우측 상단 근처에 띄우기
+            geom = self.geometry()
+            self.idiom_viewer.move(geom.x() + geom.width() - 320, geom.y() + 100)
+            self.idiom_viewer.show()
+        else:
+            if self.idiom_viewer.isVisible():
+                self.idiom_viewer.hide()
+            else:
+                self.idiom_viewer.refresh_list() # 열 때마다 리스트 갱신
+                self.idiom_viewer.show()
+                self.idiom_viewer.raise_()
+                self.idiom_viewer.activateWindow()
+
+    def handle_idiom_viewer_select(self, text):
+        """플로팅 뷰어에서 선택된 문구를 메인 에디터에 삽입합니다."""
+        if hasattr(self, 'text_editor') and self.text_editor:
+            self.text_editor.insertPlainText(text)
+            # 입력을 마친 후 에디터로 포커스를 돌려주어 계속 타이핑할 수 있게 함
+            self.text_editor.setFocus()
 
     def setup_idiom_shortcuts(self):
         """설정된 관용구들에 대해 Alt + 숫자 단축키를 생성합니다."""
@@ -1843,8 +1834,14 @@ class WebtoonManager(QMainWindow):
             self.toast.show_message("이미 추가한 파일입니다.")
 
     def upload_images(self):
-        file_names, _ = QFileDialog.getOpenFileNames(self, "이미지 선택", "", "Images (*.png *.jpg *.jpeg)")
+        # 마지막 저장 폴더 또는 바탕화면을 기본값으로 설정
+        fallback = os.path.join(os.path.expanduser("~"), "Desktop")
+        default_dir = config.get_initial_dir(fallback)
+        
+        file_names, _ = QFileDialog.getOpenFileNames(self, "이미지 선택", default_dir, "Images (*.png *.jpg *.jpeg)")
         if file_names:
+            # 선택한 폴더를 기억하도록 업데이트
+            config.update_last_save_dir(file_names[0])
             self.process_image_files(file_names)
 
     def load_images(self):
@@ -1989,14 +1986,30 @@ class WebtoonManager(QMainWindow):
         # 확실히 위에 보이도록 레이어 우선순위 높임
         self.analysis_menu.raise_()
 
-    def increment_api_counter(self):
-        self.api_call_count += 1
-        if hasattr(self, 'lbl_api_count'):
+    def update_api_display(self):
+        """드롭다운 선택에 따라 API 호출 수 표시를 전환합니다."""
+        if not hasattr(self, 'lbl_api_count') or not hasattr(self, 'combo_api_type'):
+            return
+            
+        if self.combo_api_type.currentIndex() == 0: # 현재 회차
             self.lbl_api_count.setText(f"{self.api_call_count}회")
-        self.save_api_count() # [추가] 호출 시마다 즉시 저장
+        else: # 오늘 총 API 사용 횟수
+            self.lbl_api_count.setText(f"{self.daily_api_count}회")
+
+    def increment_api_counter(self):
+        """API 호출 시 회차별 카운트와 오늘 누적 카운트를 동시에 올립니다."""
+        self.api_call_count += 1
+        self.daily_api_count += 1
+        self.update_api_display()
+        self.save_api_count()
 
     def load_api_count(self):
-        """현재 회차의 API 호출 수를 파일에서 불러옵니다."""
+        """현재 회차 및 오늘 누적 API 호출 수를 파일에서 불러옵니다."""
+        import json
+        from datetime import datetime
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        
+        # 1. 현재 회차 카운트 로드
         self.api_call_count = 0
         try:
             if getattr(self, 'is_simple_mode', False):
@@ -2005,19 +2018,38 @@ class WebtoonManager(QMainWindow):
                 e_path, _, _ = self.get_paths()
             
             if e_path and os.path.exists(os.path.join(e_path, "api_count.json")):
-                import json
                 with open(os.path.join(e_path, "api_count.json"), "r", encoding='utf-8') as f:
                     data = json.load(f)
                     self.api_call_count = data.get("api_call_count", 0)
         except Exception as e:
-            print(f"Error loading API count: {e}")
+            print(f"Error loading Episode API count: {e}")
+            
+        # 2. 오늘 총 누적 카운트 로드 (공용 경로)
+        self.daily_api_count = 0
+        daily_path = os.path.join(BASE_DIR, "daily_api_usage.json")
+        try:
+            if os.path.exists(daily_path):
+                with open(daily_path, "r", encoding='utf-8') as f:
+                    data = json.load(f)
+                    last_date = data.get("last_date", "")
+                    if last_date == today_str:
+                        self.daily_api_count = data.get("daily_total", 0)
+                    else:
+                        # 날짜가 다르면 0으로 리셋 (데이터는 save_api_count에서 오늘 날짜로 갱신됨)
+                        self.daily_api_count = 0
+        except Exception as e:
+            print(f"Error loading Daily API count: {e}")
         
-        if hasattr(self, 'lbl_api_count'):
-            self.lbl_api_count.setText(f"{self.api_call_count}회")
+        self.update_api_display()
 
     def save_api_count(self):
-        """현재 회차의 API 호출 수를 파일로 저장합니다."""
+        """현재 회차 및 오늘 누적 API 호출 수를 파일로 저장합니다."""
+        import json
+        from datetime import datetime
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        
         try:
+            # 1. 회차별 저장
             if getattr(self, 'is_simple_mode', False):
                 e_path = os.path.join(CACHE_DIR, "simple_mode")
             else:
@@ -2025,15 +2057,26 @@ class WebtoonManager(QMainWindow):
             
             if e_path:
                 os.makedirs(e_path, exist_ok=True)
-                import json
                 with open(os.path.join(e_path, "api_count.json"), "w", encoding='utf-8') as f:
                     json.dump({"api_call_count": self.api_call_count}, f)
+                    
+            # 2. 오늘 누적 저장
+            daily_path = os.path.join(BASE_DIR, "daily_api_usage.json")
+            with open(daily_path, "w", encoding='utf-8') as f:
+                json.dump({
+                    "last_date": today_str,
+                    "daily_total": self.daily_api_count
+                }, f)
+                
         except Exception as e:
             print(f"Error saving API count: {e}")
 
     def on_ocr_finished(self, lines):
-        text = "\n".join(lines)
-        self.text_editor.setText(text)
+        raw_text = "\n".join(lines)
+        # [자동화] 텍스트를 보여주기 직전에 불필요한 번호 패턴([1], 1. 등)을 제거합니다.
+        clean_text = re.sub(r'(?m)^(\[\d+\]|\d+\.)\s*', '', raw_text)
+        
+        self.text_editor.setText(clean_text)
         self.btn_start.setEnabled(True)
         self.lbl_status.setText("분석 완료!")
         self.progress_bar.setValue(100)
@@ -2238,8 +2281,9 @@ class WebtoonManager(QMainWindow):
         df = pd.DataFrame(rows)
         df.to_csv(os.path.join(e_path, "script_data.csv"), index=False, encoding='utf-8-sig')
         self.table_script.resizeRowsToContents()
-        self.lbl_step3_status.setText("💾 저장 완료")
-        QTimer.singleShot(1500, lambda: self.lbl_step3_status.setText(""))
+        # self.lbl_step3_status.setText("💾 저장 완료")
+        # QTimer.singleShot(1500, lambda: self.lbl_step3_status.setText(""))
+        pass
 
     def save_char_data(self):
         import pandas as pd
@@ -2336,8 +2380,9 @@ class WebtoonManager(QMainWindow):
         else:
             default_filename = "script.txt"
             
-        # 마지막 저장 경로를 고려한 기본 경로 설정
-        default_path = os.path.join(config.get_initial_dir(), default_filename)
+        # 마지막 저장 경로를 고려한 기본 경로 설정 (초기값은 바탕화면)
+        fallback = os.path.join(os.path.expanduser("~"), "Desktop")
+        default_path = os.path.join(config.get_initial_dir(fallback), default_filename)
         
         # [맥 네이티브 창 복구]
         options = QFileDialog.Option(0) if platform.system() == "Darwin" else QFileDialog.DontConfirmOverwrite
@@ -2495,8 +2540,8 @@ if __name__ == "__main__":
     # 툴팁 배경 버그 해결을 위한 팔레트 강제 설정
 
     palette = app.palette()
-    tooltip_bg = QColor("#2D3748") # 진한 회색
-    tooltip_fg = QColor("white")   # 흰색 글자
+    tooltip_bg = QColor("#ffffff") # 흰색 배경
+    tooltip_fg = QColor("#333333") # 진한 회색 글자
     
     # 모든 그룹(Active, Inactive, Disabled)에 대해 배경/글자색 지정
     palette.setColor(QPalette.All, QPalette.ToolTipBase, tooltip_bg)
@@ -2519,15 +2564,15 @@ if __name__ == "__main__":
 
     TOOLTIP_STYLE = """
         QToolTip {
-        background: #2D3748; 
-        color: white;
-        border: 1px solid #FFFFFF; 
-        border-radius: 4px;
-        padding: 3px 8px;
-        font-family: 'Pretendard';
-        font-size: 13px;
-    }
-"""
+            background-color: #ffffff; 
+            color: #333333;
+            border: 1px solid #d1d5db; 
+            border-radius: 3px;
+            padding: 1px 4px;
+            font-family: 'Pretendard';
+            font-size: 12px;
+        }
+    """
     app.setStyleSheet(MODERN_STYLE + "\n" + TOOLTIP_STYLE)
     
     window = WebtoonManager()

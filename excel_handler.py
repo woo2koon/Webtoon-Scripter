@@ -10,7 +10,7 @@ from copy import copy
 from PySide6.QtWidgets import QFileDialog, QApplication, QMessageBox
 
 import config
-from utils import restore_template
+from utils import restore_template, open_path
 
 def export_to_excel(main_window):
     """
@@ -204,11 +204,7 @@ def save_episode_to_excel_final(parent_widget, e_path, title, episode, save_path
             if actual_toast:
                 actual_toast.show_message("⚠️ 추출 완료 (수동 저장 필요)", 4000)
             try:
-                if sys.platform == "win32":
-                    os.startfile(final_nas_path)
-                else:
-                    import subprocess
-                    subprocess.call(["open", final_nas_path])
+                open_path(final_nas_path)
             except: pass
         
         return True

@@ -18,7 +18,7 @@ import unicodedata
 import os
 import platform
 from config import ROLE_OPTIONS, AGE_OPTIONS, GENDER_OPTIONS, PROJECTS_DIR
-from utils import get_icon, get_colored_icon
+from utils import get_icon, get_colored_icon, open_path
 import config
 import excel_handler
 
@@ -54,6 +54,10 @@ class ClickableComboBox(QComboBox):
         self.installEventFilter(self) # [추가] 자기 자신에게도 필터 설치
         self.setView(QListView())
         
+        # [추가] 프리미엄 드롭다운 스타일 (잔상 제거 및 라운드 대응)
+        self.view().window().setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        self.view().window().setAttribute(Qt.WA_TranslucentBackground)
+
         delegate = QStyledItemDelegate()
         self.setItemDelegate(delegate)
         self.refresh_callback = None 
@@ -381,7 +385,10 @@ class CharacterRow(QFrame):
         """
         FOCUS_STYLE = "border: 1px solid #ff4b4b;"
         FULL_COMBO_STYLE = f"""
-            QComboBox {{ {BASIC_BOX_STYLE} }}
+            QComboBox {{ 
+                combobox-popup: 0;
+                {BASIC_BOX_STYLE} 
+            }}
             QComboBox:focus {{ {FOCUS_STYLE} }}
             QComboBox::drop-down {{ 
                 border: none; background-color: #f9fafb; width: 30px; 
@@ -391,8 +398,22 @@ class CharacterRow(QFrame):
                 image: url(assets/dropdown-arrow.svg);
                 width: 12px; height: 12px; 
             }}
-            QComboBox QAbstractItemView {{ font-family: 'Pretendard'; background-color: white; border: 1px solid #d1d5db; selection-background-color: #ffecec; selection-color: #ff4b4b; outline: none; padding: 4px; }}
-            QComboBox QAbstractItemView::item {{ min-height: 35px; padding: 5px; margin: 2px 0px; }}
+            QComboBox QAbstractItemView {{ 
+                font-family: 'Pretendard'; 
+                background-color: white; 
+                border: 1px solid #9CA3AF; 
+                border-radius: 8px; 
+                selection-background-color: #ffecec; 
+                selection-color: #ff4b4b; 
+                outline: none; 
+                padding: 4px; 
+            }}
+            QComboBox QAbstractItemView::item {{ 
+                min-height: 35px; 
+                padding: 5px; 
+                margin: 2px 0px; 
+                border-radius: 4px;
+            }}
         """
 
         self.lbl_drag = DragHandle(self)
@@ -939,12 +960,14 @@ class SpellCheckDialog(QDialog):
         # 1. 원본 에디터 (왼쪽)
         self.edit_org = QTextEdit()
         self.edit_org.setReadOnly(True)
+        self.edit_org.setFont(QFont("Pretendard", 13))
         self.edit_org.setPlaceholderText("원본 텍스트")
         self.edit_org.setStyleSheet(f"QTextEdit {{ background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; }} {scrollbar_style}")
         self.edit_org.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         
         # 2. 교정본 에디터 (오른쪽 - 핵심 위젯)
         self.edit_new = QTextEdit()
+        self.edit_new.setFont(QFont("Pretendard", 13))
         self.edit_new.setPlaceholderText("교정된 텍스트")
         self.edit_new.setStyleSheet(f"QTextEdit {{ border: 1px solid #E2E8F0; border-radius: 8px; background-color: white; padding: 5px; }} {scrollbar_style}")
         self.edit_new.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
@@ -958,11 +981,18 @@ class SpellCheckDialog(QDialog):
         self.undo_btn.revert_requested.connect(self.revert_segment)
         self.edit_new.cursorPositionChanged.connect(self.check_cursor_context)
 
-        # [추가] 스크롤 동기화
-        self.edit_org.verticalScrollBar().valueChanged.connect(self.edit_new.verticalScrollBar().setValue)
-        self.edit_new.verticalScrollBar().valueChanged.connect(self.edit_org.verticalScrollBar().setValue)
-        self.edit_org.horizontalScrollBar().valueChanged.connect(self.edit_new.horizontalScrollBar().setValue)
-        self.edit_new.horizontalScrollBar().valueChanged.connect(self.edit_org.horizontalScrollBar().setValue)
+        # [핵심] 스크롤 동기화 (무한 루프 방지를 위해 락 사용)
+        self._is_syncing = False
+        def sync_scroll(source, target):
+            if self._is_syncing: return
+            self._is_syncing = True
+            target.setValue(source.value())
+            self._is_syncing = False
+
+        self.edit_org.verticalScrollBar().valueChanged.connect(lambda: sync_scroll(self.edit_org.verticalScrollBar(), self.edit_new.verticalScrollBar()))
+        self.edit_new.verticalScrollBar().valueChanged.connect(lambda: sync_scroll(self.edit_new.verticalScrollBar(), self.edit_org.verticalScrollBar()))
+        self.edit_org.horizontalScrollBar().valueChanged.connect(lambda: sync_scroll(self.edit_org.horizontalScrollBar(), self.edit_new.horizontalScrollBar()))
+        self.edit_new.horizontalScrollBar().valueChanged.connect(lambda: sync_scroll(self.edit_new.horizontalScrollBar(), self.edit_org.horizontalScrollBar()))
 
         # 3. Diff 분석 및 표시
         self.show_diff(original, corrected)
@@ -1012,85 +1042,50 @@ class SpellCheckDialog(QDialog):
         
         diff_start = time.time()
         opcodes = d.get_opcodes()
-        print(f"DEBUG: [SpellCheck] Diff 분석 완료 (소요 시간: {time.time() - diff_start:.4f}초, Opcode 수: {len(opcodes)})")
+        print(f"DEBUG: [SpellCheck] Diff 분석 완료 (Opcode 수: {len(opcodes)})")
         
         current_idx = 0
-        opcodes = d.get_opcodes()
+        self._is_syncing = True # 렌더링 중 스크롤 동기화 차단
         
         # [기능 개선] 띄어쓰기와 글자 교정을 완벽히 분리하기 위한 정밀 분할 로직
         def get_granular_segments(org, new, tag_type):
             if tag_type == 'equal':
                 return [('equal', org, new)]
+            if not org:
+                return [('insert', '', new)]
+            if not new:
+                return [('delete', org, '')]
             
-            # 1. 공통 접두사/접미사 추출하여 equal로 분리
-            pre_i = 0
-            while pre_i < len(org) and pre_i < len(new) and org[pre_i] == new[pre_i]:
-                pre_i += 1
-            prefix = org[:pre_i]
-            
-            suf_i = 0
-            while suf_i < len(org)-pre_i and suf_i < len(new)-pre_i and org[-1-suf_i] == new[-1-suf_i]:
-                suf_i += 1
-            suffix = org[len(org)-suf_i:] if suf_i > 0 else ""
-            
-            mid_org = org[pre_i:len(org)-suf_i] if suf_i > 0 else org[pre_i:]
-            mid_new = new[pre_i:len(new)-suf_i] if suf_i > 0 else new[pre_i:]
-            
+            # 교체(replace) 구역: 단어 단위로 쪼개서 매칭 시도
             res = []
-            if prefix: res.append(('equal', prefix, prefix))
+            org_words = re.findall(r'\s+|\S+', org)
+            new_words = re.findall(r'\s+|\S+', new)
             
-            # 2. 중간 부분(실제 차이점)을 공백과 글자 단위로 강제 분리
-            if not mid_org and not mid_new:
-                pass
-            elif not mid_org:
-                for p in re.findall(r' +|[^ ]+', mid_new):
-                    res.append(('insert', '', p))
-            elif not mid_new:
-                for p in re.findall(r' +|[^ ]+', mid_org):
-                    res.append(('delete', p, ''))
-            else:
-                # 교체(replace) 구역: 공백과 글자 덩어리를 분리하여 각각 매칭
-                org_parts = re.findall(r' +|[^ ]+', mid_org)
-                new_parts = re.findall(r' +|[^ ]+', mid_new)
+            max_len = max(len(org_words), len(new_words))
+            for i in range(max_len):
+                o_w = org_words[i] if i < len(org_words) else ""
+                n_w = new_words[i] if i < len(new_words) else ""
                 
-                o_idx = 0
-                for n_p in new_parts:
-                    if n_p.strip() == "": # 공백 덩어리인 경우
-                        if o_idx < len(org_parts) and org_parts[o_idx].strip() == "":
-                            res.append(('replace', org_parts[o_idx], n_p))
-                            o_idx += 1
-                        else:
-                            res.append(('insert', '', n_p))
-                    else: # 글자 덩어리인 경우
-                        while o_idx < len(org_parts) and org_parts[o_idx].strip() == "":
-                            res.append(('delete', org_parts[o_idx], ''))
-                            o_idx += 1
-                        
-                        if o_idx < len(org_parts):
-                            res.append(('replace', org_parts[o_idx], n_p))
-                            o_idx += 1
-                        else:
-                            res.append(('insert', '', n_p))
-                while o_idx < len(org_parts):
-                    res.append(('delete', org_parts[o_idx], ''))
-            
-            if suffix: res.append(('equal', suffix, suffix))
+                if o_w == n_w:
+                    res.append(('equal', o_w, n_w))
+                elif not o_w:
+                    res.append(('insert', '', n_w))
+                elif not n_w:
+                    res.append(('delete', o_w, ''))
+                else:
+                    res.append(('replace', o_w, n_w))
             return res
 
-        for idx, (tag, i1, i2, j1, j2) in enumerate(opcodes):
-            # 대량 작업 시 GUI 응답성 유지 (5개 opcode마다 이벤트 처리)
-            if idx % 5 == 0:
-                QApplication.processEvents()
+        # [성능 최적화] 대량의 텍스트 삽입 시 발생하는 레이아웃 계산을 억제하기 위해 에딧 블록 사용
+        cursor_org.beginEditBlock()
+        cursor_new.beginEditBlock()
 
+        for idx, (tag, i1, i2, j1, j2) in enumerate(opcodes):
             org_full = text1[i1:i2]
             new_full = text2[j1:j2]
             segments = get_granular_segments(org_full, new_full, tag)
 
             for s_tag, s_org, s_new in segments:
-                # 세그먼트 단위에서도 가끔 이벤트 처리
-                if current_idx % 20 == 0:
-                    QApplication.processEvents()
-
                 if s_tag == 'equal':
                     cursor_org.insertText(s_org, QTextCharFormat())
                     cursor_new.insertText(s_new, QTextCharFormat())
@@ -1137,8 +1132,12 @@ class SpellCheckDialog(QDialog):
                 
                 current_idx += 1
 
+        cursor_org.endEditBlock()
+        cursor_new.endEditBlock()
+
         self.edit_org.blockSignals(False)
         self.edit_new.blockSignals(False)
+        self._is_syncing = False # 렌더링 완료 후 동기화 해제
         
         print(f"DEBUG: [SpellCheck] 전체 렌더링 프로세스 완료 (총 소요 시간: {time.time() - start_time:.2f}초)")
 
@@ -1174,23 +1173,15 @@ class SpellCheckDialog(QDialog):
 
     def check_cursor_context(self):
         cursor = self.edit_new.textCursor()
-        pos = cursor.position()
-        doc = self.edit_new.document()
-        diff_id = None
-
-        block = doc.begin()
-        while block.isValid():
-            it = block.begin()
-            while not it.atEnd():
-                if hasattr(it, "fragment"):
-                    fragment = it.fragment()
-                    if fragment.isValid():
-                        if fragment.position() <= pos <= fragment.position() + fragment.length():
-                            val = fragment.charFormat().property(QTextFormat.UserProperty + 1)
-                            if val is not None:
-                                diff_id = val
-                it += 1
-            block = block.next()
+        # 현재 커서 위치의 문자 포맷에서 diff_id 속성을 즉시 확인 (O(1) 성능)
+        fmt = cursor.charFormat()
+        diff_id = fmt.property(QTextFormat.UserProperty + 1)
+        
+        # 만약 커서 왼쪽 문자에 정보가 없다면 오른쪽 문자도 확인 (커서가 단어 사이에 있을 때 대비)
+        if diff_id is None:
+            cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+            diff_id = cursor.charFormat().property(QTextFormat.UserProperty + 1)
+            cursor.movePosition(QTextCursor.PreviousCharacter) # 원래대로
 
         if diff_id is not None and isinstance(diff_id, int):
             rect = self.edit_new.cursorRect(cursor)
@@ -1841,7 +1832,7 @@ class ProjectManagementDialog(QDialog):
         if action == action_open_folder:
             for name in epi_names:
                 epi_dir = os.path.join(PROJECTS_DIR, title, name)
-                if os.path.exists(epi_dir): os.startfile(epi_dir)
+                if os.path.exists(epi_dir): open_path(epi_dir)
         elif action == action_view_image:
             epi_dir = os.path.join(PROJECTS_DIR, title, epi_names[0])
             dialog = ImageViewerDialog(epi_dir, self)
@@ -2551,9 +2542,11 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("API 키 프리셋 관리")
-        self.setFixedSize(550, 400)
+        self.setFixedWidth(550) # 가로 폭만 다시 단단히 고정 (맥OS 축소 현상 방지)
+        # 가변 높이를 위해 setFixedSize 삭제
         # MSWindowsFixedSizeDialogHint를 사용하여 윈도우 네이티브 비활성화 처리 시도
-        self.setWindowFlags(Qt.Dialog | Qt.MSWindowsFixedSizeDialogHint | Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint)
+        # 높이 조절을 위해 MSWindowsFixedSizeDialogHint 제거
+        self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint)
         
         self.local_presets = config.API_PRESETS.copy()
         self.local_active = config.ACTIVE_PRESET_NAME
@@ -2564,6 +2557,8 @@ class SettingsDialog(QDialog):
     # 전문적인 느낌의 얇은 선(Thin Line) 스타일 아이콘
     SVG_EYE_OPEN = b"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>"""
     SVG_EYE_CLOSE = b"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>"""
+    SVG_CHEVRON_DOWN = b"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>"""
+    SVG_CHEVRON_UP = b"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>"""
 
     def get_svg_icon(self, svg_data):
         """SVG 데이터를 QIcon으로 변환하는 헬퍼 함수"""
@@ -2581,10 +2576,14 @@ class SettingsDialog(QDialog):
 
     def init_ui(self):
         layout = QVBoxLayout(self)
-        # [수정 1] 메인 여백 최소화 (좌, 상, 우, 하) -> 상단(10)을 더 줄여보세요.
-        layout.setContentsMargins(25, 15, 25, 10) 
-        # [수정 2] 메인 섹션(프리셋 영역과 키 영역) 사이의 간격을 대폭 줄임
-        layout.setSpacing(15) 
+        
+        # 전체 스타일 설정 (툴팁은 이제 전역 스타일을 따름)
+        self.setStyleSheet("")
+
+        # SetFixedSize 옵션 제거 (맥OS 렌더링 버그 원인)
+        layout.setContentsMargins(25, 20, 25, 30) 
+        layout.setSpacing(12) 
+
 
         # 1. 프리셋 선택 영역
         preset_group = QVBoxLayout()
@@ -2667,14 +2666,14 @@ class SettingsDialog(QDialog):
         # 2. 키 입력 영역 (OCR & AI)
         keys_layout = QVBoxLayout()
         
-        # [OCR 키]
-        lbl_ocr = QLabel("cloud.google.com (OCR용)")
+        # [OCR 키 -> Google Cloud API 키]
+        lbl_ocr = QLabel("Google Cloud API 키 (Vision + Gemini)")
         lbl_ocr.setStyleSheet("font-weight: bold; color: #555;")
         
         # 입력창과 버튼을 가로로 배치하기 위한 레이아웃
         row_ocr_input = QHBoxLayout()
         self.input_ocr = QLineEdit()
-        self.input_ocr.setPlaceholderText("Google Cloud Vision API Key")
+        self.input_ocr.setPlaceholderText("Google Cloud API Key")
         self.input_ocr.setEchoMode(QLineEdit.Password)
         self.input_ocr.setFixedHeight(36)
         self.input_ocr.textChanged.connect(self.save_temp_data)
@@ -2696,17 +2695,39 @@ class SettingsDialog(QDialog):
         
         keys_layout.addWidget(lbl_ocr)
         keys_layout.addLayout(row_ocr_input)
+        keys_layout.addSpacing(5) # 간격 축소
         
-        # [신규] 키 통합 체크박스
-        self.check_unified = QCheckBox("OCR/맞춤법 키 동일하게 사용 (GCP 통합 키 권장)")
-        self.check_unified.setStyleSheet("color: #666; font-size: 12px; margin: 5px 0;")
-        self.check_unified.toggled.connect(self.on_unified_toggled)
-        keys_layout.addWidget(self.check_unified)
+        # [신규] 아코디언 토글 버튼
+        self.btn_toggle_advanced = QPushButton("Google AI Studio API 키 별도 설정 (선택 사항)")
+        self.btn_toggle_advanced.setIcon(self.get_svg_icon(self.SVG_CHEVRON_DOWN))
+        self.btn_toggle_advanced.setIconSize(QSize(12, 12))
+        self.btn_toggle_advanced.setStyleSheet("""
+            QPushButton {
+                text-align: left;
+                color: #666;
+                background: transparent;
+                border: none;
+                font-size: 13px;
+                padding: 5px 0;
+            }
+            QPushButton:hover { color: #333; font-weight: bold; }
+        """)
+        self.btn_toggle_advanced.setCursor(Qt.PointingHandCursor)
+        self.btn_toggle_advanced.setToolTip("Google AI Studio에서 발급받은 API 키를 별도로 설정할 수 있습니다.\n설정 시 맞춤법 검사 용도로 사용됩니다.")
+        self.btn_toggle_advanced.clicked.connect(self.toggle_advanced_mode)
+        keys_layout.addWidget(self.btn_toggle_advanced)
         
         keys_layout.addSpacing(5)
 
+        # [AI 키 컨테이너 (기본 숨김)]
+        self.ai_container = QWidget()
+        ai_layout = QVBoxLayout(self.ai_container)
+        # 상단 여백 5, 하단 여백 5 (하단 둥근 테두리 잘림 방지를 위한 핵심!)
+        ai_layout.setContentsMargins(0, 5, 0, 5)
+        ai_layout.setSpacing(8)
+
         # [AI 키]
-        lbl_ai = QLabel("aistudio.google.com (맞춤법용)")
+        lbl_ai = QLabel("Google AI Studio API 키 (맞춤법 전용)")
         lbl_ai.setStyleSheet("font-weight: bold; color: #2ecc71;")
         
         row_ai_input = QHBoxLayout()
@@ -2735,12 +2756,15 @@ class SettingsDialog(QDialog):
         row_ai_input.addWidget(self.input_ai)
         row_ai_input.addWidget(self.btn_toggle_ai)
         
-        keys_layout.addWidget(lbl_ai)
-        keys_layout.addLayout(row_ai_input)
+        ai_layout.addWidget(lbl_ai)
+        ai_layout.addLayout(row_ai_input)
+        
+        keys_layout.addWidget(self.ai_container)
         
         layout.addLayout(keys_layout)
-
-        layout.addStretch()
+        
+        # 버튼 영역과 입력창 사이에 확실한 여유 공간 (더 넉넉하게)
+        layout.addSpacing(25)
 
         # 3. 하단 버튼
         btn_layout = QHBoxLayout()
@@ -2768,43 +2792,68 @@ class SettingsDialog(QDialog):
             self.load_preset_to_ui(text)
 
     def load_preset_to_ui(self, preset_name):
-        data = self.local_presets.get(preset_name, {"ocr": "", "ai": "", "unified": False})
-        self.is_unified = data.get("unified", False)
+        data = self.local_presets.get(preset_name, {"ocr": "", "ai": "", "unified": True}) # 기본값 True (통합)
+        self.is_unified = data.get("unified", True)
         
         self.input_ocr.blockSignals(True)
         self.input_ai.blockSignals(True)
-        self.check_unified.blockSignals(True)
         
         self.input_ocr.setText(data.get("ocr", ""))
-        self.input_ai.setText(data.get("ai", ""))
-        self.check_unified.setChecked(self.is_unified)
+        # UI상으로는 'ui_ai'가 있으면 그걸 쓰고 없으면 'ai'를 쓰되, 
+        # 통합 모드에서 저장된 'ai'가 'ocr'과 같다면 비워줌
+        ui_ai = data.get("ui_ai", "")
+        if not ui_ai and not self.is_unified:
+            ui_ai = data.get("ai", "")
+        
+        self.input_ai.setText(ui_ai)
         
         self.input_ocr.blockSignals(False)
         self.input_ai.blockSignals(False)
-        self.check_unified.blockSignals(False)
         
-        self.on_unified_toggled(self.is_unified)
+        self.set_unified_mode(self.is_unified)
 
-    def on_unified_toggled(self, checked):
-        self.is_unified = checked
-        self.input_ai.setEnabled(not checked)
-        self.btn_toggle_ai.setEnabled(not checked)
-        if checked:
-            self.input_ai.setText(self.input_ocr.text())
-            self.input_ai.setPlaceholderText("OCR 키와 동일하게 설정됨")
+    def toggle_advanced_mode(self):
+        # 아코디언 토글 (숨겨져 있으면 분리로, 열려 있으면 통합으로)
+        self.set_unified_mode(not self.is_unified)
+
+    def set_unified_mode(self, is_unified):
+        self.is_unified = is_unified
+
+        # 1. 위젯 표시/숨김 (동기적 처리로 들썩임 방지)
+        self.ai_container.setVisible(not is_unified)
+
+        # 2. 창 크기 즉각 재조정
+        # adjustSize()는 창을 늘리기만 하고 줄이지는 않는 Qt의 특성이 있습니다.
+        # 따라서 아코디언을 닫을 때 창이 쪼그라들도록 명시적으로 resize를 호출합니다.
+        QApplication.processEvents() # 레이아웃 엔진 강제 업데이트
+        self.resize(550, self.sizeHint().height())
+
+        # 3. 텍스트 및 아이콘 업데이트
+        if is_unified:
+            self.btn_toggle_advanced.setIcon(self.get_svg_icon(self.SVG_CHEVRON_DOWN))
+            self.btn_toggle_advanced.setText("Google AI Studio API 키 별도 설정 (선택 사항)")
         else:
-            self.input_ai.setPlaceholderText("Google AI Studio API Key")
-        self.save_temp_data()
+            self.btn_toggle_advanced.setIcon(self.get_svg_icon(self.SVG_CHEVRON_UP))
+            self.btn_toggle_advanced.setText("Google AI Studio API 키 별도 설정 (닫기)")
 
+        self.save_temp_data()
     def sync_keys(self):
-        if self.is_unified:
-            self.input_ai.setText(self.input_ocr.text())
+        # [수정] 시각적 동기화 중단 (사용자 요청: 밑에 키가 안 보여야 함)
+        pass
 
     def save_temp_data(self):
         if self.local_active:
+            ocr_val = self.input_ocr.text().strip()
+            ai_val = self.input_ai.text().strip()
+            
+            # 통합 모드일 경우 내부적으로는 AI 키에 OCR 키를 할당하여 저장하되,
+            # UI상(ai_val)으로는 비어있을 수 있음
+            actual_ai = ocr_val if self.is_unified else ai_val
+            
             self.local_presets[self.local_active] = {
-                "ocr": self.input_ocr.text().strip(),
-                "ai": self.input_ai.text().strip(),
+                "ocr": ocr_val,
+                "ai": actual_ai, # 실제로 사용될 키
+                "ui_ai": ai_val,  # UI상의 개별 키 값 보존용 (옵션)
                 "unified": self.is_unified
             }
 
@@ -3112,3 +3161,137 @@ class IdiomSettingsDialog(QDialog):
         config.IDIOMS = self.local_idioms
         config.save_settings(config.API_PRESETS, config.ACTIVE_PRESET_NAME)
         self.accept()
+
+# =================================================================
+# [신규] 관용구 플로팅 뷰어
+# =================================================================
+class FloatingIdiomViewer(QDialog):
+    idiom_selected = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("관용구 도우미")
+        # 윈도우 모드 + 항상 위 옵션 (비모달로 띄워야 함)
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
+        self.setMinimumSize(300, 450)
+        self.init_ui()
+        self.refresh_list()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(10)
+
+        # 검색 바
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("🔍 관용구 검색...")
+        self.search_bar.setFixedHeight(36)
+        self.search_bar.setClearButtonEnabled(True)
+        self.search_bar.setStyleSheet("""
+            QLineEdit {
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                padding-left: 10px;
+                padding-right: 30px;
+                background-color: #F9FAFB;
+            }
+            QLineEdit:focus {
+                border: 2px solid #FF5722;
+                background-color: white;
+            }
+        """)
+        self.search_bar.textChanged.connect(self.filter_list)
+        layout.addWidget(self.search_bar)
+
+        # 리스트 위젯
+        self.list_widget = QListWidget()
+        self.list_widget.itemDoubleClicked.connect(self.on_item_clicked)
+        self.list_widget.setStyleSheet("""
+            QListWidget {
+                border: 1px solid #D1D5DB;
+                border-radius: 8px;
+                background-color: white;
+                outline: none;
+            }
+            QListWidget::item {
+                padding: 12px;
+                border-bottom: 1px solid #F3F4F6;
+                font-size: 13px;
+                color: #374151;
+            }
+            QListWidget::item:hover {
+                background-color: #F9FAFB;
+            }
+            QListWidget::item:selected {
+                background-color: #FFECEC;
+                color: #FF4B4B;
+                font-weight: bold;
+                border: none;
+            }
+        """)
+        layout.addWidget(self.list_widget)
+
+        lbl_info = QLabel("💡 단축키(Alt+키) 혹은 더블 클릭하면 자동 삽입됩니다.")
+        lbl_info.setStyleSheet("color: #6B7280; font-size: 11px; font-family: 'Pretendard';")
+        layout.addWidget(lbl_info)
+
+    def refresh_list(self):
+        self.list_widget.clear()
+        for item in config.IDIOMS:
+            # 리스트 아이템 객체 생성
+            list_item = QListWidgetItem()
+            list_item.setSizeHint(QSize(0, 50)) # 높이 확보
+            
+            # 커스텀 위젯 생성
+            container = QWidget()
+            item_layout = QHBoxLayout(container)
+            item_layout.setContentsMargins(15, 0, 15, 0)
+            item_layout.setSpacing(10)
+            
+            # 좌측: 관용구 텍스트
+            lbl_text = QLabel(item['text'])
+            lbl_text.setStyleSheet("font-size: 14px; font-weight: 500; color: #1F2937; border: none; background: transparent;")
+            
+            # 우측: 단축키 뱃지
+            key_text = f"Alt + {item['key']}"
+            lbl_key = QLabel(key_text)
+            lbl_key.setAlignment(Qt.AlignCenter)
+            lbl_key.setStyleSheet("""
+                QLabel {
+                    background-color: #F3F4F6;
+                    color: #6B7280;
+                    border: 1px solid #E5E7EB;
+                    border-radius: 4px;
+                    padding: 2px 6px;
+                    font-size: 11px;
+                    font-weight: bold;
+                    font-family: 'SF Pro Text', 'Pretendard';
+                }
+            """)
+            
+            item_layout.addWidget(lbl_text, 1) # 텍스트가 공간을 차지함
+            item_layout.addWidget(lbl_key)
+            
+            # 데이터를 아이템 객체에 저장 (검색 및 선택용)
+            list_item.setData(Qt.UserRole, item['text'])
+            
+            self.list_widget.addItem(list_item)
+            self.list_widget.setItemWidget(list_item, container)
+
+    def filter_list(self, text=None):
+        if text is None:
+            text = self.search_bar.text()
+            
+        query = text.lower().strip()
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            # UserRole에 저장된 데이터로 검색
+            data = item.data(Qt.UserRole)
+            search_target = str(data).lower() if data else ""
+            
+            # 검색어가 있으면 필터링, 없으면 모두 표시
+            item.setHidden(query != "" and query not in search_target)
+
+    def on_item_clicked(self, item):
+        text = item.data(Qt.UserRole)
+        self.idiom_selected.emit(text)

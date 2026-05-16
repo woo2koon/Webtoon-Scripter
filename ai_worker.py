@@ -19,7 +19,7 @@ class SpellCheckWorker(QThread):
         active_key = config.AI_API_KEY
         
         if not active_key:
-            self.error.emit("AI API 키가 없습니다. [파일] > [설정]을 확인해주세요.")
+            self.error.emit("AI API 키가 없습니다. [설정] > [API 키 설정]을 확인해주세요.")
             return
 
         # [모델 변경] Gemini 2.0 Flash에서 Gemini 3.1 Flash Lite로 경로를 수정했습니다.
