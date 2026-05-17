@@ -2379,7 +2379,11 @@ class DropOverlay(QWidget):
 
         # 4. 안내 텍스트 (아이콘 아래에 배치)
         painter.setPen(QColor("#1E293B")) 
-        font = QFont("Pretendard", 32, QFont.Bold)
+        font = QFont()
+        font.setFamilies(["Pretendard", "-apple-system", "Helvetica Neue", "Segoe UI", "Malgun Gothic", "sans-serif"])
+        font.setPointSize(24)
+        font.setBold(True)
+        font.setStyleStrategy(QFont.PreferAntialias)
         painter.setFont(font)
         
         text_rect = self.rect().adjusted(0, icon_size // 2 + 20, 0, 0)
