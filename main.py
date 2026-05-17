@@ -55,56 +55,59 @@ class GlobalToolTipFilter(QObject):
         self.active_widget = None
 
     def eventFilter(self, obj, event):
-        # 1. 툴팁 이벤트 가로채기
-        if event.type() == QEvent.ToolTip:
-            if isinstance(obj, QWidget) and obj.toolTip():
-                
-                
-                # 커스텀 툴팁 생성: 최상위 컨테이너 QWidget (투명 배경) + 자식 QLabel (실제 말풍선 디자인)
-                if not self.tooltip_widget:
-                    self.tooltip_widget = QWidget(None, Qt.ToolTip | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus)
-                    self.tooltip_widget.setAttribute(Qt.WA_TranslucentBackground) # 둥근 테두리 바깥쪽 투명화
+        try:
+            # 1. 툴팁 이벤트 가로채기
+            if event.type() == QEvent.ToolTip:
+                if isinstance(obj, QWidget) and obj.toolTip():
                     
-                    # 마진이 전혀 없는 레이아웃 구성
-                    layout = QVBoxLayout(self.tooltip_widget)
-                    layout.setContentsMargins(0, 0, 0, 0)
-                    layout.setSpacing(0)
+                    # 커스텀 툴팁 생성: 최상위 컨테이너 QWidget (투명 배경) + 자식 QLabel (실제 말풍선 디자인)
+                    if not self.tooltip_widget:
+                        self.tooltip_widget = QWidget(None, Qt.ToolTip | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus)
+                        self.tooltip_widget.setAttribute(Qt.WA_TranslucentBackground) # 둥근 테두리 바깥쪽 투명화
+                        
+                        # 마진이 전혀 없는 레이아웃 구성
+                        layout = QVBoxLayout(self.tooltip_widget)
+                        layout.setContentsMargins(0, 0, 0, 0)
+                        layout.setSpacing(0)
+                        
+                        # 실제 디자인이 적용될 자식 라벨 생성 (투명화 상속 방지)
+                        self.tooltip_label = QLabel(self.tooltip_widget)
+                        self.tooltip_label.setObjectName("CustomToolTipLabel")
+                        self.tooltip_label.setStyleSheet("""
+                            #CustomToolTipLabel {
+                                background-color: #ffffff;
+                                color: #333333;
+                                border: 1px solid #d1d5db;
+                                border-radius: 4px;
+                                padding: 4px 7px;
+                                font-family: 'Pretendard';
+                                font-size: 12px;
+                            }
+                        """)
+                        self.tooltip_label.setMargin(0)
+                        layout.addWidget(self.tooltip_label)
                     
-                    # 실제 디자인이 적용될 자식 라벨 생성 (투명화 상속 방지)
-                    self.tooltip_label = QLabel(self.tooltip_widget)
-                    self.tooltip_label.setObjectName("CustomToolTipLabel")
-                    self.tooltip_label.setStyleSheet("""
-                        #CustomToolTipLabel {
-                            background-color: #ffffff;
-                            color: #333333;
-                            border: 1px solid #d1d5db;
-                            border-radius: 4px;
-                            padding: 4px 7px;
-                            font-family: 'Pretendard';
-                            font-size: 12px;
-                        }
-                    """)
-                    self.tooltip_label.setMargin(0)
-                    layout.addWidget(self.tooltip_label)
-                
-                self.tooltip_label.setText(obj.toolTip())
-                self.tooltip_widget.adjustSize()
-                
-                # 마우스 커서 아래쪽에 기분 좋게 위치시킴 (X: +10, Y: +18)
-                pos = QCursor.pos()
-                self.tooltip_widget.move(pos.x() + 10, pos.y() + 18)
-                self.tooltip_widget.show()
-                
-                self.active_widget = obj
-                return True  # True를 리턴하여 Qt의 기본 툴팁 렌더링을 완전히 차단
+                    self.tooltip_label.setText(obj.toolTip())
+                    self.tooltip_widget.adjustSize()
+                    
+                    # 마우스 커서 아래쪽에 기분 좋게 위치시킴 (X: +10, Y: +18)
+                    pos = QCursor.pos()
+                    self.tooltip_widget.move(pos.x() + 10, pos.y() + 18)
+                    self.tooltip_widget.show()
+                    
+                    self.active_widget = obj
+                    return True  # True를 리턴하여 Qt의 기본 툴팁 렌더링을 완전히 차단
 
-        # 2. 툴팁 숨기기 이벤트 감지
-        if self.tooltip_widget and self.tooltip_widget.isVisible():
-            # 마우스가 대상 위젯을 벗어났거나, 마우스 클릭, 키 입력 등이 발생하면 툴팁 숨김
-            if (event.type() == QEvent.Leave and obj == self.active_widget) or \
-               event.type() in [QEvent.MouseButtonPress, QEvent.KeyPress, QEvent.FocusOut, QEvent.WindowDeactivate]:
-                self.tooltip_widget.hide()
-                self.active_widget = None
+            # 2. 툴팁 숨기기 이벤트 감지
+            if self.tooltip_widget and self.tooltip_widget.isVisible():
+                # 마우스가 대상 위젯을 벗어났거나, 마우스 클릭, 키 입력 등이 발생하면 툴팁 숨김
+                if (event.type() == QEvent.Leave and obj == self.active_widget) or \
+                   event.type() in [QEvent.MouseButtonPress, QEvent.KeyPress, QEvent.FocusOut, QEvent.WindowDeactivate]:
+                    self.tooltip_widget.hide()
+                    self.active_widget = None
+        except RuntimeError:
+            self.tooltip_widget = None
+            self.active_widget = None
 
         return super().eventFilter(obj, event)
 
@@ -1970,18 +1973,19 @@ class WebtoonManager(QMainWindow):
         # '새로 분석하기'가 꺼져 있고 + 에디터에 글이 있을 때만 묻습니다.
         # -----------------------------------------------------------
         if not force_mode and self.text_editor.toPlainText().strip():
-            reply = QMessageBox.question(
-                self, 
-                "분석 확인", 
-                "⚠️ 이미 분석된 내용이나 수정 중인 텍스트가 있습니다.\n"
-                "다시 분석을 시작하면 Step 1의 모든 정보가 초기화됩니다.\n\n"
-                "그래도 진행하시겠습니까?",
-                QMessageBox.Yes | QMessageBox.No, 
-                QMessageBox.No 
-            )
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("분석 확인")
+            msg_box.setText("⚠️ 이미 분석된 내용이나 수정 중인 텍스트가 있습니다.\n"
+                            "다시 분석을 시작하면 Step 1의 모든 정보가 초기화됩니다.\n\n"
+                            "그래도 진행하시겠습니까?")
+            msg_box.setIcon(QMessageBox.Question)
+            btn_yes = msg_box.addButton("예", QMessageBox.YesRole)
+            btn_no = msg_box.addButton("아니오", QMessageBox.NoRole)
+            msg_box.setDefaultButton(btn_no)
+            msg_box.exec()
             
-            # 사용자가 'No'를 누르면 여기서 바로 함수를 종료합니다.
-            if reply == QMessageBox.No:
+            # 사용자가 '아니오'를 누르거나 창을 닫으면 여기서 바로 함수를 종료합니다.
+            if msg_box.clickedButton() != btn_yes:
                 return
         
         # 5. [실행] 이제 모든 준비가 끝났습니다! 분석 로직으로 전달합니다.
@@ -2294,14 +2298,16 @@ class WebtoonManager(QMainWindow):
 
     def load_script_to_table(self):
         if self.table_script.rowCount() > 0:
-            reply = QMessageBox.question(
-                self, 
-                "초기화 확인", 
-                "역할 배정 정보가 초기화 됩니다.\n 그래도 Step 1 내용을 가져오시겠습니까?",
-                QMessageBox.Yes | QMessageBox.No, 
-                QMessageBox.No 
-            )
-            if reply == QMessageBox.No: return
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("초기화 확인")
+            msg_box.setText("역할 배정 정보가 초기화 됩니다.\n 그래도 Step 1 내용을 가져오시겠습니까?")
+            msg_box.setIcon(QMessageBox.Question)
+            btn_yes = msg_box.addButton("예", QMessageBox.YesRole)
+            btn_no = msg_box.addButton("아니오", QMessageBox.NoRole)
+            msg_box.setDefaultButton(btn_no)
+            msg_box.exec()
+            if msg_box.clickedButton() != btn_yes:
+                return
 
         self.table_script.save_state_for_undo() # [추가] 상태 백업
 

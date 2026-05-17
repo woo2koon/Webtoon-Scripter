@@ -1750,11 +1750,16 @@ class ProjectManagementDialog(QDialog):
             return
 
         title = current_item.text()
-        reply = QMessageBox.warning(self, "작품 삭제", 
-                                  f"⚠️ '{title}'의 모든 데이터가 영구 삭제됩니다.\n정말로 진행하시겠습니까?",
-                                  QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("작품 삭제")
+        msg_box.setText(f"⚠️ '{title}'의 모든 데이터가 영구 삭제됩니다.\n정말로 진행하시겠습니까?")
+        msg_box.setIcon(QMessageBox.Warning)
+        btn_yes = msg_box.addButton("예", QMessageBox.YesRole)
+        btn_no = msg_box.addButton("아니오", QMessageBox.NoRole)
+        msg_box.setDefaultButton(btn_no)
+        msg_box.exec()
         
-        if reply == QMessageBox.Yes:
+        if msg_box.clickedButton() == btn_yes:
             project_path = os.path.join(PROJECTS_DIR, title)
             try:
                 if os.path.exists(project_path):
@@ -1857,10 +1862,16 @@ class ProjectManagementDialog(QDialog):
         else:
             msg = f"⚠️ 선택한 {count}개의 회차와 모든 데이터가 삭제됩니다.\n진행하시겠습니까?"
 
-        reply = QMessageBox.warning(self, "회차 삭제", msg,
-                                  QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("회차 삭제")
+        msg_box.setText(msg)
+        msg_box.setIcon(QMessageBox.Warning)
+        btn_yes = msg_box.addButton("예", QMessageBox.YesRole)
+        btn_no = msg_box.addButton("아니오", QMessageBox.NoRole)
+        msg_box.setDefaultButton(btn_no)
+        msg_box.exec()
         
-        if reply == QMessageBox.Yes:
+        if msg_box.clickedButton() == btn_yes:
             import shutil
             success_count = 0
             for item in selected_items:
@@ -2874,8 +2885,16 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "알림", "최소 하나의 프리셋은 있어야 합니다.")
             return
         current = self.combo_presets.currentText()
-        reply = QMessageBox.question(self, "삭제 확인", f"'{current}' 프리셋을 삭제하시겠습니까?", QMessageBox.Yes | QMessageBox.No)
-        if reply == QMessageBox.Yes:
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("삭제 확인")
+        msg_box.setText(f"'{current}' 프리셋을 삭제하시겠습니까?")
+        msg_box.setIcon(QMessageBox.Question)
+        btn_yes = msg_box.addButton("예", QMessageBox.YesRole)
+        btn_no = msg_box.addButton("아니오", QMessageBox.NoRole)
+        msg_box.setDefaultButton(btn_no)
+        msg_box.exec()
+        
+        if msg_box.clickedButton() == btn_yes:
             del self.local_presets[current]
             self.combo_presets.removeItem(self.combo_presets.currentIndex())
 
