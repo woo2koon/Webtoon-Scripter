@@ -673,20 +673,27 @@ class WebtoonManager(QMainWindow):
             }
             QComboBox QAbstractItemView {
                 background-color: white;
-                border: 1px solid #9CA3AF;
+                border: 1px solid #D1D5DB;
                 border-radius: 8px;
-                selection-background-color: #F3F4F6;
-                selection-color: #111827;
+                selection-background-color: #ffd7d7;
+                selection-color: #ff4b4b;
                 outline: none;
                 padding: 2px;
                 margin: 0px;
             }
             QComboBox QAbstractItemView::item {
+                font-family: 'Pretendard';
                 padding: 4px 10px;
-                min-height: 22px;
-                border-radius: 4px;
+                min-height: 24px;
+                border-radius: 5px;
+                margin: 1px;
+            }
+            QComboBox QAbstractItemView::item:hover {
+                background-color: #fff5f5;
+                color: #ff4b4b;
             }
         """)
+        self.combo_api_type.setItemDelegate(PopupItemDelegate())
         self.combo_api_type.setCursor(Qt.PointingHandCursor)
         self.combo_api_type.currentIndexChanged.connect(self.update_api_display)
         api_stat_layout.addWidget(self.combo_api_type, 0, Qt.AlignLeft)
