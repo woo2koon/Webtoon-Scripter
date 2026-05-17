@@ -21,7 +21,7 @@ MY_DEFAULT_AI_KEY = ""   # <-- 여기에 직접 입력하지 마세요!
 
 # 1. 앱 이름 (이 이름으로 사용자의 컴퓨터에 폴더가 생깁니다)
 APP_NAME = "Webtoon_Script_Manager"
-APP_VERSION = "2.2.1"
+APP_VERSION = "2.2.2"
 
 if getattr(sys, 'frozen', False):
     # [읽기전용] EXE 내부에 압축된 아이콘 등 (임시 폴더)
@@ -305,8 +305,9 @@ QComboBox::down-arrow {
     width: 12px; 
     height: 12px; 
 }
-QComboBox QAbstractItemView { font-family: 'Pretendard'; border: 1px solid #9CA3AF; border-radius: 8px; background-color: white; selection-background-color: #ffecec; selection-color: #ff4b4b; outline: none; }
-QComboBox QAbstractItemView::item { font-family: 'Pretendard'; min-height: 30px; padding: 5px; margin: 2px 0px; }
+QComboBox QAbstractItemView { font-family: 'Pretendard'; border: 1px solid #9CA3AF; border-radius: 8px; background-color: white; selection-background-color: #ffd7d7; selection-color: #ff4b4b; outline: none; padding: 2px; }
+QComboBox QAbstractItemView::item { font-family: 'Pretendard'; min-height: 30px; padding: 5px; margin: 1px; border-radius: 5px; }
+QComboBox QAbstractItemView::item:hover { background-color: #fff5f5; }
 QTableWidget { border: 1px solid #d1d5db; gridline-color: #d0d0d0; font-family: 'Pretendard', 'AppleGothic'; font-size: 10pt; selection-background-color: transparent; selection-color: black; }
 QTableWidget::item:selected, QTableWidget::item:focus { border: 2px solid #ff4b4b; background-color: transparent; color: black; }
 QHeaderView::section { background-color: #f0f0f0; border: none; border-right: 1px solid #d0d0d0; border-bottom: 1px solid #d0d0d0; padding: 4px; font-weight: normal; color: #333; font-family: 'Pretendard'; font-size: 10pt; }

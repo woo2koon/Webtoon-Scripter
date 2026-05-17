@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QDialog, QFormLayout, QInputDialog, QGraphicsOpacityEffect,
                                QRadioButton, QWidgetAction, QToolButton, QToolTip, QSizePolicy)
 from PySide6.QtCore import (Qt, QTimer, QSize, QPropertyAnimation, QEasingCurve, 
-                            QAbstractAnimation, QEvent, QPoint, QMimeData)
+                            QAbstractAnimation, QEvent, QPoint, QMimeData, QObject)
 from PySide6.QtGui import (QCursor, QFontDatabase, QFont, QTextCursor, QAction, 
                            QDragEnterEvent, QDropEvent, QIcon, QShortcut, QKeySequence,
                            QPainter, QPixmap, QColor, QPen, QPalette)
@@ -48,10 +48,25 @@ restore_template()
 
 from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer
 
+class GlobalToolTipFilter(QObject):
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.ToolTip:
+            if isinstance(obj, QWidget) and obj.toolTip():
+                pos = QCursor.pos()
+                # 커서 바로 아래에 위치하도록 15픽셀 아래로 조정
+                QToolTip.showText(QPoint(pos.x(), pos.y() + 15), obj.toolTip(), obj)
+                return True
+        return super().eventFilter(obj, event)
+
 # 메인 윈도우
 # =======================================================
 class AlwaysUpComboBox(QComboBox):
     def showPopup(self):
+        # 텍스트가 잘리지 않도록 팝업의 너비를 내용물에 맞춰 확장 (여유 공간 축소)
+        content_width = self.view().sizeHintForColumn(0) + 10 
+        if content_width > self.width():
+            self.view().setMinimumWidth(content_width)
+            
         super().showPopup()
         popup = self.view().window()
         if popup:
@@ -229,13 +244,17 @@ class WebtoonManager(QMainWindow):
             self.toast.show_message("🗑️ 기존 작업이 지워지고 새 작업이 시작되었습니다.")
 
     def eventFilter(self, source, event):
-        # [안전장치 추가] 햄버거 버튼 툴팁 로직
+        # [안전장치 추가] 햄버거 버튼 툴팁 로직 (커서 바로 아래에 뜨도록 조정)
         if hasattr(self, 'btn_toggle') and source == self.btn_toggle:
             if event.type() == QEvent.Enter:
                 tooltip_text = self.btn_toggle.toolTip()
                 if tooltip_text:
-                    QToolTip.showText(QCursor.pos(), tooltip_text, self.btn_toggle)
-                return True
+                    pos = QCursor.pos()
+                    # 커서 바로 아래에 위치하도록 15픽셀 아래로 조정
+                    pos.setY(pos.y() + 15)
+                    QToolTip.showText(pos, tooltip_text, self.btn_toggle)
+                # True를 반환하면 hover 스타일이 먹지 않을 수 있으므로 False 반환
+                return False
 
         # [안전장치 추가] 텍스트 에디터 관련 로직
         if hasattr(self, 'text_editor') and self.text_editor is not None:
@@ -2532,6 +2551,10 @@ if __name__ == "__main__":
     app.setEffectEnabled(Qt.UI_AnimateMenu, False)
     app.setEffectEnabled(Qt.UI_AnimateCombo, False)
     app.setEffectEnabled(Qt.UI_AnimateTooltip, False) # 툴팁도 즉시 나타나게 함
+    
+    # [추가] 전역 툴팁 위치 보정 필터 설치 (커서 바로 아래에 깔끔하게 배치)
+    app.tooltip_filter = GlobalToolTipFilter()
+    app.installEventFilter(app.tooltip_filter)
     
     app.setFont(QFont("Pretendard", 10))
     
