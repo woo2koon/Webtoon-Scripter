@@ -2442,6 +2442,33 @@ class SmartTextEdit(QTextEdit):
             # 3. 그냥 텍스트면? -> 정상적으로 입력
             super().insertFromMimeData(source)
 
+    def contextMenuEvent(self, event):
+        # 1. 표준 컨텍스트 메뉴 생성
+        menu = self.createStandardContextMenu()
+        
+        # 2. 영문 메뉴 항목들을 친근한 한국어로 동적 맵핑
+        for action in menu.actions():
+            text = action.text()
+            clean_text = text.replace("&", "")
+            
+            if clean_text == "Undo":
+                action.setText("되돌리기 (&U)")
+            elif clean_text == "Redo":
+                action.setText("다시 실행 (&R)")
+            elif clean_text == "Cut":
+                action.setText("잘라내기 (&T)")
+            elif clean_text == "Copy":
+                action.setText("복사 (&C)")
+            elif clean_text == "Paste":
+                action.setText("붙여넣기 (&P)")
+            elif clean_text == "Delete":
+                action.setText("삭제 (&D)")
+            elif clean_text == "Select All":
+                action.setText("모두 선택 (&A)")
+                
+        # 3. 메뉴 표시
+        menu.exec(event.globalPos())
+
 
 # =======================================================
 # 토스트 메시지 (애니메이션 충돌 방지 완벽 버전)
