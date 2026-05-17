@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QDialog, QFormLayout, QInputDialog, QGraphicsOpacityEffect,
                                QRadioButton, QWidgetAction, QToolButton, QToolTip, QSizePolicy)
 from PySide6.QtCore import (Qt, QTimer, QSize, QPropertyAnimation, QEasingCurve, 
-                            QAbstractAnimation, QEvent, QPoint, QMimeData, QObject)
+                            QAbstractAnimation, QEvent, QPoint, QMimeData, QObject, QRect)
 from PySide6.QtGui import (QCursor, QFontDatabase, QFont, QTextCursor, QAction, 
                            QDragEnterEvent, QDropEvent, QIcon, QShortcut, QKeySequence,
                            QPainter, QPixmap, QColor, QPen, QPalette)
@@ -49,13 +49,53 @@ restore_template()
 from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer
 
 class GlobalToolTipFilter(QObject):
+    def __init__(self):
+        super().__init__()
+        self.tooltip_widget = None
+        self.active_widget = None
+
     def eventFilter(self, obj, event):
+        # 1. 툴팁 이벤트 가로채기
         if event.type() == QEvent.ToolTip:
             if isinstance(obj, QWidget) and obj.toolTip():
+                
+                
+                # 커스텀 QLabel 기반 툴팁 생성 (OS의 회피 시스템을 완전히 무력화)
+                if not self.tooltip_widget:
+                    self.tooltip_widget = QLabel(None, Qt.ToolTip | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus)
+                    self.tooltip_widget.setObjectName("CustomToolTipWidget")
+                    self.tooltip_widget.setStyleSheet("""
+                        #CustomToolTipWidget {
+                            background-color: #ffffff;
+                            color: #333333;
+                            border: 1px solid #d1d5db;
+                            border-radius: 4px;
+                            padding: 3px 6px;
+                            font-family: 'Pretendard';
+                            font-size: 12px;
+                        }
+                    """)
+                    self.tooltip_widget.setMargin(0)
+                
+                self.tooltip_widget.setText(obj.toolTip())
+                self.tooltip_widget.adjustSize()
+                
+                # 마우스 커서 바로 우측 하단 (10px)에 강제로 위치시킴 (황금 간격)
                 pos = QCursor.pos()
-                # 커서 바로 아래에 위치하도록 15픽셀 아래로 조정
-                QToolTip.showText(QPoint(pos.x(), pos.y() + 15), obj.toolTip(), obj)
-                return True
+                self.tooltip_widget.move(pos.x() + 10, pos.y() + 10)
+                self.tooltip_widget.show()
+                
+                self.active_widget = obj
+                return True  # True를 리턴하여 Qt의 기본 툴팁 렌더링을 완전히 차단
+
+        # 2. 툴팁 숨기기 이벤트 감지
+        if self.tooltip_widget and self.tooltip_widget.isVisible():
+            # 마우스가 대상 위젯을 벗어났거나, 마우스 클릭, 키 입력 등이 발생하면 툴팁 숨김
+            if (event.type() == QEvent.Leave and obj == self.active_widget) or \
+               event.type() in [QEvent.MouseButtonPress, QEvent.KeyPress, QEvent.FocusOut, QEvent.WindowDeactivate]:
+                self.tooltip_widget.hide()
+                self.active_widget = None
+
         return super().eventFilter(obj, event)
 
 # 메인 윈도우
@@ -244,17 +284,7 @@ class WebtoonManager(QMainWindow):
             self.toast.show_message("🗑️ 기존 작업이 지워지고 새 작업이 시작되었습니다.")
 
     def eventFilter(self, source, event):
-        # [안전장치 추가] 햄버거 버튼 툴팁 로직 (커서 바로 아래에 뜨도록 조정)
-        if hasattr(self, 'btn_toggle') and source == self.btn_toggle:
-            if event.type() == QEvent.Enter:
-                tooltip_text = self.btn_toggle.toolTip()
-                if tooltip_text:
-                    pos = QCursor.pos()
-                    # 커서 바로 아래에 위치하도록 15픽셀 아래로 조정
-                    pos.setY(pos.y() + 15)
-                    QToolTip.showText(pos, tooltip_text, self.btn_toggle)
-                # True를 반환하면 hover 스타일이 먹지 않을 수 있으므로 False 반환
-                return False
+
 
         # [안전장치 추가] 텍스트 에디터 관련 로직
         if hasattr(self, 'text_editor') and self.text_editor is not None:
@@ -383,7 +413,7 @@ class WebtoonManager(QMainWindow):
         self.btn_toggle.setCursor(Qt.PointingHandCursor)
 
         self.btn_toggle.setToolTip("사이드바 닫기")
-        self.btn_toggle.installEventFilter(self)
+        
         
         # [스타일] 테두리를 없애서 더 현대적인 느낌을 줍니다.
         self.btn_toggle.setStyleSheet("""
@@ -561,15 +591,6 @@ class WebtoonManager(QMainWindow):
         
         option_style = """
             QRadioButton, QCheckBox { font-size: 13px; color: #374151; }
-            QToolTip { 
-                background-color: white; 
-                color: black; 
-                border: 1px solid #D1D5DB; 
-                padding: 1px 4px; 
-                border-radius: 4px;
-                font-family: 'Pretendard'; 
-                font-size: 12px;
-            }
         """
         self.radio_fast.setStyleSheet(option_style)
         self.radio_smart.setStyleSheet(option_style)
