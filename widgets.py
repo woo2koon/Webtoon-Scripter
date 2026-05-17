@@ -2327,8 +2327,30 @@ class DropOverlay(QWidget):
         self.setAcceptDrops(True)
         # [수정] 배경 투명도 처리를 위해 속성 변경
         self.setAttribute(Qt.WA_TranslucentBackground)
+        
+        # 100% 프리텐다드 렌더링을 보장하기 위해 QSS 기반 QLabel 사용
+        from PySide6.QtWidgets import QLabel
+        self.lbl_text = QLabel("파일을 여기에 드롭하세요", self)
+        self.lbl_text.setAlignment(Qt.AlignCenter)
+        self.lbl_text.setStyleSheet("""
+            QLabel {
+                font-family: 'Pretendard', '-apple-system', 'Helvetica Neue', 'Segoe UI', sans-serif;
+                font-size: 24px;
+                font-weight: bold;
+                color: #1E293B;
+                background: transparent;
+                border: none;
+            }
+        """)
+        
         self.hide()
         self.snapshot = None 
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        icon_size = 80
+        y_pos = (self.height() - icon_size) // 2 + 50
+        self.lbl_text.setGeometry(0, y_pos, self.width(), 40)
 
     def set_snapshot(self, pixmap):
         self.snapshot = pixmap
@@ -2376,17 +2398,6 @@ class DropOverlay(QWidget):
             icon_size
         )
         renderer.render(painter, icon_rect)
-
-        # 4. 안내 텍스트 (아이콘 아래에 배치)
-        painter.setPen(QColor("#1E293B")) 
-        font = QFont(self.font())
-        font.setPointSize(24)
-        font.setBold(True)
-        font.setStyleStrategy(QFont.PreferAntialias)
-        painter.setFont(font)
-        
-        text_rect = self.rect().adjusted(0, icon_size // 2 + 20, 0, 0)
-        painter.drawText(text_rect, Qt.AlignCenter, "파일을 여기에 드롭하세요")
 
     def dragEnterEvent(self, event):
         print("DEBUG: DropOverlay dragEnterEvent")
