@@ -60,29 +60,39 @@ class GlobalToolTipFilter(QObject):
             if isinstance(obj, QWidget) and obj.toolTip():
                 
                 
-                # 커스텀 QLabel 기반 툴팁 생성 (OS의 회피 시스템을 완전히 무력화)
+                # 커스텀 툴팁 생성: 최상위 컨테이너 QWidget (투명 배경) + 자식 QLabel (실제 말풍선 디자인)
                 if not self.tooltip_widget:
-                    self.tooltip_widget = QLabel(None, Qt.ToolTip | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus)
-                    self.tooltip_widget.setObjectName("CustomToolTipWidget")
-                    self.tooltip_widget.setStyleSheet("""
-                        #CustomToolTipWidget {
+                    self.tooltip_widget = QWidget(None, Qt.ToolTip | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus)
+                    self.tooltip_widget.setAttribute(Qt.WA_TranslucentBackground) # 둥근 테두리 바깥쪽 투명화
+                    
+                    # 마진이 전혀 없는 레이아웃 구성
+                    layout = QVBoxLayout(self.tooltip_widget)
+                    layout.setContentsMargins(0, 0, 0, 0)
+                    layout.setSpacing(0)
+                    
+                    # 실제 디자인이 적용될 자식 라벨 생성 (투명화 상속 방지)
+                    self.tooltip_label = QLabel(self.tooltip_widget)
+                    self.tooltip_label.setObjectName("CustomToolTipLabel")
+                    self.tooltip_label.setStyleSheet("""
+                        #CustomToolTipLabel {
                             background-color: #ffffff;
                             color: #333333;
                             border: 1px solid #d1d5db;
                             border-radius: 4px;
-                            padding: 3px 6px;
+                            padding: 4px 7px;
                             font-family: 'Pretendard';
                             font-size: 12px;
                         }
                     """)
-                    self.tooltip_widget.setMargin(0)
+                    self.tooltip_label.setMargin(0)
+                    layout.addWidget(self.tooltip_label)
                 
-                self.tooltip_widget.setText(obj.toolTip())
+                self.tooltip_label.setText(obj.toolTip())
                 self.tooltip_widget.adjustSize()
                 
-                # 마우스 커서 바로 우측 하단 (10px)에 강제로 위치시킴 (황금 간격)
+                # 마우스 커서 아래쪽에 기분 좋게 위치시킴 (X: +10, Y: +18)
                 pos = QCursor.pos()
-                self.tooltip_widget.move(pos.x() + 10, pos.y() + 10)
+                self.tooltip_widget.move(pos.x() + 10, pos.y() + 18)
                 self.tooltip_widget.show()
                 
                 self.active_widget = obj
