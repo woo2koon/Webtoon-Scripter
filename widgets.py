@@ -2672,6 +2672,11 @@ class SettingsDialog(QDialog):
 
         # [핵심 1] 맥의 중앙 팝업 대신 아래로 열리는 리스트 뷰를 강제 적용합니다.
         self.combo_presets.setView(QListView()) 
+        self.combo_presets.setItemDelegate(PopupItemDelegate())
+
+        # [추가] 외부 배경 투명화 및 프레임리스 설정 (라운드 모서리 완벽 대응)
+        self.combo_presets.view().window().setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        self.combo_presets.view().window().setAttribute(Qt.WA_TranslucentBackground)
 
         # [핵심 2] 스타일시트로 드롭다운 위치를 아래(0)로 고정합니다.
         self.combo_presets.setStyleSheet("""
@@ -2685,8 +2690,17 @@ class SettingsDialog(QDialog):
             /* 드롭다운 목록창 스타일 */
             QComboBox QAbstractItemView {
                 border: 1px solid #ddd;
+                border-radius: 8px;
                 background-color: white;
                 outline: 0;
+                padding: 2px;
+            }
+            QComboBox QAbstractItemView::item {
+                font-family: 'Pretendard';
+                min-height: 30px;
+                padding: 5px;
+                margin: 1px;
+                border-radius: 5px;
             }
         """)
 
