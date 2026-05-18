@@ -3467,7 +3467,7 @@ class FloatingCharacterViewer(QDialog):
     def __init__(self, parent=None, project_name=""):
         super().__init__(parent)
         self.project_name = project_name
-        self.setWindowTitle("👤 글로벌 캐릭터 도우미")
+        self.setWindowTitle("👤 캐릭터 도우미")
         self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint) # 항상 위 플로팅 옵션
         self.resize(320, 500)
         
@@ -3492,9 +3492,10 @@ class FloatingCharacterViewer(QDialog):
             QLineEdit {
                 border: 1px solid #D1D5DB;
                 border-radius: 6px;
-                padding: 6px 12px;
+                padding: 4px 10px;
                 font-size: 13px;
                 background-color: #F9FAFB;
+                min-height: 22px;
             }
             QLineEdit:focus {
                 border-color: #FF4B4B;
@@ -3504,8 +3505,8 @@ class FloatingCharacterViewer(QDialog):
         self.search_bar.textChanged.connect(self.filter_list)
         search_layout.addWidget(self.search_bar)
         
-        # 리프레시 버튼
-        self.btn_refresh = QPushButton("↻")
+        # 리프레시 버튼 (32x32의 동적 벡터 새로고침 SVG 아이콘 버튼화)
+        self.btn_refresh = QPushButton()
         self.btn_refresh.setToolTip("목록 새로고침")
         self.btn_refresh.setFixedSize(32, 32)
         self.btn_refresh.setStyleSheet("""
@@ -3513,15 +3514,68 @@ class FloatingCharacterViewer(QDialog):
                 background-color: #FFFFFF;
                 border: 1px solid #D1D5DB;
                 border-radius: 6px;
-                font-size: 16px;
-                font-weight: bold;
-                color: #4B5563;
             }
             QPushButton:hover {
                 border-color: #FF4B4B;
-                color: #FF4B4B;
+                background-color: #FFF5F5;
             }
         """)
+        
+        # Lucide refresh-ccw SVG 기반 칼정밀 렌더링 구현 (철통 예외 처리 포함)
+        try:
+            from PySide6.QtSvg import QSvgRenderer
+            from PySide6.QtGui import QPixmap, QPainter, QIcon
+            from PySide6.QtCore import QByteArray, QSize
+            
+            svg_code = """
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                <path d="M16 16h5v5"/>
+            </svg>
+            """
+            
+            renderer = QSvgRenderer(QByteArray(svg_code.encode('utf-8')))
+            pixmap = QPixmap(20, 20)
+            pixmap.fill(Qt.transparent)
+            painter = QPainter(pixmap)
+            renderer.render(painter)
+            painter.end()
+            
+            self.btn_refresh.setIcon(QIcon(pixmap))
+            self.btn_refresh.setIconSize(QSize(20, 20))
+            
+        except Exception:
+            # Fallback 안전 예비 드로잉 (절대 프로그램이 튕기지 않게 방어)
+            from PySide6.QtGui import QPixmap, QPainter, QPen, QBrush, QIcon, QColor
+            from PySide6.QtCore import QPointF, QRectF, QSize
+            
+            fallback_pixmap = QPixmap(32, 32)
+            fallback_pixmap.fill(Qt.transparent)
+            painter = QPainter(fallback_pixmap)
+            painter.setRenderHint(QPainter.Antialiasing)
+            
+            arc_pen = QPen(QColor("#4B5563"), 2.2)
+            arc_pen.setCapStyle(Qt.RoundCap)
+            painter.setPen(arc_pen)
+            
+            rect = QRectF(8, 8, 16, 16)
+            painter.drawArc(rect, 55 * 16, -280 * 16)
+            
+            painter.setBrush(QBrush(QColor("#4B5563")))
+            painter.setPen(Qt.NoPen)
+            arrow_points = [
+                QPointF(20, 5),
+                QPointF(24, 10),
+                QPointF(16, 10)
+            ]
+            painter.drawPolygon(arrow_points)
+            painter.end()
+            
+            self.btn_refresh.setIcon(QIcon(fallback_pixmap))
+            self.btn_refresh.setIconSize(QSize(32, 32))
+            
         self.btn_refresh.clicked.connect(self.load_data)
         search_layout.addWidget(self.btn_refresh)
         
@@ -3575,6 +3629,10 @@ class FloatingCharacterViewer(QDialog):
         import config
         chars = config.load_global_characters(self.project_name)
         
+        # [정렬 추가] 역할 우선순위(주연 ➔ 조연 ➔ 단역) 및 가나다 이름 순 다중 정렬
+        role_priority = {"주연": 0, "조연": 1, "단역": 2}
+        chars.sort(key=lambda c: (role_priority.get(c.get("role", "단역"), 2), c.get("name", "")))
+        
         for char in chars:
             name = char.get("name", "")
             if not name:
@@ -3588,17 +3646,6 @@ class FloatingCharacterViewer(QDialog):
             item_layout = QHBoxLayout(container)
             item_layout.setContentsMargins(10, 0, 10, 0)
             item_layout.setSpacing(10)
-            
-            # 대표 색상 마커 (원)
-            color_dot = QLabel()
-            color_dot.setFixedSize(14, 14)
-            color_hex = char.get("color", "#3B82F6")
-            color_dot.setStyleSheet(f"""
-                background-color: {color_hex};
-                border-radius: 7px;
-                border: 1px solid #D1D5DB;
-            """)
-            item_layout.addWidget(color_dot)
             
             # 이름 텍스트
             lbl_name = QLabel(name)
@@ -3651,9 +3698,16 @@ class FloatingCharacterViewer(QDialog):
         char_info = item.data(Qt.UserRole)
         if char_info:
             self.character_selected.emit(char_info)
-            # 메인 윈도우의 add_character_card_at를 호출
-            mw = self.window()
-            if hasattr(mw, 'add_character_card'):
+            # 메인 윈도우 찾기 (부모 위젯 우선 검색 및 전체 topLevelWidgets 검색으로 견고하게 보정)
+            mw = self.parent()
+            if not mw or not hasattr(mw, 'add_character_card'):
+                from PySide6.QtWidgets import QApplication
+                for widget in QApplication.topLevelWidgets():
+                    if widget.__class__.__name__ == 'MainWindow':
+                        mw = widget
+                        break
+            
+            if mw and hasattr(mw, 'add_character_card'):
                 mw.add_character_card(
                     name=char_info.get("name", ""),
                     age=char_info.get("age", ""),
@@ -3685,17 +3739,6 @@ class GlobalCharacterCard(QWidget):
                 border-radius: 8px;
             }
         """)
-        
-        # 1. 색상 표시기
-        self.color_indicator = QLabel()
-        self.color_indicator.setFixedSize(16, 16)
-        color = self.char_info.get("color", "#3B82F6")
-        self.color_indicator.setStyleSheet(f"""
-            background-color: {color};
-            border-radius: 8px;
-            border: 1px solid #D1D5DB;
-        """)
-        layout.addWidget(self.color_indicator)
         
         # 2. 정보 텍스트 영역
         info_layout = QVBoxLayout()
@@ -3750,7 +3793,7 @@ class GlobalCharacterCard(QWidget):
         btn_layout.setSpacing(6)
         
         btn_edit = QPushButton("수정")
-        btn_edit.setFixedSize(50, 28)
+        btn_edit.setFixedSize(52, 28)
         btn_edit.setStyleSheet("""
             QPushButton {
                 background-color: #FFFFFF;
@@ -3759,6 +3802,7 @@ class GlobalCharacterCard(QWidget):
                 font-size: 12px;
                 color: #374151;
                 font-weight: bold;
+                padding: 0px; /* 전역 패딩 상속을 덮어씌워 텍스트 잘림 차단 */
             }
             QPushButton:hover {
                 border-color: #3B82F6;
@@ -3769,7 +3813,7 @@ class GlobalCharacterCard(QWidget):
         btn_layout.addWidget(btn_edit)
         
         btn_del = QPushButton("삭제")
-        btn_del.setFixedSize(50, 28)
+        btn_del.setFixedSize(52, 28)
         btn_del.setStyleSheet("""
             QPushButton {
                 background-color: #FFFFFF;
@@ -3778,6 +3822,7 @@ class GlobalCharacterCard(QWidget):
                 font-size: 12px;
                 color: #EF4444;
                 font-weight: bold;
+                padding: 0px; /* 전역 패딩 상속을 덮어씌워 '삭제' 글자 잘림(낙제 현상) 해결 */
             }
             QPushButton:hover {
                 background-color: #FEE2E2;
@@ -3795,7 +3840,7 @@ class GlobalCharacterSettingsDialog(QDialog):
     def __init__(self, parent=None, project_name=""):
         super().__init__(parent)
         self.project_name = project_name
-        self.setWindowTitle("👥 글로벌 캐릭터 데이터베이스 설정")
+        self.setWindowTitle("👥 캐릭터 설정")
         self.resize(520, 650)
         self.selected_color = "#3B82F6" # 기본 색상
         self.editing_name = None # 현재 수정 중인 캐릭터 이름 (None이면 신규 생성 모드)
@@ -3825,83 +3870,90 @@ class GlobalCharacterSettingsDialog(QDialog):
         form_layout = QVBoxLayout(form_widget)
         form_layout.setSpacing(10)
         
-        title_lbl = QLabel("👤 글로벌 캐릭터 추가 / 수정")
+        title_lbl = QLabel("👤 캐릭터 추가 / 수정")
         title_lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: #111827; border-bottom: 1px solid #E5E7EB; padding-bottom: 5px;")
         form_layout.addWidget(title_lbl)
         
         grid_layout = QGridLayout()
-        grid_layout.setSpacing(8)
+        grid_layout.setHorizontalSpacing(13) # 기존(8px)보다 5px을 더 넓힌 13px 여백으로 쾌적한 숨구멍 가로 여백 확보!
+        grid_layout.setVerticalSpacing(10)
+        grid_layout.setContentsMargins(15, 10, 15, 10) # 바깥 테두리와의 여유 있는 숨쉬는 여백
+        grid_layout.setColumnStretch(1, 1) # 1열(입력 상자 열)을 꽉 차게 늘려서 휑한 틈새를 자동 완벽 밀착!
         
-        # 이름 입력
+        # 이름 입력 (1열에 단독 배치하여 밀착 정렬)
         grid_layout.addWidget(QLabel("이름"), 0, 0)
         self.input_name = QLineEdit()
         self.input_name.setPlaceholderText("예: 밤, 쿤, 라헬")
         self.input_name.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px 8px; min-height: 28px;")
-        grid_layout.addWidget(self.input_name, 0, 1, 1, 3)
+        grid_layout.addWidget(self.input_name, 0, 1)
         
-        # 역할 선택
+        # 역할 라벨은 0열에 단독 배치
         grid_layout.addWidget(QLabel("역할"), 1, 0)
+        
+        # 1행에 역할 / 연령 / 성별 콤보박스 모두 수평 배치 (1열에 단독 배치하여 시작선 완벽 일치!)
+        dropdown_layout = QHBoxLayout()
+        dropdown_layout.setContentsMargins(0, 0, 0, 0)
+        dropdown_layout.setSpacing(0)
+        
+        # 1. 역할 콤보박스 (다른 항목들과 완벽한 크기 통일을 위해 85px 고정 너비 지정!)
         self.combo_role = QComboBox()
         self.combo_role.addItems(["주연", "조연", "단역"])
         self.combo_role.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
-        grid_layout.addWidget(self.combo_role, 1, 1)
+        self.combo_role.setFixedWidth(85)
         
-        # 나이 선택
-        grid_layout.addWidget(QLabel("나이"), 1, 2)
+        # 2. 연령 세트 (연령 드롭다운 상자 폭 85px로 칼맞춤!)
+        age_widget = QWidget()
+        age_widget.setStyleSheet("background: transparent; border: none;") # Qt 스타일시트 상속으로 인한 옅은 회색 잔선 버그 완벽 차단!
+        age_layout = QHBoxLayout(age_widget)
+        age_layout.setContentsMargins(0, 0, 0, 0)
+        age_layout.setSpacing(13) # 라벨과 드롭다운 사이를 13px 여유 여백으로 띄워 밸런스 통일!
+        lbl_age = QLabel("연령")
+        lbl_age.setStyleSheet("font-weight: bold; color: #374151; border: none;")
         self.combo_age = QComboBox()
         import config
         self.combo_age.addItems(config.AGE_OPTIONS)
         self.combo_age.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
-        grid_layout.addWidget(self.combo_age, 1, 3)
+        self.combo_age.setFixedWidth(85)
+        age_layout.addWidget(lbl_age)
+        age_layout.addWidget(self.combo_age)
         
-        # 성별 선택
-        grid_layout.addWidget(QLabel("성별"), 2, 0)
+        # 3. 성별 세트 (성별 드롭다운 상자 폭 85px로 칼맞춤!)
+        gender_widget = QWidget()
+        gender_widget.setStyleSheet("background: transparent; border: none;") # Qt 스타일시트 상속으로 인한 옅은 회색 잔선 버그 완벽 차단!
+        gender_layout = QHBoxLayout(gender_widget)
+        gender_layout.setContentsMargins(0, 0, 0, 0)
+        gender_layout.setSpacing(13) # 라벨과 드롭다운 사이를 13px 여유 여백으로 띄워 밸런스 통일!
+        lbl_gender = QLabel("성별")
+        lbl_gender.setStyleSheet("font-weight: bold; color: #374151; border: none;")
         self.combo_gender = QComboBox()
         self.combo_gender.addItems(config.GENDER_OPTIONS)
         self.combo_gender.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
-        grid_layout.addWidget(self.combo_gender, 2, 1)
+        self.combo_gender.setFixedWidth(85)
+        gender_layout.addWidget(lbl_gender)
+        gender_layout.addWidget(self.combo_gender)
         
-        # 색상 피커
-        grid_layout.addWidget(QLabel("색상"), 2, 2)
+        # [역할 콤보] - [탄성1] - [연령 세트] - [탄성2] - [성별 세트] 순서로 기하학적 배치 완성!
+        # 이렇게 배치하면 연령 세트는 정확히 가로 한가운데(오른쪽 방향)로 안착하고, 성별 세트 우측 끝은 이름창 끝에 칼처럼 딱 붙습니다.
+        dropdown_layout.addWidget(self.combo_role)
+        dropdown_layout.addStretch(1)
+        dropdown_layout.addWidget(age_widget)
+        dropdown_layout.addStretch(1)
+        dropdown_layout.addWidget(gender_widget)
         
-        color_select_layout = QHBoxLayout()
-        color_select_layout.setSpacing(6)
-        self.btn_color_picker = QPushButton("색상 선택")
-        self.btn_color_picker.setStyleSheet("""
-            QPushButton {
-                background-color: #FFFFFF;
-                border: 1px solid #D1D5DB;
-                border-radius: 4px;
-                padding: 4px 10px;
-                font-size: 12px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                border-color: #FF4B4B;
-            }
-        """)
-        self.btn_color_picker.clicked.connect(self.open_color_dialog)
-        color_select_layout.addWidget(self.btn_color_picker)
+        grid_layout.addLayout(dropdown_layout, 1, 1)
         
-        self.color_preview = QLabel()
-        self.color_preview.setFixedSize(20, 20)
-        self.color_preview.setStyleSheet(f"background-color: {self.selected_color}; border-radius: 4px; border: 1px solid #D1D5DB;")
-        color_select_layout.addWidget(self.color_preview)
-        color_select_layout.addStretch()
-        
-        grid_layout.addLayout(color_select_layout, 2, 3)
-        
-        # 메모 입력
-        grid_layout.addWidget(QLabel("메모"), 3, 0)
+        # 메모 입력 (색상 피커가 날아가면서 3행에서 2행으로 세로 한 줄 당김!)
+        grid_layout.addWidget(QLabel("메모"), 2, 0)
         self.input_memo = QLineEdit()
         self.input_memo.setPlaceholderText("캐릭터 특징 및 설정 메모 (생략 가능)")
         self.input_memo.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px 8px; min-height: 28px;")
-        grid_layout.addWidget(self.input_memo, 3, 1, 1, 3)
+        grid_layout.addWidget(self.input_memo, 2, 1)
         
         form_layout.addLayout(grid_layout)
         
         # 추가 / 취소 버튼
         btn_form_layout = QHBoxLayout()
+        btn_form_layout.setContentsMargins(15, 0, 15, 5) # 좌우 15px 마진을 정밀하게 맞춰 입력창 끝선과 일직선 수직 정렬 완료!
         btn_form_layout.addStretch()
         
         self.btn_cancel_edit = QPushButton("취소")
@@ -3914,6 +3966,7 @@ class GlobalCharacterSettingsDialog(QDialog):
                 padding: 6px 14px;
                 font-weight: bold;
                 color: #4B5563;
+                min-height: 18px;
             }
             QPushButton:hover {
                 background-color: #F3F4F6;
@@ -3922,15 +3975,16 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.btn_cancel_edit.clicked.connect(self.cancel_editing)
         btn_form_layout.addWidget(self.btn_cancel_edit)
         
-        self.btn_submit = QPushButton("➕ 캐릭터 등록")
+        self.btn_submit = QPushButton("캐릭터 등록")
         self.btn_submit.setStyleSheet("""
             QPushButton {
                 background-color: #FF4B4B;
                 color: white;
-                border: none;
+                border: 1px solid transparent; /* 취소 버튼의 1px 경계선과 오차 없는 정밀 높이 대칭 매칭 */
                 border-radius: 4px;
                 padding: 6px 16px;
                 font-weight: bold;
+                min-height: 18px;
             }
             QPushButton:hover {
                 background-color: #E03E3E;
@@ -3944,7 +3998,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         
         # 2. 리스트 타이틀
         list_header_layout = QHBoxLayout()
-        list_title = QLabel("👤 등록된 글로벌 캐릭터 목록")
+        list_title = QLabel("👤 등록된 캐릭터 목록")
         list_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #111827;")
         list_header_layout.addWidget(list_title)
         
@@ -4012,13 +4066,6 @@ class GlobalCharacterSettingsDialog(QDialog):
         footer_layout.addWidget(btn_close)
         main_layout.addLayout(footer_layout)
         
-    def open_color_dialog(self):
-        from PySide6.QtWidgets import QColorDialog
-        color = QColorDialog.getColor(QColor(self.selected_color), self, "캐릭터 고유 색상 선택")
-        if color.isValid():
-            self.selected_color = color.name()
-            self.color_preview.setStyleSheet(f"background-color: {self.selected_color}; border-radius: 4px; border: 1px solid #D1D5DB;")
-            
     def load_characters(self):
         # 레이아웃 비우기
         for i in range(self.list_layout.count()):
@@ -4028,6 +4075,10 @@ class GlobalCharacterSettingsDialog(QDialog):
         import config
         chars = config.load_global_characters(self.project_name)
         self.lbl_count.setText(f"(총 {len(chars)}명)")
+        
+        # [정렬 추가] 역할 우선순위(주연 ➔ 조연 ➔ 단역) 및 가나다 이름 순 다중 정렬
+        role_priority = {"주연": 0, "조연": 1, "단역": 2}
+        chars.sort(key=lambda c: (role_priority.get(c.get("role", "단역"), 2), c.get("name", "")))
         
         for char in chars:
             card = GlobalCharacterCard(char, self)
@@ -4040,10 +4091,9 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.input_name.setEnabled(True)
         self.input_name.clear()
         self.input_memo.clear()
-        self.btn_submit.setText("➕ 캐릭터 등록")
+        self.btn_submit.setText("캐릭터 등록")
         self.btn_cancel_edit.setVisible(False)
         self.selected_color = "#3B82F6"
-        self.color_preview.setStyleSheet(f"background-color: {self.selected_color}; border-radius: 4px; border: 1px solid #D1D5DB;")
         
     def edit_character(self, char_info):
         self.editing_name = char_info.get("name", "")
@@ -4055,10 +4105,9 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.combo_gender.setCurrentText(char_info.get("gender", "미상"))
         
         self.selected_color = char_info.get("color", "#3B82F6")
-        self.color_preview.setStyleSheet(f"background-color: {self.selected_color}; border-radius: 4px; border: 1px solid #D1D5DB;")
         self.input_memo.setText(char_info.get("memo", ""))
         
-        self.btn_submit.setText("💾 캐릭터 정보 수정")
+        self.btn_submit.setText("캐릭터 정보 수정")
         self.btn_cancel_edit.setVisible(True)
         
     def submit_character(self):

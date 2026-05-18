@@ -1232,8 +1232,8 @@ class WebtoonManager(QMainWindow):
         top_bar_step2 = QHBoxLayout()
         top_bar_step2.setContentsMargins(5, 0, 5, 0)
         
-        # [추가] 글로벌 캐릭터 도우미 보기 버튼
-        self.btn_view_global_chars = QPushButton("👤 글로벌 캐릭터 보기")
+        # [추가] 작품 캐릭터 보기 버튼
+        self.btn_view_global_chars = QPushButton("👤 작품 캐릭터 보기")
         self.btn_view_global_chars.setCursor(Qt.PointingHandCursor)
         self.btn_view_global_chars.setFixedHeight(32)
         self.btn_view_global_chars.setStyleSheet("""
@@ -1252,8 +1252,8 @@ class WebtoonManager(QMainWindow):
         self.btn_view_global_chars.clicked.connect(self.toggle_character_viewer)
         top_bar_step2.addWidget(self.btn_view_global_chars)
         
-        # [추가] 글로벌 캐릭터 설정 버튼
-        self.btn_global_char_settings = QPushButton("⚙️ 글로벌 캐릭터 설정")
+        # [추가] 작품 캐릭터 설정 버튼
+        self.btn_global_char_settings = QPushButton("⚙️ 작품 캐릭터 설정")
         self.btn_global_char_settings.setCursor(Qt.PointingHandCursor)
         self.btn_global_char_settings.setFixedHeight(32)
         self.btn_global_char_settings.setStyleSheet("""
@@ -1594,7 +1594,7 @@ class WebtoonManager(QMainWindow):
                 self.idiom_viewer.activateWindow()
 
     def toggle_character_viewer(self):
-        """글로벌 캐릭터 도우미 플로팅 뷰어를 토글합니다."""
+        """작품 캐릭터 도우미 플로팅 뷰어를 토글합니다."""
         if getattr(self, 'is_simple_mode', False):
             self.toast.show_message("⚠️ 심플 모드에서는 캐릭터 관리 기능을 사용할 수 없습니다.")
             return
@@ -1633,7 +1633,7 @@ class WebtoonManager(QMainWindow):
             # 설정 완료 후 플로팅 뷰어가 켜져 있다면 목록 갱신
             if self.character_viewer and self.character_viewer.isVisible():
                 self.character_viewer.load_data()
-            self.toast.show_message("✅ 글로벌 캐릭터 목록이 저장되었습니다.", 2000)
+            self.toast.show_message("✅ 캐릭터 목록이 저장되었습니다.", 2000)
 
     def handle_idiom_viewer_select(self, text):
         """플로팅 뷰어에서 선택된 문구를 메인 에디터에 삽입합니다."""
