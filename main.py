@@ -2545,6 +2545,35 @@ class WebtoonManager(QMainWindow):
         df = pd.DataFrame(rows)
         df.to_csv(os.path.join(e_path, "character_info.csv"), index=False, encoding='utf-8-sig')
 
+        # [자동화] 스텝 2에서 추가/수정된 캐릭터가 글로벌 데이터베이스(characters.json)에 없다면 자동 등록
+        if self.current_title:
+            import config
+            global_chars = config.load_global_characters(self.current_title)
+            global_names = {c.get("name", "").strip() for c in global_chars}
+            
+            changed = False
+            for row in rows:
+                c_name = row.get("Character", "").strip()
+                if c_name and c_name not in global_names:
+                    # 새로운 캐릭터 발견 시 글로벌 DB에 기본값들과 함께 자동 생성
+                    new_char = {
+                        "name": c_name,
+                        "role": row.get("Role", "단역") or "단역",
+                        "age": row.get("Age", "미상") or "미상",
+                        "gender": row.get("Gender", "미상") or "미상",
+                        "color": "#3B82F6", # 기본 블루 지정
+                        "memo": f"스텝 2 회차 편집 중 자동 추가됨"
+                    }
+                    global_chars.append(new_char)
+                    global_names.add(c_name)
+                    changed = True
+            
+            if changed:
+                config.save_global_characters(self.current_title, global_chars)
+                # 캐릭터 도우미 창이 열려 있다면 목록을 실시간으로 자동 갱신시킵니다.
+                if self.character_viewer and self.character_viewer.isVisible():
+                    self.character_viewer.load_data()
+
     def load_data(self):
         import pandas as pd
         e_path, _, s_path = self.get_paths()
