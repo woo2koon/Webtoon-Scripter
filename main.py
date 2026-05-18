@@ -33,7 +33,7 @@ import config
 
 from config import BASE_DIR, ASSETS_DIR, CACHE_DIR, PROJECTS_DIR, TEMPLATE_PATH, MODERN_STYLE
 from utils import restore_template, natural_sort_key
-from widgets import ResponsiveLabel, ClickableComboBox, WebtoonScrollArea, PopupItemDelegate, CharacterRow, SpreadsheetTable, ExcelTextDelegate, CharacterListContainer
+from widgets import ResponsiveLabel, ClickableComboBox, WebtoonScrollArea, PopupItemDelegate, CharacterRow, SpreadsheetTable, ExcelTextDelegate, CharacterListContainer, FloatingCharacterViewer, GlobalCharacterSettingsDialog
 from ocr_worker import OCRWorker
 
 # 디렉토리 생성
@@ -140,6 +140,7 @@ class WebtoonManager(QMainWindow):
         self.overlay = DropOverlay(self)
         
         self.idiom_viewer = None
+        self.character_viewer = None
         self.init_ui()
         self.refresh_project_list()
         self.idiom_shortcuts = []
@@ -1229,9 +1230,53 @@ class WebtoonManager(QMainWindow):
         tab2_layout.setContentsMargins(5, 5, 5, 5)
         
         top_bar_step2 = QHBoxLayout()
+        top_bar_step2.setContentsMargins(5, 0, 5, 0)
+        
+        # [추가] 글로벌 캐릭터 도우미 보기 버튼
+        self.btn_view_global_chars = QPushButton("👤 글로벌 캐릭터 보기")
+        self.btn_view_global_chars.setCursor(Qt.PointingHandCursor)
+        self.btn_view_global_chars.setFixedHeight(32)
+        self.btn_view_global_chars.setStyleSheet("""
+            QPushButton { 
+                border: 1px solid #D1D5DB; 
+                background-color: #EFF6FF; 
+                border-radius: 6px; 
+                color: #2563EB; 
+                font-size: 13px; 
+                font-weight: bold;
+                padding: 0 12px;
+            } 
+            QPushButton:hover { background-color: #DBEAFE; border-color: #93C5FD; } 
+            QPushButton:pressed { background-color: #BFDBFE; }
+        """)
+        self.btn_view_global_chars.clicked.connect(self.toggle_character_viewer)
+        top_bar_step2.addWidget(self.btn_view_global_chars)
+        
+        # [추가] 글로벌 캐릭터 설정 버튼
+        self.btn_global_char_settings = QPushButton("⚙️ 글로벌 캐릭터 설정")
+        self.btn_global_char_settings.setCursor(Qt.PointingHandCursor)
+        self.btn_global_char_settings.setFixedHeight(32)
+        self.btn_global_char_settings.setStyleSheet("""
+            QPushButton { 
+                border: 1px solid #D1D5DB; 
+                background-color: #F3F4F6; 
+                border-radius: 6px; 
+                color: #374151; 
+                font-size: 13px; 
+                font-weight: bold;
+                padding: 0 12px;
+            } 
+            QPushButton:hover { background-color: #E5E7EB; border-color: #9CA3AF; } 
+            QPushButton:pressed { background-color: #D1D5DB; }
+        """)
+        self.btn_global_char_settings.clicked.connect(self.open_global_character_settings)
+        top_bar_step2.addWidget(self.btn_global_char_settings)
+        
         top_bar_step2.addStretch()
+        
         btn_add_char = QPushButton("+ 캐릭터 추가")
         btn_add_char.setObjectName("PrimaryBtn")
+        btn_add_char.setFixedHeight(32)
         btn_add_char.setFixedWidth(108)
         btn_add_char.clicked.connect(lambda: self.add_character_card())
         top_bar_step2.addWidget(btn_add_char)
@@ -1548,6 +1593,48 @@ class WebtoonManager(QMainWindow):
                 self.idiom_viewer.raise_()
                 self.idiom_viewer.activateWindow()
 
+    def toggle_character_viewer(self):
+        """글로벌 캐릭터 도우미 플로팅 뷰어를 토글합니다."""
+        if getattr(self, 'is_simple_mode', False):
+            self.toast.show_message("⚠️ 심플 모드에서는 캐릭터 관리 기능을 사용할 수 없습니다.")
+            return
+
+        if not self.current_title:
+            self.toast.show_message("⚠️ 먼저 작품을 선택해주세요.")
+            return
+            
+        if self.character_viewer is None:
+            self.character_viewer = FloatingCharacterViewer(self, project_name=self.current_title)
+            # 메인 윈도우의 오른쪽에 위치시킴
+            geom = self.geometry()
+            self.character_viewer.move(geom.x() + geom.width() + 10, geom.y())
+            self.character_viewer.show()
+        else:
+            if self.character_viewer.isVisible():
+                self.character_viewer.hide()
+            else:
+                self.character_viewer.load_data()
+                self.character_viewer.show()
+                self.character_viewer.raise_()
+                self.character_viewer.activateWindow()
+
+    def open_global_character_settings(self):
+        """글로벌 캐릭터 통합 설정 창을 띄웁니다."""
+        if getattr(self, 'is_simple_mode', False):
+            self.toast.show_message("⚠️ 심플 모드에서는 캐릭터 관리 기능을 사용할 수 없습니다.")
+            return
+
+        if not self.current_title:
+            self.toast.show_message("⚠️ 먼저 작품을 선택해주세요.")
+            return
+            
+        dialog = GlobalCharacterSettingsDialog(self, project_name=self.current_title)
+        if dialog.exec() == QDialog.Accepted:
+            # 설정 완료 후 플로팅 뷰어가 켜져 있다면 목록 갱신
+            if self.character_viewer and self.character_viewer.isVisible():
+                self.character_viewer.load_data()
+            self.toast.show_message("✅ 글로벌 캐릭터 목록이 저장되었습니다.", 2000)
+
     def handle_idiom_viewer_select(self, text):
         """플로팅 뷰어에서 선택된 문구를 메인 에디터에 삽입합니다."""
         if hasattr(self, 'text_editor') and self.text_editor:
@@ -1721,7 +1808,92 @@ class WebtoonManager(QMainWindow):
         if not text: return
         self.current_title = text
         self.current_episode = "" 
+        # [1단계] 글로벌 캐릭터 데이터 자동 병합/마이그레이션 실행
+        self.migrate_characters_to_global()
         self.refresh_episode_list()
+
+    def migrate_characters_to_global(self):
+        """기존 각 회차별 character_info.csv를 파싱하여 작품별 characters.json으로 병합 마이그레이션합니다."""
+        if not self.current_title:
+            return
+            
+        import pandas as pd
+        # 1. 기존 글로벌 캐릭터 목록을 로드합니다.
+        from config import load_global_characters, save_global_characters, PROJECTS_DIR
+        global_chars = load_global_characters(self.current_title)
+        global_dict = {char["name"]: char for char in global_chars if "name" in char}
+        
+        # 대표 파스텔톤 컬러 리스트 정의 (중복 배정 방지 목적)
+        PASTEL_COLORS = [
+            "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", 
+            "#EC4899", "#06B6D4", "#F97316", "#14B8A6", "#84CC16"
+        ]
+        color_idx = len(global_chars) % len(PASTEL_COLORS)
+        
+        # 2. 작품 디렉토리 내의 회차 폴더들을 스캔합니다.
+        t_path = os.path.join(PROJECTS_DIR, self.current_title)
+        if not os.path.exists(t_path):
+            return
+            
+        migrated_any = False
+        
+        for ep_dir in os.listdir(t_path):
+            ep_path = os.path.join(t_path, ep_dir)
+            if not os.path.isdir(ep_path) or ep_dir == "images":
+                continue
+                
+            c_csv = os.path.join(ep_path, "character_info.csv")
+            if os.path.exists(c_csv):
+                try:
+                    df = pd.read_csv(c_csv, keep_default_na=False)
+                    for _, row in df.iterrows():
+                        name = str(row.get('Character', '')).strip()
+                        if not name:
+                            continue
+                            
+                        # 새로운 캐릭터 발견
+                        if name not in global_dict:
+                            # 정보 수집
+                            age = str(row.get('Age', '')).strip()
+                            gender = str(row.get('Gender', '')).strip()
+                            role = str(row.get('Role', '')).strip()
+                            
+                            # 기본값 보정
+                            if not age: age = "미상"
+                            if not gender: gender = "미상"
+                            if not role: role = "단역"
+                            
+                            # 신규 캐릭터 dict 구성
+                            new_char = {
+                                "name": name,
+                                "age": age,
+                                "gender": gender,
+                                "role": role,
+                                "color": PASTEL_COLORS[color_idx],
+                                "memo": ""
+                            }
+                            global_dict[name] = new_char
+                            color_idx = (color_idx + 1) % len(PASTEL_COLORS)
+                            migrated_any = True
+                        else:
+                            # 이미 있는 캐릭터라면 빈 정보(미상)가 있을 때 채워줌
+                            existing = global_dict[name]
+                            if existing.get("age") == "미상" and str(row.get('Age', '')).strip():
+                                existing["age"] = str(row.get('Age', '')).strip()
+                                migrated_any = True
+                            if existing.get("gender") == "미상" and str(row.get('Gender', '')).strip():
+                                existing["gender"] = str(row.get('Gender', '')).strip()
+                                migrated_any = True
+                            if existing.get("role") == "단역" and str(row.get('Role', '')).strip() in ["주연", "조연"]:
+                                existing["role"] = str(row.get('Role', '')).strip()
+                                migrated_any = True
+                except Exception as e:
+                    print(f"회차 '{ep_dir}' 캐릭터 마이그레이션 실패: {e}")
+                    
+        # 3. 새로운 데이터가 추가되었거나 기존 데이터가 수정되었다면 저장합니다.
+        if migrated_any:
+            save_global_characters(self.current_title, list(global_dict.values()))
+            print(f">>> '{self.current_title}' 작품의 글로벌 캐릭터 DB 자동 생성 및 마이그레이션이 완료되었습니다.")
 
     def refresh_episode_list(self):
         self.combo_episode.blockSignals(True)
@@ -2188,15 +2360,26 @@ class WebtoonManager(QMainWindow):
         
         return combo
 
-    def add_character_card(self, name="", age="", gender="", role=""):
+    def add_character_card_at(self, index, name="", age="", gender="", role=""):
+        # 중복 등록 방지: 현재 회차에 이미 등록된 동일한 이름의 캐릭터는 추가하지 않음
+        for i in range(self.char_layout.count()):
+            widget = self.char_layout.itemAt(i).widget()
+            if isinstance(widget, CharacterRow):
+                if widget.input_name.text().strip() == name.strip():
+                    self.toast.show_message(f"⚠️ '{name}' 캐릭터는 이미 추가되어 있습니다.", 1500)
+                    return
+                    
         card = CharacterRow(name, age, gender, role)
         card.delete_signal.connect(self.remove_character_card)
         card.input_name.textChanged.connect(self.save_char_data)
         card.combo_role.currentTextChanged.connect(self.save_char_data)
         card.combo_age.currentTextChanged.connect(self.save_char_data)
         card.combo_gender.currentTextChanged.connect(self.save_char_data)
-        self.char_layout.addWidget(card)
+        self.char_layout.insertWidget(index, card)
         self.save_char_data()
+
+    def add_character_card(self, name="", age="", gender="", role=""):
+        self.add_character_card_at(self.char_layout.count(), name, age, gender, role)
 
     def remove_character_card(self, card_widget):
         card_widget.deleteLater()

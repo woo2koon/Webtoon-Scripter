@@ -276,8 +276,40 @@ class CharacterListContainer(QWidget):
         self.update()
         if event.mimeData().hasFormat("application/x-character-row"):
             handle = event.source()
-            if not handle: return
             
+            # [수정] 외부(예: 글로벌 캐릭터 도우미 플로팅 창)에서 드롭한 경우
+            if not handle or not hasattr(handle, "parent") or str(handle.objectName()) != "DragHandle":
+                mime_text = event.mimeData().text()
+                if mime_text:
+                    try:
+                        import json
+                        char_info = json.loads(mime_text)
+                        mw = self.window()
+                        if hasattr(mw, 'add_character_card_at'):
+                            layout = self.layout()
+                            widgets = []
+                            for i in range(layout.count()):
+                                w = layout.itemAt(i).widget()
+                                if w: widgets.append(w)
+                                
+                            target_index = len(widgets)
+                            for i, w in enumerate(widgets):
+                                if event.pos().y() < w.y() + w.height() / 2.0:
+                                    target_index = i
+                                    break
+                                    
+                            mw.add_character_card_at(
+                                target_index,
+                                name=char_info.get("name", ""),
+                                age=char_info.get("age", ""),
+                                gender=char_info.get("gender", ""),
+                                role=char_info.get("role", "")
+                            )
+                            event.acceptProposedAction()
+                    except Exception as e:
+                        print(f"외부 캐릭터 드롭 실패: {e}")
+                return
+
             row_widget = handle.parent()
             drop_y = event.pos().y()
             layout = self.layout()
@@ -3369,3 +3401,779 @@ class FloatingIdiomViewer(QDialog):
     def on_item_clicked(self, item):
         text = item.data(Qt.UserRole)
         self.idiom_selected.emit(text)
+
+# =================================================================
+# [글로벌 캐릭터 관리 & 도우미 위젯군]
+# =================================================================
+from PySide6.QtCore import Qt, QMimeData, QPoint, Signal, QSize
+from PySide6.QtGui import QDrag, QPixmap, QPainter, QColor, QFont
+from PySide6.QtWidgets import (QListWidget, QDialog, QVBoxLayout, QHBoxLayout, 
+                             QLineEdit, QLabel, QPushButton, QListWidgetItem, 
+                             QWidget, QGridLayout, QComboBox, QScrollArea, QMessageBox)
+
+class DraggableCharacterListWidget(QListWidget):
+    """드래그 앤 드롭을 지원하는 캐릭터 전용 QListWidget"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDragEnabled(True)
+        
+    def startDrag(self, supportedActions):
+        item = self.currentItem()
+        if not item:
+            return
+            
+        char_info = item.data(Qt.UserRole)
+        if not char_info:
+            return
+            
+        import json
+        mime_data = QMimeData()
+        # 마임 타입과 함께 JSON 문자열을 텍스트로 보냄
+        mime_data.setData("application/x-character-row", b"")
+        mime_data.setText(json.dumps(char_info))
+        
+        drag = QDrag(self)
+        drag.setMimeData(mime_data)
+        
+        # 드래그 비주얼: 캐릭터 고유 색상 원형 뱃지와 이름이 들어간 픽스맵
+        pixmap = QPixmap(120, 36)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # 둥근 사각형 배경
+        color = QColor(char_info.get("color", "#3B82F6"))
+        painter.setBrush(color)
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(0, 0, 120, 36, 6, 6)
+        
+        # 텍스트 그리기
+        painter.setPen(QColor("white"))
+        font = QFont("Pretendard", 10, QFont.Bold)
+        painter.setFont(font)
+        painter.drawText(pixmap.rect(), Qt.AlignCenter, char_info.get("name", "캐릭터"))
+        painter.end()
+        
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(QPoint(60, 18))
+        
+        drag.exec(Qt.MoveAction)
+
+
+class FloatingCharacterViewer(QDialog):
+    """작품 전체의 캐릭터 목록을 항상 위에 표시하며 드래그 앤 드롭 및 더블클릭 추가를 지원하는 플로팅 위젯"""
+    character_selected = Signal(dict) # 캐릭터 선택 시 시그널
+
+    def __init__(self, parent=None, project_name=""):
+        super().__init__(parent)
+        self.project_name = project_name
+        self.setWindowTitle("👤 글로벌 캐릭터 도우미")
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint) # 항상 위 플로팅 옵션
+        self.resize(320, 500)
+        
+        self.init_ui()
+        self.load_data()
+        
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 12, 10, 12)
+        layout.setSpacing(10)
+        
+        # 상단 안내 타이틀
+        info_label = QLabel("💡 캐릭터를 더블클릭 하거나 스텝 2의\n등장인물 영역으로 드래그해서 추가하세요.")
+        info_label.setStyleSheet("font-size: 12px; color: #4B5563; font-weight: 500; line-height: 140%;")
+        layout.addWidget(info_label)
+        
+        # 검색 바
+        search_layout = QHBoxLayout()
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("🔍 캐릭터 이름 검색...")
+        self.search_bar.setStyleSheet("""
+            QLineEdit {
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-size: 13px;
+                background-color: #F9FAFB;
+            }
+            QLineEdit:focus {
+                border-color: #FF4B4B;
+                background-color: #FFFFFF;
+            }
+        """)
+        self.search_bar.textChanged.connect(self.filter_list)
+        search_layout.addWidget(self.search_bar)
+        
+        # 리프레시 버튼
+        self.btn_refresh = QPushButton("↻")
+        self.btn_refresh.setToolTip("목록 새로고침")
+        self.btn_refresh.setFixedSize(32, 32)
+        self.btn_refresh.setStyleSheet("""
+            QPushButton {
+                background-color: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                font-size: 16px;
+                font-weight: bold;
+                color: #4B5563;
+            }
+            QPushButton:hover {
+                border-color: #FF4B4B;
+                color: #FF4B4B;
+            }
+        """)
+        self.btn_refresh.clicked.connect(self.load_data)
+        search_layout.addWidget(self.btn_refresh)
+        
+        layout.addLayout(search_layout)
+        
+        # 캐릭터 리스트 위젯 (드래그앤드롭 전용 위젯 사용)
+        self.list_widget = DraggableCharacterListWidget(self)
+        self.list_widget.setStyleSheet("""
+            QListWidget {
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                background-color: #FFFFFF;
+                padding: 5px;
+            }
+            QListWidget::item {
+                border-radius: 6px;
+                margin: 2px 0px;
+            }
+            QListWidget::item:hover {
+                background-color: #FFF5F5;
+            }
+            QListWidget::item:selected {
+                background-color: #FFECEC;
+                border: 1px solid #FFCDCD;
+            }
+        """)
+        self.list_widget.itemDoubleClicked.connect(self.on_item_double_clicked)
+        layout.addWidget(self.list_widget)
+        
+        # 하단 닫기 버튼
+        self.btn_close = QPushButton("닫기")
+        self.btn_close.setStyleSheet("""
+            QPushButton {
+                background-color: #212529;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #000000;
+            }
+        """)
+        self.btn_close.clicked.connect(self.close)
+        layout.addWidget(self.btn_close)
+        
+    def load_data(self):
+        self.list_widget.clear()
+        
+        import config
+        chars = config.load_global_characters(self.project_name)
+        
+        for char in chars:
+            name = char.get("name", "")
+            if not name:
+                continue
+                
+            list_item = QListWidgetItem()
+            list_item.setSizeHint(QSize(0, 48)) # 높이 지정
+            
+            # 커스텀 위젯 생성
+            container = QWidget()
+            item_layout = QHBoxLayout(container)
+            item_layout.setContentsMargins(10, 0, 10, 0)
+            item_layout.setSpacing(10)
+            
+            # 대표 색상 마커 (원)
+            color_dot = QLabel()
+            color_dot.setFixedSize(14, 14)
+            color_hex = char.get("color", "#3B82F6")
+            color_dot.setStyleSheet(f"""
+                background-color: {color_hex};
+                border-radius: 7px;
+                border: 1px solid #D1D5DB;
+            """)
+            item_layout.addWidget(color_dot)
+            
+            # 이름 텍스트
+            lbl_name = QLabel(name)
+            lbl_name.setStyleSheet("font-size: 14px; font-weight: bold; color: #1F2937; background: transparent;")
+            item_layout.addWidget(lbl_name, 1)
+            
+            # 역할 뱃지
+            role = char.get("role", "단역")
+            lbl_role = QLabel(role)
+            lbl_role.setAlignment(Qt.AlignCenter)
+            
+            # 역할별 스타일 색상 배정
+            role_colors = {
+                "주연": {"bg": "#FEE2E2", "text": "#EF4444", "border": "#FCA5A5"},
+                "조연": {"bg": "#FEF3C7", "text": "#D97706", "border": "#FCD34D"},
+                "단역": {"bg": "#F3F4F6", "text": "#4B5563", "border": "#E5E7EB"}
+            }
+            colors = role_colors.get(role, role_colors["단역"])
+            
+            lbl_role.setStyleSheet(f"""
+                QLabel {{
+                    background-color: {colors['bg']};
+                    color: {colors['text']};
+                    border: 1px solid {colors['border']};
+                    border-radius: 4px;
+                    padding: 2px 6px;
+                    font-size: 11px;
+                    font-weight: bold;
+                }}
+            """)
+            item_layout.addWidget(lbl_role)
+            
+            # 데이터를 아이템 객체에 저장
+            list_item.setData(Qt.UserRole, char)
+            
+            self.list_widget.addItem(list_item)
+            self.list_widget.setItemWidget(list_item, container)
+            
+        self.filter_list()
+        
+    def filter_list(self):
+        query = self.search_bar.text().lower().strip()
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            char_info = item.data(Qt.UserRole)
+            name = char_info.get("name", "").lower() if char_info else ""
+            item.setHidden(query != "" and query not in name)
+            
+    def on_item_double_clicked(self, item):
+        char_info = item.data(Qt.UserRole)
+        if char_info:
+            self.character_selected.emit(char_info)
+            # 메인 윈도우의 add_character_card_at를 호출
+            mw = self.window()
+            if hasattr(mw, 'add_character_card'):
+                mw.add_character_card(
+                    name=char_info.get("name", ""),
+                    age=char_info.get("age", ""),
+                    gender=char_info.get("gender", ""),
+                    role=char_info.get("role", "")
+                )
+
+
+class GlobalCharacterCard(QWidget):
+    """글로벌 캐릭터 설정을 보여주는 리스트형 아이템 카드 위젯"""
+    delete_clicked = Signal(str) # 캐릭터 이름 전송
+    edit_clicked = Signal(dict)   # 캐릭터 정보 dict 전송
+
+    def __init__(self, char_info, parent=None):
+        super().__init__(parent)
+        self.char_info = char_info
+        self.init_ui()
+        
+    def init_ui(self):
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(15, 10, 15, 10)
+        layout.setSpacing(12)
+        
+        # 카드 배경 디자인
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+            }
+        """)
+        
+        # 1. 색상 표시기
+        self.color_indicator = QLabel()
+        self.color_indicator.setFixedSize(16, 16)
+        color = self.char_info.get("color", "#3B82F6")
+        self.color_indicator.setStyleSheet(f"""
+            background-color: {color};
+            border-radius: 8px;
+            border: 1px solid #D1D5DB;
+        """)
+        layout.addWidget(self.color_indicator)
+        
+        # 2. 정보 텍스트 영역
+        info_layout = QVBoxLayout()
+        info_layout.setSpacing(4)
+        
+        name_lbl = QLabel(f"👤 {self.char_info.get('name', '')}")
+        name_lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #111827; border: none;")
+        info_layout.addWidget(name_lbl)
+        
+        # 태그들 (역할, 나이, 성별)
+        tags_layout = QHBoxLayout()
+        tags_layout.setSpacing(6)
+        
+        role = self.char_info.get('role', '단역')
+        age = self.char_info.get('age', '미상')
+        gender = self.char_info.get('gender', '미상')
+        
+        tag_style = "font-size: 11px; font-weight: bold; border-radius: 4px; padding: 2px 6px; border: 1px solid;"
+        
+        # 역할 뱃지 색상
+        role_colors = {
+            "주연": "background-color: #FEE2E2; color: #EF4444; border-color: #FCA5A5;",
+            "조연": "background-color: #FEF3C7; color: #D97706; border-color: #FCD34D;",
+            "단역": "background-color: #F3F4F6; color: #4B5563; border-color: #E5E7EB;"
+        }
+        
+        lbl_role = QLabel(role)
+        lbl_role.setStyleSheet(tag_style + role_colors.get(role, role_colors["단역"]))
+        tags_layout.addWidget(lbl_role)
+        
+        lbl_age = QLabel(age)
+        lbl_age.setStyleSheet(tag_style + "background-color: #E0F2FE; color: #0369A1; border-color: #BAE6FD;")
+        tags_layout.addWidget(lbl_age)
+        
+        lbl_gender = QLabel(gender)
+        lbl_gender.setStyleSheet(tag_style + "background-color: #F3E8FF; color: #7E22CE; border-color: #E9D5FF;")
+        tags_layout.addWidget(lbl_gender)
+        
+        # 메모 텍스트가 존재한다면 간략히 표시
+        memo = self.char_info.get('memo', '').strip()
+        if memo:
+            lbl_memo = QLabel(f"📝 {memo}")
+            lbl_memo.setStyleSheet("font-size: 12px; color: #6B7280; border: none; margin-top: 2px;")
+            info_layout.addWidget(lbl_memo)
+            
+        tags_layout.addStretch()
+        info_layout.addLayout(tags_layout)
+        layout.addLayout(info_layout, 1)
+        
+        # 3. 조작 버튼 영역 (수정, 삭제)
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(6)
+        
+        btn_edit = QPushButton("수정")
+        btn_edit.setFixedSize(50, 28)
+        btn_edit.setStyleSheet("""
+            QPushButton {
+                background-color: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 4px;
+                font-size: 12px;
+                color: #374151;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                border-color: #3B82F6;
+                color: #3B82F6;
+            }
+        """)
+        btn_edit.clicked.connect(lambda: self.edit_clicked.emit(self.char_info))
+        btn_layout.addWidget(btn_edit)
+        
+        btn_del = QPushButton("삭제")
+        btn_del.setFixedSize(50, 28)
+        btn_del.setStyleSheet("""
+            QPushButton {
+                background-color: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 4px;
+                font-size: 12px;
+                color: #EF4444;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #FEE2E2;
+                border-color: #EF4444;
+            }
+        """)
+        btn_del.clicked.connect(lambda: self.delete_clicked.emit(self.char_info.get("name", "")))
+        btn_layout.addWidget(btn_del)
+        
+        layout.addLayout(btn_layout)
+
+
+class GlobalCharacterSettingsDialog(QDialog):
+    """작품 전체의 캐릭터 데이터베이스를 추가, 수정, 삭제하고 색상을 관리하는 미려한 통합 관리 다이얼로그"""
+    def __init__(self, parent=None, project_name=""):
+        super().__init__(parent)
+        self.project_name = project_name
+        self.setWindowTitle("👥 글로벌 캐릭터 데이터베이스 설정")
+        self.resize(520, 650)
+        self.selected_color = "#3B82F6" # 기본 색상
+        self.editing_name = None # 현재 수정 중인 캐릭터 이름 (None이면 신규 생성 모드)
+        
+        self.init_ui()
+        self.load_characters()
+        
+    def init_ui(self):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(15)
+        
+        # 1. 상단 입력 폼 그룹박스
+        form_widget = QWidget()
+        form_widget.setStyleSheet("""
+            QWidget {
+                background-color: #F9FAFB;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+            }
+            QLabel {
+                font-weight: bold;
+                color: #374151;
+                border: none;
+            }
+        """)
+        form_layout = QVBoxLayout(form_widget)
+        form_layout.setSpacing(10)
+        
+        title_lbl = QLabel("👤 글로벌 캐릭터 추가 / 수정")
+        title_lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: #111827; border-bottom: 1px solid #E5E7EB; padding-bottom: 5px;")
+        form_layout.addWidget(title_lbl)
+        
+        grid_layout = QGridLayout()
+        grid_layout.setSpacing(8)
+        
+        # 이름 입력
+        grid_layout.addWidget(QLabel("이름"), 0, 0)
+        self.input_name = QLineEdit()
+        self.input_name.setPlaceholderText("예: 밤, 쿤, 라헬")
+        self.input_name.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px 8px; min-height: 28px;")
+        grid_layout.addWidget(self.input_name, 0, 1, 1, 3)
+        
+        # 역할 선택
+        grid_layout.addWidget(QLabel("역할"), 1, 0)
+        self.combo_role = QComboBox()
+        self.combo_role.addItems(["주연", "조연", "단역"])
+        self.combo_role.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
+        grid_layout.addWidget(self.combo_role, 1, 1)
+        
+        # 나이 선택
+        grid_layout.addWidget(QLabel("나이"), 1, 2)
+        self.combo_age = QComboBox()
+        import config
+        self.combo_age.addItems(config.AGE_OPTIONS)
+        self.combo_age.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
+        grid_layout.addWidget(self.combo_age, 1, 3)
+        
+        # 성별 선택
+        grid_layout.addWidget(QLabel("성별"), 2, 0)
+        self.combo_gender = QComboBox()
+        self.combo_gender.addItems(config.GENDER_OPTIONS)
+        self.combo_gender.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
+        grid_layout.addWidget(self.combo_gender, 2, 1)
+        
+        # 색상 피커
+        grid_layout.addWidget(QLabel("색상"), 2, 2)
+        
+        color_select_layout = QHBoxLayout()
+        color_select_layout.setSpacing(6)
+        self.btn_color_picker = QPushButton("색상 선택")
+        self.btn_color_picker.setStyleSheet("""
+            QPushButton {
+                background-color: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 4px;
+                padding: 4px 10px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                border-color: #FF4B4B;
+            }
+        """)
+        self.btn_color_picker.clicked.connect(self.open_color_dialog)
+        color_select_layout.addWidget(self.btn_color_picker)
+        
+        self.color_preview = QLabel()
+        self.color_preview.setFixedSize(20, 20)
+        self.color_preview.setStyleSheet(f"background-color: {self.selected_color}; border-radius: 4px; border: 1px solid #D1D5DB;")
+        color_select_layout.addWidget(self.color_preview)
+        color_select_layout.addStretch()
+        
+        grid_layout.addLayout(color_select_layout, 2, 3)
+        
+        # 메모 입력
+        grid_layout.addWidget(QLabel("메모"), 3, 0)
+        self.input_memo = QLineEdit()
+        self.input_memo.setPlaceholderText("캐릭터 특징 및 설정 메모 (생략 가능)")
+        self.input_memo.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px 8px; min-height: 28px;")
+        grid_layout.addWidget(self.input_memo, 3, 1, 1, 3)
+        
+        form_layout.addLayout(grid_layout)
+        
+        # 추가 / 취소 버튼
+        btn_form_layout = QHBoxLayout()
+        btn_form_layout.addStretch()
+        
+        self.btn_cancel_edit = QPushButton("취소")
+        self.btn_cancel_edit.setVisible(False) # 수정 모드에서만 노출
+        self.btn_cancel_edit.setStyleSheet("""
+            QPushButton {
+                background-color: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 4px;
+                padding: 6px 14px;
+                font-weight: bold;
+                color: #4B5563;
+            }
+            QPushButton:hover {
+                background-color: #F3F4F6;
+            }
+        """)
+        self.btn_cancel_edit.clicked.connect(self.cancel_editing)
+        btn_form_layout.addWidget(self.btn_cancel_edit)
+        
+        self.btn_submit = QPushButton("➕ 캐릭터 등록")
+        self.btn_submit.setStyleSheet("""
+            QPushButton {
+                background-color: #FF4B4B;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 6px 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #E03E3E;
+            }
+        """)
+        self.btn_submit.clicked.connect(self.submit_character)
+        btn_form_layout.addWidget(self.btn_submit)
+        
+        form_layout.addLayout(btn_form_layout)
+        main_layout.addWidget(form_widget)
+        
+        # 2. 리스트 타이틀
+        list_header_layout = QHBoxLayout()
+        list_title = QLabel("👤 등록된 글로벌 캐릭터 목록")
+        list_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #111827;")
+        list_header_layout.addWidget(list_title)
+        
+        self.lbl_count = QLabel("(총 0명)")
+        self.lbl_count.setStyleSheet("font-size: 13px; color: #6B7280; font-weight: 500;")
+        list_header_layout.addWidget(self.lbl_count)
+        list_header_layout.addStretch()
+        
+        # 일괄 동기화 버튼 (모든 기존 회차의 character_info.csv를 글로벌 DB 기반으로 이름 매칭하여 자동 수정해주는 보너스 최고 존엄 헬퍼 기능)
+        self.btn_sync_all = QPushButton("🔄 모든 회차 동기화")
+        self.btn_sync_all.setToolTip("수정된 성별, 나이, 역할, 색상 설정을 이미 생성된 기존 모든 회차에 일괄 적용합니다.")
+        self.btn_sync_all.setStyleSheet("""
+            QPushButton {
+                background-color: #FFF5F5;
+                border: 1px solid #FECACA;
+                border-radius: 4px;
+                padding: 4px 10px;
+                font-size: 12px;
+                font-weight: bold;
+                color: #EF4444;
+            }
+            QPushButton:hover {
+                background-color: #FEE2E2;
+                border-color: #EF4444;
+            }
+        """)
+        self.btn_sync_all.clicked.connect(self.sync_all_episodes_confirm)
+        list_header_layout.addWidget(self.btn_sync_all)
+        
+        main_layout.addLayout(list_header_layout)
+        
+        # 3. 캐릭터 리스트 스크롤 영역
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("border: 1px solid #E5E7EB; border-radius: 8px; background-color: #F9FAFB;")
+        
+        self.list_container = QWidget()
+        self.list_container.setStyleSheet("background-color: transparent;")
+        self.list_layout = QVBoxLayout(self.list_container)
+        self.list_layout.setContentsMargins(10, 10, 10, 10)
+        self.list_layout.setSpacing(8)
+        self.list_layout.setAlignment(Qt.AlignTop)
+        
+        scroll_area.setWidget(self.list_container)
+        main_layout.addWidget(scroll_area, 1)
+        
+        # 4. 하단 닫기 버튼
+        footer_layout = QHBoxLayout()
+        footer_layout.addStretch()
+        btn_close = QPushButton("닫기")
+        btn_close.setStyleSheet("""
+            QPushButton {
+                background-color: #212529;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 24px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #000000;
+            }
+        """)
+        btn_close.clicked.connect(self.accept)
+        footer_layout.addWidget(btn_close)
+        main_layout.addLayout(footer_layout)
+        
+    def open_color_dialog(self):
+        from PySide6.QtWidgets import QColorDialog
+        color = QColorDialog.getColor(QColor(self.selected_color), self, "캐릭터 고유 색상 선택")
+        if color.isValid():
+            self.selected_color = color.name()
+            self.color_preview.setStyleSheet(f"background-color: {self.selected_color}; border-radius: 4px; border: 1px solid #D1D5DB;")
+            
+    def load_characters(self):
+        # 레이아웃 비우기
+        for i in range(self.list_layout.count()):
+            w = self.list_layout.itemAt(i).widget()
+            if w: w.deleteLater()
+            
+        import config
+        chars = config.load_global_characters(self.project_name)
+        self.lbl_count.setText(f"(총 {len(chars)}명)")
+        
+        for char in chars:
+            card = GlobalCharacterCard(char, self)
+            card.delete_clicked.connect(self.delete_character)
+            card.edit_clicked.connect(self.edit_character)
+            self.list_layout.addWidget(card)
+            
+    def cancel_editing(self):
+        self.editing_name = None
+        self.input_name.setEnabled(True)
+        self.input_name.clear()
+        self.input_memo.clear()
+        self.btn_submit.setText("➕ 캐릭터 등록")
+        self.btn_cancel_edit.setVisible(False)
+        self.selected_color = "#3B82F6"
+        self.color_preview.setStyleSheet(f"background-color: {self.selected_color}; border-radius: 4px; border: 1px solid #D1D5DB;")
+        
+    def edit_character(self, char_info):
+        self.editing_name = char_info.get("name", "")
+        self.input_name.setText(self.editing_name)
+        self.input_name.setEnabled(False) # 이름은 고유키 역할이므로 수정 시 수정 불가
+        
+        self.combo_role.setCurrentText(char_info.get("role", "단역"))
+        self.combo_age.setCurrentText(char_info.get("age", "미상"))
+        self.combo_gender.setCurrentText(char_info.get("gender", "미상"))
+        
+        self.selected_color = char_info.get("color", "#3B82F6")
+        self.color_preview.setStyleSheet(f"background-color: {self.selected_color}; border-radius: 4px; border: 1px solid #D1D5DB;")
+        self.input_memo.setText(char_info.get("memo", ""))
+        
+        self.btn_submit.setText("💾 캐릭터 정보 수정")
+        self.btn_cancel_edit.setVisible(True)
+        
+    def submit_character(self):
+        name = self.input_name.text().strip()
+        if not name:
+            QMessageBox.warning(self, "입력 오류", "캐릭터 이름을 입력해주세요.")
+            return
+            
+        import config
+        chars = config.load_global_characters(self.project_name)
+        
+        # 신규 모드
+        if self.editing_name is None:
+            # 중복 체크
+            if any(c.get("name", "").strip() == name for c in chars):
+                QMessageBox.warning(self, "중복 오류", f"'{name}' 캐릭터는 이미 등록되어 있습니다.")
+                return
+                
+            new_char = {
+                "name": name,
+                "role": self.combo_role.currentText(),
+                "age": self.combo_age.currentText(),
+                "gender": self.combo_gender.currentText(),
+                "color": self.selected_color,
+                "memo": self.input_memo.text().strip()
+            }
+            chars.append(new_char)
+            
+        # 수정 모드
+        else:
+            for c in chars:
+                if c.get("name", "") == self.editing_name:
+                    c["role"] = self.combo_role.currentText()
+                    c["age"] = self.combo_age.currentText()
+                    c["gender"] = self.combo_gender.currentText()
+                    c["color"] = self.selected_color
+                    c["memo"] = self.input_memo.text().strip()
+                    break
+                    
+        config.save_global_characters(self.project_name, chars)
+        self.cancel_editing()
+        self.load_characters()
+        
+        # 메인 윈도우의 스텝 2 및 스텝 3 콤보박스 즉시 갱신
+        mw = self.window()
+        if hasattr(mw, 'get_character_list'):
+            mw.get_character_list()
+            
+    def delete_character(self, name):
+        reply = QMessageBox.question(self, "캐릭터 삭제", f"정말로 '{name}' 캐릭터를 글로벌 데이터베이스에서 삭제하시겠습니까?",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            import config
+            chars = config.load_global_characters(self.project_name)
+            chars = [c for c in chars if c.get("name", "") != name]
+            config.save_global_characters(self.project_name, chars)
+            self.load_characters()
+            
+            mw = self.window()
+            if hasattr(mw, 'get_character_list'):
+                mw.get_character_list()
+                
+    def sync_all_episodes_confirm(self):
+        reply = QMessageBox.question(self, "모든 회차 동기화", 
+                                     "⚠️ 이 작업은 생성된 기존 모든 회차 폴더의 character_info.csv 파일을 검사하여,\n"
+                                     "현재 글로벌 DB에 저장된 나이, 성별, 역할 정보로 일괄 덮어쓰고 동기화합니다.\n"
+                                     "계속하시겠습니까?",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.sync_all_episodes()
+            
+    def sync_all_episodes(self):
+        import config
+        import pandas as pd
+        import os
+        
+        chars = config.load_global_characters(self.project_name)
+        char_map = {c["name"]: c for c in chars}
+        
+        t_path = os.path.join(config.PROJECTS_DIR, self.project_name)
+        if not os.path.exists(t_path):
+            return
+            
+        success_count = 0
+        error_count = 0
+        
+        for ep_dir in os.listdir(t_path):
+            ep_path = os.path.join(t_path, ep_dir)
+            if not os.path.isdir(ep_path) or ep_dir == "images":
+                continue
+                
+            c_csv = os.path.join(ep_path, "character_info.csv")
+            if os.path.exists(c_csv):
+                try:
+                    df = pd.read_csv(c_csv, keep_default_na=False)
+                    updated = False
+                    
+                    for idx, row in df.iterrows():
+                        c_name = str(row.get('Character', '')).strip()
+                        if c_name in char_map:
+                            global_info = char_map[c_name]
+                            
+                            # 정보 동기화
+                            df.at[idx, 'Age'] = global_info.get("age", "미상")
+                            df.at[idx, 'Gender'] = global_info.get("gender", "미상")
+                            df.at[idx, 'Role'] = global_info.get("role", "단역")
+                            updated = True
+                            
+                    if updated:
+                        df.to_csv(c_csv, index=False, encoding='utf-8-sig')
+                        success_count += 1
+                except Exception as e:
+                    print(f"회차 '{ep_dir}' 동기화 오류: {e}")
+                    error_count += 1
+                    
+        QMessageBox.information(self, "동기화 완료", 
+                                f"총 {success_count}개 회차의 캐릭터 정보 동기화가 성공적으로 완료되었습니다.\n"
+                                f"(실패 회차 수: {error_count})")

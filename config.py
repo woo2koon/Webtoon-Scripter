@@ -235,6 +235,38 @@ def update_last_save_dir(path):
         LAST_SAVE_DIR = os.path.dirname(path)
     save_settings()
 
+def get_global_characters_path(project_name):
+    """특정 작품의 글로벌 캐릭터 DB 파일 경로를 반환합니다."""
+    if not project_name:
+        return ""
+    return os.path.join(PROJECTS_DIR, project_name, "characters.json")
+
+def load_global_characters(project_name):
+    """특정 작품의 글로벌 캐릭터 JSON 데이터를 불러옵니다."""
+    path = get_global_characters_path(project_name)
+    if not path or not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"글로벌 캐릭터 로드 오류: {e}")
+        return []
+
+def save_global_characters(project_name, char_list):
+    """특정 작품의 글로벌 캐릭터 JSON 데이터를 저장합니다."""
+    path = get_global_characters_path(project_name)
+    if not path:
+        return False
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(char_list, f, indent=4, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"글로벌 캐릭터 저장 오류: {e}")
+        return False
+
 load_settings()
 
 # [기타 설정들]
