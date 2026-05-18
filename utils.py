@@ -45,6 +45,31 @@ def get_colored_icon(file_path, color):
         print(f"SVG 색상 변환 중 오류 발생: {e}")
         return QIcon(file_path) # 실패 시 원본 아이콘이라도 반환
 
+def get_colored_pixmap(file_path, color, width, height):
+    """SVG 색상을 치환하고 지정된 해상도의 QPixmap으로 렌더링하여 반환"""
+    if not os.path.exists(file_path):
+        pix = QPixmap(width, height)
+        pix.fill(Qt.transparent)
+        return pix
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            svg_data = f.read()
+        new_svg = svg_data.replace('currentColor', color).replace('#000000', color)
+        renderer = QSvgRenderer(QByteArray(new_svg.encode('utf-8')))
+        pixmap = QPixmap(width, height)
+        pixmap.fill(Qt.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        renderer.render(painter)
+        painter.end()
+        return pixmap
+    except Exception as e:
+        print(f"SVG Pixmap 렌더링 중 오류 발생: {e}")
+        pixmap = QPixmap(width, height)
+        pixmap.fill(Qt.transparent)
+        return pixmap
+
 def restore_template():
     if not os.path.exists(TEMPLATE_PATH):
         try:

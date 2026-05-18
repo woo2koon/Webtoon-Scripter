@@ -356,8 +356,9 @@ class WebtoonManager(QMainWindow):
         if not title: return []
         t_path = os.path.join(config.PROJECTS_DIR, title)
         if not os.path.exists(t_path): return []
+        exclude_dirs = {"images", "character_images", "cache", "temp"}
         return sorted([d for d in os.listdir(t_path) 
-                      if os.path.isdir(os.path.join(t_path, d))])
+                      if os.path.isdir(os.path.join(t_path, d)) and d not in exclude_dirs], key=natural_sort_key)
 
     def init_ui(self):
         self.create_menu()
@@ -1232,9 +1233,14 @@ class WebtoonManager(QMainWindow):
         top_bar_step2 = QHBoxLayout()
         top_bar_step2.setContentsMargins(5, 0, 5, 0)
         
-        # [추가] 작품 캐릭터 보기 버튼
-        self.btn_view_global_chars = QPushButton("👤 작품 캐릭터 보기")
-        self.btn_view_global_chars.setCursor(Qt.PointingHandCursor)
+        # [추가] 작품 캐릭터 보기 버튼 (유니코드 이모지 👤 대신 scalable SVG 아이콘으로 고급 업그레이드!)
+        self.btn_view_global_chars = HoverIconButton(
+            " 작품 캐릭터 보기", 
+            config.ICON_USER,
+            normal_color="#2563EB",
+            hover_color="#1D4ED8"
+        )
+        self.btn_view_global_chars.setIconSize(QSize(16, 16))
         self.btn_view_global_chars.setFixedHeight(32)
         self.btn_view_global_chars.setStyleSheet("""
             QPushButton { 
@@ -1246,15 +1252,26 @@ class WebtoonManager(QMainWindow):
                 font-weight: bold;
                 padding: 0 12px;
             } 
-            QPushButton:hover { background-color: #DBEAFE; border-color: #93C5FD; } 
-            QPushButton:pressed { background-color: #BFDBFE; }
+            QPushButton:hover { 
+                background-color: #DBEAFE; 
+                border-color: #93C5FD; 
+                color: #1D4ED8;
+            } 
+            QPushButton:pressed { 
+                background-color: #BFDBFE; 
+            }
         """)
         self.btn_view_global_chars.clicked.connect(self.toggle_character_viewer)
         top_bar_step2.addWidget(self.btn_view_global_chars)
         
-        # [추가] 작품 캐릭터 설정 버튼
-        self.btn_global_char_settings = QPushButton("⚙️ 작품 캐릭터 설정")
-        self.btn_global_char_settings.setCursor(Qt.PointingHandCursor)
+        # [추가] 작품 캐릭터 설정 버튼 (유니코드 이모지 ⚙️ 대신 고해상도 SVG 아이콘으로 고급 업그레이드!)
+        self.btn_global_char_settings = HoverIconButton(
+            " 작품 캐릭터 설정", 
+            config.ICON_SETTINGS_COG,
+            normal_color="#374151",
+            hover_color="#111827"
+        )
+        self.btn_global_char_settings.setIconSize(QSize(16, 16))
         self.btn_global_char_settings.setFixedHeight(32)
         self.btn_global_char_settings.setStyleSheet("""
             QPushButton { 
@@ -1266,8 +1283,14 @@ class WebtoonManager(QMainWindow):
                 font-weight: bold;
                 padding: 0 12px;
             } 
-            QPushButton:hover { background-color: #E5E7EB; border-color: #9CA3AF; } 
-            QPushButton:pressed { background-color: #D1D5DB; }
+            QPushButton:hover { 
+                background-color: #E5E7EB; 
+                border-color: #9CA3AF; 
+                color: #111827;
+            } 
+            QPushButton:pressed { 
+                background-color: #D1D5DB; 
+            }
         """)
         self.btn_global_char_settings.clicked.connect(self.open_global_character_settings)
         top_bar_step2.addWidget(self.btn_global_char_settings)
@@ -1311,10 +1334,19 @@ class WebtoonManager(QMainWindow):
         lbl_gender.setStyleSheet(lbl_style)
         lbl_gender.setAlignment(Qt.AlignCenter)
         header_layout.addWidget(lbl_gender, 2) 
+        
+        # [신설] 등록 칼럼 라벨 추가 (버튼 너비 65px에 완벽 칼정렬 매칭)
+        lbl_reg_header = QLabel("상태")
+        lbl_reg_header.setStyleSheet(lbl_style)
+        lbl_reg_header.setAlignment(Qt.AlignCenter)
+        lbl_reg_header.setFixedWidth(65)
+        header_layout.addWidget(lbl_reg_header)
+        
+        # [수정] 삭제 칼럼 라벨의 고정 폭을 버튼 너비 65px에 일치
         lbl_empty = QLabel("삭제") 
         lbl_empty.setStyleSheet(lbl_style)
         lbl_empty.setAlignment(Qt.AlignCenter)
-        lbl_empty.setFixedWidth(60)
+        lbl_empty.setFixedWidth(65)
         header_layout.addWidget(lbl_empty)
         tab2_layout.addWidget(header_frame)
 
@@ -1613,7 +1645,8 @@ class WebtoonManager(QMainWindow):
             if self.character_viewer.isVisible():
                 self.character_viewer.hide()
             else:
-                self.character_viewer.load_data()
+                # [수정] 열릴 때 현재 작품명을 이중 체크하여 완전히 최신 상태로 동기화합니다.
+                self.character_viewer.set_project_name(self.current_title)
                 self.character_viewer.show()
                 self.character_viewer.raise_()
                 self.character_viewer.activateWindow()
@@ -1633,7 +1666,6 @@ class WebtoonManager(QMainWindow):
             # 설정 완료 후 플로팅 뷰어가 켜져 있다면 목록 갱신
             if self.character_viewer and self.character_viewer.isVisible():
                 self.character_viewer.load_data()
-            self.toast.show_message("✅ 캐릭터 목록이 저장되었습니다.", 2000)
 
     def handle_idiom_viewer_select(self, text):
         """플로팅 뷰어에서 선택된 문구를 메인 에디터에 삽입합니다."""
@@ -1811,6 +1843,10 @@ class WebtoonManager(QMainWindow):
         # [1단계] 글로벌 캐릭터 데이터 자동 병합/마이그레이션 실행
         self.migrate_characters_to_global()
         self.refresh_episode_list()
+        
+        # [수정] 캐릭터 도우미 창이 열려 있다면, 작품 데이터 전환을 즉시 동기화합니다.
+        if hasattr(self, 'character_viewer') and self.character_viewer is not None:
+            self.character_viewer.set_project_name(text)
 
     def migrate_characters_to_global(self):
         """기존 각 회차별 character_info.csv를 파싱하여 작품별 characters.json으로 병합 마이그레이션합니다."""
@@ -1839,7 +1875,7 @@ class WebtoonManager(QMainWindow):
         
         for ep_dir in os.listdir(t_path):
             ep_path = os.path.join(t_path, ep_dir)
-            if not os.path.isdir(ep_path) or ep_dir == "images":
+            if not os.path.isdir(ep_path) or ep_dir in {"images", "character_images"}:
                 continue
                 
             c_csv = os.path.join(ep_path, "character_info.csv")
@@ -1906,8 +1942,9 @@ class WebtoonManager(QMainWindow):
             
             # 폴더가 존재하는지 한 번 더 확인하여 에러를 방지합니다.
             if os.path.exists(t_path):
+                exclude_dirs = {"images", "character_images", "cache", "temp"}
                 eps = sorted([d for d in os.listdir(t_path) 
-                             if os.path.isdir(os.path.join(t_path, d))], 
+                             if os.path.isdir(os.path.join(t_path, d)) and d not in exclude_dirs], 
                              key=natural_sort_key)
                 self.combo_episode.addItems(eps)
 
@@ -2369,7 +2406,7 @@ class WebtoonManager(QMainWindow):
                     self.toast.show_message(f"⚠️ '{name}' 캐릭터는 이미 추가되어 있습니다.", 1500)
                     return
                     
-        card = CharacterRow(name, age, gender, role)
+        card = CharacterRow(name, age, gender, role, self)
         card.delete_signal.connect(self.remove_character_card)
         card.input_name.textChanged.connect(self.save_char_data)
         card.combo_role.currentTextChanged.connect(self.save_char_data)
@@ -2544,42 +2581,6 @@ class WebtoonManager(QMainWindow):
                 rows.append(widget.get_data())
         df = pd.DataFrame(rows)
         df.to_csv(os.path.join(e_path, "character_info.csv"), index=False, encoding='utf-8-sig')
-
-        # [자동화] 스텝 2에서 추가/수정된 캐릭터가 글로벌 데이터베이스(characters.json)에 없다면 자동 등록
-        # (안전장치: 이름, 역할, 나이, 성별이 모두 채워진 완성된 상태의 캐릭터만 자동 등록 대상으로 삼음)
-        if self.current_title:
-            import config
-            global_chars = config.load_global_characters(self.current_title)
-            global_names = {c.get("name", "").strip() for c in global_chars}
-            
-            changed = False
-            for row in rows:
-                c_name = row.get("Character", "").strip()
-                c_role = row.get("Role", "").strip()
-                c_age = row.get("Age", "").strip()
-                c_gender = row.get("Gender", "").strip()
-                
-                # 안전장치: 이름, 역할, 나이, 성별이 모두 공백이 아닐 때만 유효한 캐릭터로 간주하여 글로벌 추가
-                if c_name and c_role and c_age and c_gender:
-                    if c_name not in global_names:
-                        # 새로운 완성형 캐릭터 발견 시 글로벌 DB에 자동 생성
-                        new_char = {
-                            "name": c_name,
-                            "role": c_role,
-                            "age": c_age,
-                            "gender": c_gender,
-                            "color": "#3B82F6", # 기본 블루 지정
-                            "memo": f"스텝 2 회차 편집 중 자동 추가됨"
-                        }
-                        global_chars.append(new_char)
-                        global_names.add(c_name)
-                        changed = True
-            
-            if changed:
-                config.save_global_characters(self.current_title, global_chars)
-                # 캐릭터 도우미 창이 열려 있다면 목록을 실시간으로 자동 갱신시킵니다.
-                if self.character_viewer and self.character_viewer.isVisible():
-                    self.character_viewer.load_data()
 
     def load_data(self):
         import pandas as pd

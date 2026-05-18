@@ -18,7 +18,7 @@ import unicodedata
 import os
 import platform
 from config import ROLE_OPTIONS, AGE_OPTIONS, GENDER_OPTIONS, PROJECTS_DIR
-from utils import get_icon, get_colored_icon, open_path
+from utils import get_icon, get_colored_icon, open_path, get_colored_pixmap
 import config
 import excel_handler
 
@@ -406,6 +406,13 @@ class CharacterRow(QFrame):
         self.setObjectName("CharacterRow")
         self.setStyleSheet("QFrame#CharacterRow { background-color: transparent; border: none; }")
         
+        # project_name 안전 연계 추적 (MainWindow의 current_title 획득)
+        self.project_name = ""
+        if parent:
+            mw = parent.window()
+            if hasattr(mw, 'current_title'):
+                self.project_name = mw.current_title
+        
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 5, 10, 5) 
         layout.setSpacing(10) 
@@ -481,12 +488,99 @@ class CharacterRow(QFrame):
         else: self.combo_gender.setCurrentIndex(-1)
         layout.addWidget(self.combo_gender, 2)
 
+        # [명판 최고 존엄] 실시간 정식 글로벌 DB 캐릭터 등록 버튼 추가!
+        self.btn_register = QPushButton("등록")
+        self.btn_register.setFixedSize(65, WIDGET_HEIGHT)
+        self.btn_register.setCursor(Qt.PointingHandCursor)
+        self.btn_register.setStyleSheet("""
+            QPushButton {
+                border: none; 
+                background-color: #3B82F6; 
+                color: white; 
+                border-radius: 6px; 
+                font-weight: bold; 
+                font-size: 13px; 
+                font-family: 'Pretendard', sans-serif;
+            }
+            QPushButton:hover {
+                background-color: #2563EB;
+            }
+            QPushButton:disabled {
+                background-color: #E5E7EB;
+                color: #9CA3AF;
+                border: none;
+            }
+        """)
+        self.btn_register.clicked.connect(self.register_character)
+        layout.addWidget(self.btn_register)
+
         self.btn_delete = QPushButton("삭제")
-        self.btn_delete.setFixedSize(60, WIDGET_HEIGHT)
+        self.btn_delete.setFixedSize(65, WIDGET_HEIGHT)
         self.btn_delete.setCursor(Qt.PointingHandCursor)
         self.btn_delete.setStyleSheet("QPushButton { border: none; background-color: #ff4b4b; color: white; border-radius: 6px; font-weight: bold; font-size: 13px; font-family: 'Pretendard', sans-serif; } QPushButton:hover { background-color: #e03e3e; }")
         self.btn_delete.clicked.connect(lambda: self.delete_signal.emit(self))
         layout.addWidget(self.btn_delete)
+
+        # 실시간 상태 바인딩 및 초기 상태 갱신
+        self.input_name.textChanged.connect(self.check_registered_status)
+        self.check_registered_status()
+
+    def check_registered_status(self):
+        """현재 입력된 이름이 글로벌 데이터베이스에 정식 등록되어 있는지 실시간 확인하여 버튼 상태를 연동합니다."""
+        name = self.input_name.text().strip()
+        if not name or not self.project_name:
+            self.btn_register.setEnabled(False)
+            self.btn_register.setText("등록")
+            return
+            
+        import config
+        chars = config.load_global_characters(self.project_name)
+        exists = any(c.get("name", "") == name for c in chars)
+        
+        if exists:
+            self.btn_register.setEnabled(False)
+            self.btn_register.setText("등록됨")
+        else:
+            self.btn_register.setEnabled(True)
+            self.btn_register.setText("등록")
+
+    def register_character(self):
+        """현재 임시 행에 기입된 캐릭터를 정식 글로벌 DB 캐릭터로 등록합니다."""
+        name = self.input_name.text().strip()
+        if not name or not self.project_name: return
+        
+        import config
+        chars = config.load_global_characters(self.project_name)
+        exists = any(c.get("name", "") == name for c in chars)
+        if not exists:
+            role = self.combo_role.currentText() or "단역"
+            age = self.combo_age.currentText() or "미상"
+            gender = self.combo_gender.currentText() or "미상"
+            
+            new_char = {
+                "name": name,
+                "role": role,
+                "age": age,
+                "gender": gender,
+                "color": "#3B82F6", # 기본 파란색
+                "image_path": "",
+                "memo": ""
+            }
+            chars.append(new_char)
+            config.save_global_characters(self.project_name, chars)
+            
+            # 실시간 버튼 상태 전환
+            self.check_registered_status()
+            
+            # 메인 UI 실시간 동기화
+            mw = self.window()
+            if mw:
+                if hasattr(mw, 'get_character_list'):
+                    mw.get_character_list()
+                if hasattr(mw, 'character_viewer') and mw.character_viewer and mw.character_viewer.isVisible():
+                    mw.character_viewer.load_data()
+                if hasattr(mw, 'toast'):
+                    mw.toast.show_message(f"✅ '{name}' 캐릭터가 정식 등록되었습니다.", 1500)
 
     def get_data(self):
         return { "Character": self.input_name.text(), "Role": self.combo_role.currentText(), "Age": self.combo_age.currentText(), "Gender": self.combo_gender.currentText() }
@@ -3589,6 +3683,7 @@ class FloatingCharacterViewer(QDialog):
                 border-radius: 8px;
                 background-color: #FFFFFF;
                 padding: 5px;
+                outline: none; /* 클릭 시 겉돌던 점선/실선 포커스 아웃라인 완벽 제거! */
             }
             QListWidget::item {
                 border-radius: 6px;
@@ -3639,13 +3734,52 @@ class FloatingCharacterViewer(QDialog):
                 continue
                 
             list_item = QListWidgetItem()
-            list_item.setSizeHint(QSize(0, 48)) # 높이 지정
+            list_item.setSizeHint(QSize(0, 62)) # 리스트 카드의 높이를 48px에서 62px로 대폭 키워 시원하고 넓은 레이아웃 확보!
             
-            # 커스텀 위젯 생성
+            # 커스텀 위젯 생성 및 투명 스타일시트 부여하여 클릭 시 붕 뜨는 볼록 프레임 현상 완벽 박멸!
             container = QWidget()
+            container.setStyleSheet("background: transparent; border: none;")
             item_layout = QHBoxLayout(container)
             item_layout.setContentsMargins(10, 0, 10, 0)
-            item_layout.setSpacing(10)
+            item_layout.setSpacing(12)
+            
+            # 앙증맞았던 미니 아바타를 44x44로 웅장하게 키워 작화 시인성 대폭 극대화!
+            lbl_item_avatar = QLabel()
+            lbl_item_avatar.setFixedSize(44, 44)
+            lbl_item_avatar.setStyleSheet("border: none; background: transparent;")
+            
+            img_path = char.get("image_path", "")
+            full_img_path = ""
+            if img_path:
+                import config
+                full_img_path = os.path.join(config.PROJECTS_DIR, self.project_name, img_path)
+                
+            if full_img_path and os.path.exists(full_img_path):
+                pix = QPixmap(full_img_path)
+                if not pix.isNull():
+                    lbl_item_avatar.setPixmap(get_round_rect_pixmap(pix, 44, 44, 8)) # 44x44 크기에 맞춰 8px 반경으로 부드럽게 라운딩!
+                else:
+                    full_img_path = ""
+                    
+            if not full_img_path:
+                # 기본 👤 아바타 플레이스홀더도 44x44에 맞춰 시원하게 스케일업! (radius 8px, 폰트 20px)
+                default_pix = QPixmap(44, 44)
+                default_pix.fill(Qt.transparent)
+                
+                painter = QPainter(default_pix)
+                painter.setRenderHint(QPainter.Antialiasing, True)
+                painter.setPen(QPen(QColor("#E5E7EB"), 1))
+                painter.setBrush(QColor("#F3F4F6"))
+                painter.drawRoundedRect(0, 0, 44, 44, 8, 8)
+                
+                font = QFont("Pretendard", 20, QFont.Bold)
+                painter.setFont(font)
+                painter.setPen(QColor("#9CA3AF"))
+                painter.drawText(QRect(0, 0, 44, 44), Qt.AlignCenter, "👤")
+                painter.end()
+                lbl_item_avatar.setPixmap(default_pix)
+                
+            item_layout.addWidget(lbl_item_avatar)
             
             # 이름 텍스트
             lbl_name = QLabel(name)
@@ -3686,6 +3820,11 @@ class FloatingCharacterViewer(QDialog):
             
         self.filter_list()
         
+    def set_project_name(self, project_name):
+        """작품 변경 시 실시간으로 캐릭터 데이터를 갱신하여 표시합니다."""
+        self.project_name = project_name
+        self.load_data()
+        
     def filter_list(self):
         query = self.search_bar.text().lower().strip()
         for i in range(self.list_widget.count()):
@@ -3716,6 +3855,63 @@ class FloatingCharacterViewer(QDialog):
                 )
 
 
+def get_round_pixmap(pixmap, size=32):
+    """QPixmap을 인자로 받아 안티앨리어싱이 적용된 원형으로 깎아낸 QPixmap을 반환합니다.
+     AspectFill 비율로 배치합니다."""
+    if pixmap.isNull():
+        return pixmap
+        
+    target = QPixmap(size, size)
+    target.fill(Qt.transparent)
+    
+    painter = QPainter(target)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+    
+    from PySide6.QtGui import QPainterPath
+    path = QPainterPath()
+    path.addEllipse(0, 0, size, size)
+    painter.setClipPath(path)
+    
+    scaled = pixmap.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+    x = (size - scaled.width()) // 2
+    y = (size - scaled.height()) // 2
+    painter.drawPixmap(x, y, scaled)
+    painter.end()
+    
+    return target
+
+
+def get_round_rect_pixmap(pixmap, w, h, radius=8):
+    """QPixmap을 받아 안티앨리어싱이 적용된 둥근 모서리 직사각형(Rounded Rectangle)으로 깎아낸 QPixmap을 반환합니다.
+    AspectFill 비율로 배치합니다."""
+    if pixmap.isNull():
+        return pixmap
+        
+    target = QPixmap(w, h)
+    target.fill(Qt.transparent)
+    
+    painter = QPainter(target)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+    
+    from PySide6.QtGui import QPainterPath
+    path = QPainterPath()
+    path.addRoundedRect(0, 0, w, h, radius, radius)
+    painter.setClipPath(path)
+    
+    scaled = pixmap.scaled(w, h, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+    x = (w - scaled.width()) // 2
+    y = (h - scaled.height()) // 2
+    painter.drawPixmap(x, y, scaled)
+    painter.end()
+    
+    return target
+
+
+
+
+
 class GlobalCharacterCard(QWidget):
     """글로벌 캐릭터 설정을 보여주는 리스트형 아이템 카드 위젯"""
     delete_clicked = Signal(str) # 캐릭터 이름 전송
@@ -3724,16 +3920,17 @@ class GlobalCharacterCard(QWidget):
     def __init__(self, char_info, parent=None):
         super().__init__(parent)
         self.char_info = char_info
+        self.project_name = getattr(parent, 'project_name', '')
         self.init_ui()
         
     def init_ui(self):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(15, 10, 15, 10)
+        layout.setContentsMargins(12, 5, 12, 5) # 상하 패딩을 10px에서 5px로 줄여 각 카드 높이를 10픽셀 슬림화!
         layout.setSpacing(12)
         
-        # 카드 배경 디자인
+        # [복원] 원래의 둥근 흰색 모서리 카드의 입체적인 형태는 그대로 아름답게 보존합니다!
         self.setStyleSheet("""
-            QWidget {
+            GlobalCharacterCard {
                 background-color: #FFFFFF;
                 border: 1px solid #E5E7EB;
                 border-radius: 8px;
@@ -3744,9 +3941,54 @@ class GlobalCharacterCard(QWidget):
         info_layout = QVBoxLayout()
         info_layout.setSpacing(4)
         
-        name_lbl = QLabel(f"👤 {self.char_info.get('name', '')}")
-        name_lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #111827; border: none;")
-        info_layout.addWidget(name_lbl)
+        # 아바타 + 이름 수평 배치
+        title_layout = QHBoxLayout()
+        title_layout.setSpacing(8)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        
+        lbl_card_avatar = QLabel()
+        lbl_card_avatar.setFixedSize(36, 36)
+        lbl_card_avatar.setStyleSheet("border: none; background: transparent;")
+        
+        img_path = self.char_info.get("image_path", "")
+        full_img_path = ""
+        if img_path:
+            import config
+            full_img_path = os.path.join(config.PROJECTS_DIR, self.project_name, img_path)
+            
+        if full_img_path and os.path.exists(full_img_path):
+            pix = QPixmap(full_img_path)
+            if not pix.isNull():
+                lbl_card_avatar.setPixmap(get_round_rect_pixmap(pix, 36, 36, 6))
+            else:
+                full_img_path = ""
+                
+        if not full_img_path:
+            # 기본 👤 아바타 플레이스홀더를 라운드 처리된 정사각형 형태로 생성 (36x36, radius 6px)
+            default_pix = QPixmap(36, 36)
+            default_pix.fill(Qt.transparent)
+            
+            painter = QPainter(default_pix)
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.setPen(QPen(QColor("#E5E7EB"), 1))
+            painter.setBrush(QColor("#F3F4F6"))
+            painter.drawRoundedRect(0, 0, 36, 36, 6, 6)
+            
+            font = QFont("Pretendard", 18, QFont.Bold)
+            painter.setFont(font)
+            painter.setPen(QColor("#9CA3AF"))
+            painter.drawText(QRect(0, 0, 36, 36), Qt.AlignCenter, "👤")
+            painter.end()
+            lbl_card_avatar.setPixmap(default_pix)
+            
+        title_layout.addWidget(lbl_card_avatar)
+        
+        name_lbl = QLabel(self.char_info.get('name', ''))
+        name_lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #111827; border: none; background: transparent;")
+        title_layout.addWidget(name_lbl)
+        title_layout.addStretch()
+        
+        info_layout.addLayout(title_layout)
         
         # 태그들 (역할, 나이, 성별)
         tags_layout = QHBoxLayout()
@@ -3781,7 +4023,7 @@ class GlobalCharacterCard(QWidget):
         memo = self.char_info.get('memo', '').strip()
         if memo:
             lbl_memo = QLabel(f"📝 {memo}")
-            lbl_memo.setStyleSheet("font-size: 12px; color: #6B7280; border: none; margin-top: 2px;")
+            lbl_memo.setStyleSheet("font-size: 12px; color: #6B7280; border: none; margin-top: 2px; background: transparent;")
             info_layout.addWidget(lbl_memo)
             
         tags_layout.addStretch()
@@ -3841,7 +4083,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         super().__init__(parent)
         self.project_name = project_name
         self.setWindowTitle("👥 캐릭터 설정")
-        self.resize(520, 650)
+        self.resize(553, 650) # 20픽셀 증량하여 아바타 상자 확장 및 콤보박스 여백 극대화!
         self.selected_color = "#3B82F6" # 기본 색상
         self.editing_name = None # 현재 수정 중인 캐릭터 이름 (None이면 신규 생성 모드)
         
@@ -3855,8 +4097,9 @@ class GlobalCharacterSettingsDialog(QDialog):
         
         # 1. 상단 입력 폼 그룹박스
         form_widget = QWidget()
+        form_widget.setObjectName("FormWidget")
         form_widget.setStyleSheet("""
-            QWidget {
+            QWidget#FormWidget {
                 background-color: #F9FAFB;
                 border: 1px solid #E5E7EB;
                 border-radius: 8px;
@@ -3870,14 +4113,111 @@ class GlobalCharacterSettingsDialog(QDialog):
         form_layout = QVBoxLayout(form_widget)
         form_layout.setSpacing(10)
         
-        title_lbl = QLabel("👤 캐릭터 추가 / 수정")
-        title_lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: #111827; border-bottom: 1px solid #E5E7EB; padding-bottom: 5px;")
-        form_layout.addWidget(title_lbl)
+        # [수정] 유니코드 이모지 👤 대신 scalable SVG 아이콘이 탑재된 타이틀바 구성
+        title_container = QWidget()
+        title_container.setObjectName("TitleContainer")
+        title_container.setStyleSheet("""
+            QWidget#TitleContainer {
+                background: transparent;
+                border-bottom: 1px solid #E5E7EB;
+                border-radius: 0px;
+            }
+        """)
+        title_container_layout = QHBoxLayout(title_container)
+        title_container_layout.setContentsMargins(0, 0, 0, 5)
+        title_container_layout.setSpacing(6)
         
+        lbl_title_icon = QLabel()
+        lbl_title_icon.setFixedSize(16, 16)
+        lbl_title_icon.setStyleSheet("border: none; background: transparent;")
+        title_pix = get_colored_pixmap(config.ICON_USER, "#7C3AED", 16, 16)
+        lbl_title_icon.setPixmap(title_pix)
+        
+        title_lbl = QLabel("캐릭터 추가 / 수정")
+        title_lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: #111827; border: none; background: transparent; padding: 0px;")
+        
+        title_container_layout.addWidget(lbl_title_icon)
+        title_container_layout.addWidget(title_lbl)
+        title_container_layout.addStretch()
+        form_layout.addWidget(title_container)
+        
+        # 폼의 좌우 2열 배치 (좌: 아바타 등록기, 우: 기존 그리드 입력폼)
+        body_layout = QHBoxLayout()
+        body_layout.setSpacing(15)
+        body_layout.setContentsMargins(10, 5, 10, 5)
+        
+        # [좌측] 아바타 영역 (우측 입력 폼 바닥선과 매칭하기 위해 바닥 정렬 설정)
+        avatar_layout = QVBoxLayout()
+        avatar_layout.setAlignment(Qt.AlignBottom | Qt.AlignHCenter)
+        avatar_layout.setSpacing(6)
+        
+        self.lbl_avatar = QLabel()
+        self.lbl_avatar.setFixedSize(110, 110) # 1:1 완벽 정사각형 프로필 비율로 전격 업그레이드! (110x110)
+        self.lbl_avatar.setAlignment(Qt.AlignCenter) # 픽셀 한 조각의 오차도 없이 정중앙에 정렬!
+        self.lbl_avatar.setStyleSheet("""
+            QLabel {
+                background-color: #F9FAFB;
+                border: 2px dashed #9CA3AF;
+                border-radius: 8px;
+                padding: 0px; /* 미세 쏠림 방지 */
+            }
+        """)
+        avatar_layout.addWidget(self.lbl_avatar)
+        
+        # 아바타 조작 버튼들
+        avatar_btn_layout = QHBoxLayout()
+        avatar_btn_layout.setSpacing(4)
+        avatar_btn_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.btn_change_avatar = QPushButton("등록")
+        self.btn_change_avatar.setCursor(Qt.PointingHandCursor)
+        self.btn_change_avatar.setFixedSize(53, 22) # 가로 53px로 확장하여 좌우 균등 대칭 칼정렬!
+        self.btn_change_avatar.setStyleSheet("""
+            QPushButton {
+                background-color: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 4px;
+                font-size: 11px;
+                color: #374151;
+                font-weight: bold;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                border-color: #3B82F6;
+                color: #3B82F6;
+            }
+        """)
+        self.btn_change_avatar.clicked.connect(self.select_profile_image)
+        
+        self.btn_delete_avatar = QPushButton("삭제")
+        self.btn_delete_avatar.setCursor(Qt.PointingHandCursor)
+        self.btn_delete_avatar.setFixedSize(53, 22) # 가로 53px로 확장하여 좌우 균등 대칭 칼정렬!
+        self.btn_delete_avatar.setStyleSheet("""
+            QPushButton {
+                background-color: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 4px;
+                font-size: 11px;
+                color: #EF4444;
+                font-weight: bold;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: #FEE2E2;
+                border-color: #EF4444;
+            }
+        """)
+        self.btn_delete_avatar.clicked.connect(self.delete_profile_image)
+        
+        avatar_btn_layout.addWidget(self.btn_change_avatar)
+        avatar_btn_layout.addWidget(self.btn_delete_avatar)
+        avatar_layout.addLayout(avatar_btn_layout)
+        
+        # [우측] 입력 그리드 레이아웃
         grid_layout = QGridLayout()
         grid_layout.setHorizontalSpacing(13) # 기존(8px)보다 5px을 더 넓힌 13px 여백으로 쾌적한 숨구멍 가로 여백 확보!
         grid_layout.setVerticalSpacing(10)
-        grid_layout.setContentsMargins(15, 10, 15, 10) # 바깥 테두리와의 여유 있는 숨쉬는 여백
+        grid_layout.setContentsMargins(0, 0, 0, 0)
         grid_layout.setColumnStretch(1, 1) # 1열(입력 상자 열)을 꽉 차게 늘려서 휑한 틈새를 자동 완벽 밀착!
         
         # 이름 입력 (1열에 단독 배치하여 밀착 정렬)
@@ -3895,13 +4235,13 @@ class GlobalCharacterSettingsDialog(QDialog):
         dropdown_layout.setContentsMargins(0, 0, 0, 0)
         dropdown_layout.setSpacing(0)
         
-        # 1. 역할 콤보박스 (다른 항목들과 완벽한 크기 통일을 위해 85px 고정 너비 지정!)
+        # 1. 역할 콤보박스 (가로 폭 공간 확보 및 콤보 박스 칼맞춤을 위해 78px 지정)
         self.combo_role = QComboBox()
         self.combo_role.addItems(["주연", "조연", "단역"])
         self.combo_role.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
-        self.combo_role.setFixedWidth(85)
+        self.combo_role.setFixedWidth(78)
         
-        # 2. 연령 세트 (연령 드롭다운 상자 폭 85px로 칼맞춤!)
+        # 2. 연령 세트 (연령 드롭다운 상자 폭 78px로 칼맞춤!)
         age_widget = QWidget()
         age_widget.setStyleSheet("background: transparent; border: none;") # Qt 스타일시트 상속으로 인한 옅은 회색 잔선 버그 완벽 차단!
         age_layout = QHBoxLayout(age_widget)
@@ -3910,14 +4250,13 @@ class GlobalCharacterSettingsDialog(QDialog):
         lbl_age = QLabel("연령")
         lbl_age.setStyleSheet("font-weight: bold; color: #374151; border: none;")
         self.combo_age = QComboBox()
-        import config
         self.combo_age.addItems(config.AGE_OPTIONS)
         self.combo_age.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
-        self.combo_age.setFixedWidth(85)
+        self.combo_age.setFixedWidth(78)
         age_layout.addWidget(lbl_age)
         age_layout.addWidget(self.combo_age)
         
-        # 3. 성별 세트 (성별 드롭다운 상자 폭 85px로 칼맞춤!)
+        # 3. 성별 세트 (성별 드롭다운 상자 폭 78px로 칼맞춤!)
         gender_widget = QWidget()
         gender_widget.setStyleSheet("background: transparent; border: none;") # Qt 스타일시트 상속으로 인한 옅은 회색 잔선 버그 완벽 차단!
         gender_layout = QHBoxLayout(gender_widget)
@@ -3928,12 +4267,11 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.combo_gender = QComboBox()
         self.combo_gender.addItems(config.GENDER_OPTIONS)
         self.combo_gender.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
-        self.combo_gender.setFixedWidth(85)
+        self.combo_gender.setFixedWidth(78)
         gender_layout.addWidget(lbl_gender)
         gender_layout.addWidget(self.combo_gender)
         
         # [역할 콤보] - [탄성1] - [연령 세트] - [탄성2] - [성별 세트] 순서로 기하학적 배치 완성!
-        # 이렇게 배치하면 연령 세트는 정확히 가로 한가운데(오른쪽 방향)로 안착하고, 성별 세트 우측 끝은 이름창 끝에 칼처럼 딱 붙습니다.
         dropdown_layout.addWidget(self.combo_role)
         dropdown_layout.addStretch(1)
         dropdown_layout.addWidget(age_widget)
@@ -3949,7 +4287,16 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.input_memo.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px 8px; min-height: 28px;")
         grid_layout.addWidget(self.input_memo, 2, 1)
         
-        form_layout.addLayout(grid_layout)
+        # 수평 바디 레이아웃 완성 조립 (바닥 기준 수평 칼대칭 정렬 적용)
+        body_layout.addLayout(avatar_layout)
+        body_layout.addLayout(grid_layout, 1)
+        body_layout.setAlignment(Qt.AlignBottom)
+        
+        form_layout.addLayout(body_layout)
+        
+        # 아바타 임시 상태 변수 초기 등록
+        self.temp_image_path = None
+        self.set_avatar_pixmap(None)
         
         # 추가 / 취소 버튼
         btn_form_layout = QHBoxLayout()
@@ -3996,19 +4343,36 @@ class GlobalCharacterSettingsDialog(QDialog):
         form_layout.addLayout(btn_form_layout)
         main_layout.addWidget(form_widget)
         
-        # 2. 리스트 타이틀
+        # 2. 리스트 타이틀 (유니코드 이모지 👤 대신 보라색 SVG 아이콘 칼정렬 수평 레이아웃)
         list_header_layout = QHBoxLayout()
-        list_title = QLabel("👤 등록된 캐릭터 목록")
-        list_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #111827;")
+        list_header_layout.setContentsMargins(0, 0, 0, 0)
+        list_header_layout.setSpacing(6)
+        
+        lbl_list_icon = QLabel()
+        lbl_list_icon.setFixedSize(16, 16)
+        lbl_list_icon.setStyleSheet("border: none; background: transparent;")
+        list_pix = get_colored_pixmap(config.ICON_USER, "#7C3AED", 16, 16)
+        lbl_list_icon.setPixmap(list_pix)
+        
+        list_title = QLabel("등록된 캐릭터 목록")
+        list_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #111827; border: none; background: transparent; padding: 0px;")
+        
+        list_header_layout.addWidget(lbl_list_icon)
         list_header_layout.addWidget(list_title)
         
         self.lbl_count = QLabel("(총 0명)")
-        self.lbl_count.setStyleSheet("font-size: 13px; color: #6B7280; font-weight: 500;")
+        self.lbl_count.setStyleSheet("font-size: 13px; color: #6B7280; font-weight: 500; border: none; background: transparent;")
         list_header_layout.addWidget(self.lbl_count)
         list_header_layout.addStretch()
         
-        # 일괄 동기화 버튼 (모든 기존 회차의 character_info.csv를 글로벌 DB 기반으로 이름 매칭하여 자동 수정해주는 보너스 최고 존엄 헬퍼 기능)
-        self.btn_sync_all = QPushButton("🔄 모든 회차 동기화")
+        # 일괄 동기화 버튼 (🔄 이모지 대신 리프레시 SVG가 탑재된 HoverIconButton)
+        self.btn_sync_all = HoverIconButton(
+            " 모든 회차 동기화",
+            config.ICON_REFRESH,
+            normal_color="#EF4444",
+            hover_color="#DC2626"
+        )
+        self.btn_sync_all.setIconSize(QSize(13, 13))
         self.btn_sync_all.setToolTip("수정된 성별, 나이, 역할, 색상 설정을 이미 생성된 기존 모든 회차에 일괄 적용합니다.")
         self.btn_sync_all.setStyleSheet("""
             QPushButton {
@@ -4019,10 +4383,12 @@ class GlobalCharacterSettingsDialog(QDialog):
                 font-size: 12px;
                 font-weight: bold;
                 color: #EF4444;
+                min-height: 18px;
             }
             QPushButton:hover {
                 background-color: #FEE2E2;
                 border-color: #EF4444;
+                color: #DC2626;
             }
         """)
         self.btn_sync_all.clicked.connect(self.sync_all_episodes_confirm)
@@ -4030,7 +4396,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         
         main_layout.addLayout(list_header_layout)
         
-        # 3. 캐릭터 리스트 스크롤 영역
+        # 3. 캐릭터 리스트 스크롤 영역 (원래의 부드러운 회색 캔버스와 간격 레이아웃 완벽 복원)
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setStyleSheet("border: 1px solid #E5E7EB; border-radius: 8px; background-color: #F9FAFB;")
@@ -4039,7 +4405,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.list_container.setStyleSheet("background-color: transparent;")
         self.list_layout = QVBoxLayout(self.list_container)
         self.list_layout.setContentsMargins(10, 10, 10, 10)
-        self.list_layout.setSpacing(8)
+        self.list_layout.setSpacing(8) # 카드 간의 시원한 8px 공간 확보
         self.list_layout.setAlignment(Qt.AlignTop)
         
         scroll_area.setWidget(self.list_container)
@@ -4080,12 +4446,101 @@ class GlobalCharacterSettingsDialog(QDialog):
         role_priority = {"주연": 0, "조연": 1, "단역": 2}
         chars.sort(key=lambda c: (role_priority.get(c.get("role", "단역"), 2), c.get("name", "")))
         
-        for char in chars:
+        for i, char in enumerate(chars):
+            # [수정] 개별 둥근 모서리 카드 간의 경계를 100% 명확하게 시각적으로 나누기 위해,
+            # 카드 사이의 8px 간격 정중앙에 실제 수평 회색 실선(QFrame)을 정밀 삽입합니다!
+            if i > 0:
+                line = QWidget() # QFrame 대신 플랫 QWidget을 사용하여 입체 이중선 현상을 원천 방지하고 초미세 1px 플랫 라인을 구현!
+                line.setStyleSheet("background-color: #ECEEF1; min-height: 1px; max-height: 1px; border: none; margin: 4px 10px;")
+                self.list_layout.addWidget(line)
+                
             card = GlobalCharacterCard(char, self)
             card.delete_clicked.connect(self.delete_character)
             card.edit_clicked.connect(self.edit_character)
             self.list_layout.addWidget(card)
             
+    def set_avatar_pixmap(self, img_path):
+        """프로필 이미지 아바타 라벨에 1:1 비율의 정사각형 이미지를 안전하게 장착합니다."""
+        if img_path and os.path.exists(img_path):
+            pixmap = QPixmap(img_path)
+            if not pixmap.isNull():
+                # 1:1 정사각형 둥근 모서리 형태로 마스킹 처리하여 110x110 영역에 맞춤
+                round_pix = get_round_rect_pixmap(pixmap, 110, 110, 8)
+                self.lbl_avatar.setPixmap(round_pix)
+                # 이미지가 장착되었을 때는 점선 테두리를 은은한 실선 테두리로 전환
+                self.lbl_avatar.setStyleSheet("""
+                    QLabel {
+                        border: 1px solid #D1D5DB;
+                        border-radius: 8px;
+                        background-color: #FFFFFF;
+                        padding: 0px; /* 미세 쏠림 방지 */
+                    }
+                """)
+                self.temp_image_path = img_path
+                return
+                
+        # 이미지가 없을 때: 아름다운 1:1 비율 정사각형 점선 테두리 + 연회색 배경 + 카메라/가이드 플레이스홀더 렌더링
+        self.lbl_avatar.setStyleSheet("""
+            QLabel {
+                border: 2px dashed #9CA3AF;
+                border-radius: 8px;
+                background-color: #F9FAFB;
+                padding: 0px; /* 미세 쏠림 방지 */
+            }
+        """)
+        
+        # 투명 도화지에 가이드 디자인 그리기 (110x110 크기로 핏팅 조정)
+        default_pix = QPixmap(110, 110)
+        default_pix.fill(Qt.transparent)
+        
+        painter = QPainter(default_pix)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        
+        # 1) 📷 이모지 대신, Feather 스타일의 고해상도 avatar-upload SVG 아이콘 렌더링 (32x32 크기, Y=25 부근 안착)
+        svg_pix = get_colored_pixmap(config.ICON_AVATAR_UPLOAD, "#6B7280", 32, 32)
+        painter.drawPixmap(39, 25, svg_pix)
+        
+        # 2) '이미지 추가' 친절한 텍스트 그리기 (정사각형 Y=68 부근 중앙 맞춤)
+        font_text = QFont("Pretendard", 9, QFont.Bold)
+        painter.setFont(font_text)
+        painter.setPen(QColor("#6B7280"))
+        painter.drawText(QRect(0, 68, 110, 20), Qt.AlignCenter, "이미지 추가")
+        
+        painter.end()
+        
+        self.lbl_avatar.setPixmap(default_pix)
+        if img_path is None:
+            self.temp_image_path = None
+
+
+    def select_profile_image(self):
+        """프로필 이미지를 파일 탐색기를 띄워 등록하고, 명품 크롭 다이얼로그를 통해 얼굴 영역을 지정 오려냅니다."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "프로필 이미지 선택", "",
+            "이미지 파일 (*.png *.jpg *.jpeg *.webp)"
+        )
+        if file_path:
+            # ✂️ 새로이 개발된 정밀 이미지 크롭 다이얼로그 가동!
+            crop_dlg = ImageCropDialog(file_path, self)
+            if crop_dlg.exec() == QDialog.Accepted:
+                cropped_pixmap = crop_dlg.cropped_pixmap
+                if cropped_pixmap and not cropped_pixmap.isNull():
+                    # 크롭된 캐시 파일을 임시 경로에 고해상도로 안전하게 저장합니다!
+                    import tempfile
+                    import uuid
+                    temp_dir = tempfile.gettempdir()
+                    temp_crop_path = os.path.join(temp_dir, f"crop_{uuid.uuid4().hex[:8]}.png")
+                    
+                    cropped_pixmap.save(temp_crop_path, "PNG")
+                    
+                    # 3:4 비율로 완벽 성형된 임시 이미지를 아바타로 장착!
+                    self.set_avatar_pixmap(temp_crop_path)
+
+    def delete_profile_image(self):
+        """현재 폼의 프로필 이미지를 초기화(삭제)합니다."""
+        self.set_avatar_pixmap(None)
+        self.temp_image_path = "DELETE"
+
     def cancel_editing(self):
         self.editing_name = None
         self.input_name.setEnabled(True)
@@ -4094,6 +4549,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.btn_submit.setText("캐릭터 등록")
         self.btn_cancel_edit.setVisible(False)
         self.selected_color = "#3B82F6"
+        self.set_avatar_pixmap(None) # 아바타 리셋
         
     def edit_character(self, char_info):
         self.editing_name = char_info.get("name", "")
@@ -4107,6 +4563,15 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.selected_color = char_info.get("color", "#3B82F6")
         self.input_memo.setText(char_info.get("memo", ""))
         
+        # 프로필 이미지 로드
+        img_path = char_info.get("image_path", "")
+        if img_path:
+            import config
+            full_path = os.path.join(config.PROJECTS_DIR, self.project_name, img_path)
+            self.set_avatar_pixmap(full_path)
+        else:
+            self.set_avatar_pixmap(None)
+        
         self.btn_submit.setText("캐릭터 정보 수정")
         self.btn_cancel_edit.setVisible(True)
         
@@ -4118,6 +4583,53 @@ class GlobalCharacterSettingsDialog(QDialog):
             
         import config
         chars = config.load_global_characters(self.project_name)
+        
+        # 프로필 이미지 디렉토리 빌드
+        img_dir = os.path.join(config.PROJECTS_DIR, self.project_name, "character_images")
+        os.makedirs(img_dir, exist_ok=True)
+        
+        target_img_name = f"{name}.png"
+        target_img_relative = f"character_images/{target_img_name}"
+        target_img_absolute = os.path.join(config.PROJECTS_DIR, self.project_name, target_img_relative)
+        
+        image_field_val = ""
+        
+        # 1) 삭제 플래그일 때의 디렉토리 청소 및 필드값 초기화
+        if self.temp_image_path == "DELETE":
+            if os.path.exists(target_img_absolute):
+                try:
+                    os.remove(target_img_absolute)
+                except Exception as e:
+                    print(f"이미지 삭제 실패: {e}")
+            image_field_val = ""
+            
+        # 2) 신규 등록 혹은 변경된 새로운 외부 경로인 경우 (1:1 비율 정사각형 축소 및 복사 저장)
+        elif self.temp_image_path and os.path.exists(self.temp_image_path):
+            if os.path.abspath(self.temp_image_path) != os.path.abspath(target_img_absolute):
+                try:
+                    # 150x150px 둥근 모서리 정사각형(1:1 비율) 축소 처리 (radius 12px)
+                    pix = QPixmap(self.temp_image_path)
+                    if not pix.isNull():
+                        scaled_pix = get_round_rect_pixmap(pix, 150, 150, 12)
+                        scaled_pix.save(target_img_absolute, "PNG")
+                        image_field_val = target_img_relative
+                    else:
+                        image_field_val = ""
+                except Exception as e:
+                    print(f"이미지 리사이징 저장 실패: {e}")
+                    image_field_val = ""
+            else:
+                image_field_val = target_img_relative
+        else:
+            # 아바타가 변경되지 않았거나 수정 모드 진입 시 기존 값이 유지되는 경우
+            if self.editing_name:
+                existing = next((c for c in chars if c.get("name", "") == self.editing_name), None)
+                if existing:
+                    image_field_val = existing.get("image_path", "")
+                    if self.temp_image_path == "DELETE":
+                        image_field_val = ""
+            else:
+                image_field_val = ""
         
         # 신규 모드
         if self.editing_name is None:
@@ -4132,7 +4644,8 @@ class GlobalCharacterSettingsDialog(QDialog):
                 "age": self.combo_age.currentText(),
                 "gender": self.combo_gender.currentText(),
                 "color": self.selected_color,
-                "memo": self.input_memo.text().strip()
+                "memo": self.input_memo.text().strip(),
+                "image_path": image_field_val
             }
             chars.append(new_char)
             
@@ -4145,6 +4658,7 @@ class GlobalCharacterSettingsDialog(QDialog):
                     c["gender"] = self.combo_gender.currentText()
                     c["color"] = self.selected_color
                     c["memo"] = self.input_memo.text().strip()
+                    c["image_path"] = image_field_val
                     break
                     
         config.save_global_characters(self.project_name, chars)
@@ -4155,13 +4669,23 @@ class GlobalCharacterSettingsDialog(QDialog):
         mw = self.window()
         if hasattr(mw, 'get_character_list'):
             mw.get_character_list()
-            
     def delete_character(self, name):
-        reply = QMessageBox.question(self, "캐릭터 삭제", f"정말로 '{name}' 캐릭터를 글로벌 데이터베이스에서 삭제하시겠습니까?",
+        reply = QMessageBox.question(self, "캐릭터 삭제", f"'{name}' 캐릭터를 정말 삭제하시겠습니까?",
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply == QMessageBox.Yes:
             import config
             chars = config.load_global_characters(self.project_name)
+            
+            # 프로필 이미지 파일도 함께 디스크에서 자동 영구 소멸 (가비지 컬렉션)
+            existing = next((c for c in chars if c.get("name", "") == name), None)
+            if existing and existing.get("image_path", ""):
+                img_abs = os.path.join(config.PROJECTS_DIR, self.project_name, existing["image_path"])
+                if os.path.exists(img_abs):
+                    try:
+                        os.remove(img_abs)
+                    except Exception as e:
+                        print(f"캐릭터 삭제 중 이미지 파일 삭제 오류: {e}")
+            
             chars = [c for c in chars if c.get("name", "") != name]
             config.save_global_characters(self.project_name, chars)
             self.load_characters()
@@ -4226,3 +4750,307 @@ class GlobalCharacterSettingsDialog(QDialog):
         QMessageBox.information(self, "동기화 완료", 
                                 f"총 {success_count}개 회차의 캐릭터 정보 동기화가 성공적으로 완료되었습니다.\n"
                                 f"(실패 회차 수: {error_count})")
+
+
+# =================================================================
+# ✂️ [신규 추가] 명품 이미지 크롭 대화상자 (ImageCropDialog)
+# =================================================================
+class CropWidget(QWidget):
+    """원본 이미지를 축소 핏하여 뿌리고, 그 위에 1:1 비율 고정 크롭 박스를 마우스로 제어하는 명품 정사각형 위젯"""
+    def __init__(self, pixmap, parent=None):
+        super().__init__(parent)
+        self.original_pixmap = pixmap
+        self.scaled_pixmap = QPixmap()
+        self.scale_factor = 1.0
+        
+        # 크롭 박스 상태 (원본 대비 축소 뷰포트 좌표계)
+        self.crop_rect = QRect(0, 0, 100, 100) # 1:1 기본 규격
+        self.is_dragging = False
+        self.is_resizing = False
+        self.drag_start_pos = QPoint()
+        self.crop_start_rect = QRect()
+        
+        self.setMouseTracking(True)
+        self.init_scale()
+
+    def init_scale(self):
+        """다이얼로그 크기에 맞춰 이미지를 핏스케일링하고 초기 1:1 크롭 영역을 정중앙 배치합니다."""
+        if self.original_pixmap.isNull():
+            return
+            
+        # 최대 뷰 해상도 450x450 제한하여 핏팅
+        max_w, max_h = 450, 450
+        orig_w = self.original_pixmap.width()
+        orig_h = self.original_pixmap.height()
+        
+        # 비율 계산
+        ratio = min(max_w / orig_w, max_h / orig_h)
+        if ratio > 1.0:
+            ratio = 1.0 # 억지로 키우지 않음
+            
+        self.scale_factor = ratio
+        new_w = int(orig_w * ratio)
+        new_h = int(orig_h * ratio)
+        
+        self.scaled_pixmap = self.original_pixmap.scaled(
+            new_w, new_h, Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+        self.setFixedSize(new_w, new_h)
+        
+        # 초기 크롭 영역 지정 (이미지 중앙에 1:1 비율로 매칭)
+        # 이미지 가로세로 중 작은 쪽에 비례하여 1:1 박스 계산
+        crop_size = int(min(new_w, new_h) * 0.75)
+        crop_size = max(crop_size, 80) # 최소 크기 한계
+        
+        cx = (new_w - crop_size) // 2
+        cy = (new_h - crop_size) // 2
+        self.crop_rect = QRect(cx, cy, crop_size, crop_size)
+
+    def paintEvent(self, event):
+        if self.scaled_pixmap.isNull():
+            return
+            
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        
+        # 1. 핏팅된 원본 이미지 드로잉
+        painter.drawPixmap(0, 0, self.scaled_pixmap)
+        
+        # 2. 크롭 영역을 뻥 뚫은 '도넛 모양' 마스킹 경로 빌드 (검은색 땜빵 버그 완전 박멸!)
+        from PySide6.QtGui import QPainterPath
+        outer_path = QPainterPath()
+        outer_path.addRect(QRectF(self.rect())) # 전체 캔버스 영역
+        
+        inner_path = QPainterPath()
+        inner_path.addRect(QRectF(self.crop_rect)) # 1:1 크롭 영역
+        
+        # 전체 영역에서 크롭 영역을 제외한 나머지 바깥쪽 장막 경로 추출
+        mask_path = outer_path.subtracted(inner_path)
+        
+        # 3. 크롭 사각형 바깥 영역에만 반투명 블랙 딤(Dim) 장막을 채웁니다!
+        painter.fillPath(mask_path, QColor(0, 0, 0, 145))
+        
+        # 4. 세련된 네온 레드 얇은 보더 실선 드로잉
+        pen = QPen(QColor("#FF4B4B"), 1.8, Qt.SolidLine)
+        painter.setPen(pen)
+        painter.drawRect(self.crop_rect)
+        
+        # 5. 가로세로 삼등분 은은한 가이드라인 점선 드로잉 (1:1 비율에 맞춰 조율)
+        grid_pen = QPen(QColor(255, 75, 75, 70), 1.0, Qt.DashLine)
+        painter.setPen(grid_pen)
+        step = self.crop_rect.width() // 3
+        
+        # 세로선 2개
+        painter.drawLine(self.crop_rect.x() + step, self.crop_rect.y(), self.crop_rect.x() + step, self.crop_rect.bottom())
+        painter.drawLine(self.crop_rect.x() + step * 2, self.crop_rect.y(), self.crop_rect.x() + step * 2, self.crop_rect.bottom())
+        # 가로선 2개
+        painter.drawLine(self.crop_rect.x(), self.crop_rect.y() + step, self.crop_rect.right(), self.crop_rect.y() + step)
+        painter.drawLine(self.crop_rect.x(), self.crop_rect.y() + step * 2, self.crop_rect.right(), self.crop_rect.y() + step * 2)
+        
+        # 6. 네 모서리 터치용 굵직한 브래킷 앵커 그리기
+        anchor_pen = QPen(QColor("#FF4B4B"), 3.5, Qt.SolidLine, Qt.SquareCap, Qt.MiterJoin)
+        painter.setPen(anchor_pen)
+        r = self.crop_rect
+        L_len = min(15, r.width() // 4) # 모서리 선의 길이
+        
+        # 좌상단 모서리
+        painter.drawLine(r.x(), r.y(), r.x() + L_len, r.y())
+        painter.drawLine(r.x(), r.y(), r.x(), r.y() + L_len)
+        # 우상단 모서리
+        painter.drawLine(r.right(), r.y(), r.right() - L_len, r.y())
+        painter.drawLine(r.right(), r.y(), r.right(), r.y() + L_len)
+        # 좌하단 모서리
+        painter.drawLine(r.x(), r.bottom(), r.x() + L_len, r.bottom())
+        painter.drawLine(r.x(), r.bottom(), r.x(), r.bottom() - L_len)
+        # 우하단 모서리 (리사이즈 핵심 조절 핸들)
+        painter.drawLine(r.right(), r.bottom(), r.right() - L_len, r.bottom())
+        painter.drawLine(r.right(), r.bottom(), r.right(), r.bottom() - L_len)
+
+    def mousePressEvent(self, event):
+        pos = event.position().toPoint()
+        
+        # 1. 우측 하단 모서리 영역(Resize 핸들 반경 16px) 감지
+        bottom_right = self.crop_rect.bottomRight()
+        dist = (pos - bottom_right).manhattanLength()
+        
+        if dist <= 16:
+            self.is_resizing = True
+            self.drag_start_pos = pos
+            self.crop_start_rect = QRect(self.crop_rect)
+            self.setCursor(Qt.SizeFDiagCursor)
+        # 2. 크롭 박스 내부 선택 (Drag/Move)
+        elif self.crop_rect.contains(pos):
+            self.is_dragging = True
+            self.drag_start_pos = pos
+            self.crop_start_rect = QRect(self.crop_rect)
+            self.setCursor(Qt.SizeAllCursor)
+
+    def mouseMoveEvent(self, event):
+        pos = event.position().toPoint()
+        
+        # 마우스 커서 호버 상태 시각 피드백 제공
+        if not self.is_dragging and not self.is_resizing:
+            bottom_right = self.crop_rect.bottomRight()
+            dist = (pos - bottom_right).manhattanLength()
+            if dist <= 16:
+                self.setCursor(Qt.SizeFDiagCursor)
+            elif self.crop_rect.contains(pos):
+                self.setCursor(Qt.SizeAllCursor)
+            else:
+                self.setCursor(Qt.ArrowCursor)
+            return
+
+        # 1. 크기 조절 모드 (1:1 비율 강제 락인 조절!)
+        if self.is_resizing:
+            delta_x = pos.x() - self.drag_start_pos.x()
+            
+            # 가로 변경 폭에 맞춰 세로를 1:1로 동기화
+            new_size = self.crop_start_rect.width() + delta_x
+            
+            # 최소 크기 한계 제어
+            new_size = max(new_size, 60)
+            
+            # 우하단 조절이므로 원본 이미지 우하단 영역 경계를 넘어가지 않도록 잠금(Clamp)
+            if self.crop_start_rect.x() + new_size > self.width():
+                new_size = self.width() - self.crop_start_rect.x()
+                
+            if self.crop_start_rect.y() + new_size > self.height():
+                new_size = self.height() - self.crop_start_rect.y()
+                
+            self.crop_rect = QRect(self.crop_start_rect.x(), self.crop_start_rect.y(), new_size, new_size)
+            self.update()
+
+        # 2. 이동 모드 (경계 고정 Constrain 완벽 바인딩!)
+        elif self.is_dragging:
+            delta = pos - self.drag_start_pos
+            new_x = self.crop_start_rect.x() + delta.x()
+            new_y = self.crop_start_rect.y() + delta.y()
+            
+            # 이미지 밖으로 삐져나가지 못하도록 Clamp 연산 적용
+            new_x = max(0, min(new_x, self.width() - self.crop_rect.width()))
+            new_y = max(0, min(new_y, self.height() - self.crop_rect.height()))
+            
+            self.crop_rect.moveTo(new_x, new_y)
+            self.update()
+
+    def mouseReleaseEvent(self, event):
+        self.is_dragging = False
+        self.is_resizing = False
+        self.setCursor(Qt.ArrowCursor)
+
+    def get_cropped_pixmap(self):
+        """축소 좌표계 영역을 원래 원본 해상도로 역환산하여 100% 무왜곡 크롭 이미지를 반환합니다."""
+        if self.original_pixmap.isNull():
+            return QPixmap()
+            
+        inv_scale = 1.0 / self.scale_factor
+        
+        # 원본 스케일 상의 정확한 정밀 좌표 계산
+        rx = int(self.crop_rect.x() * inv_scale)
+        ry = int(self.crop_rect.y() * inv_scale)
+        rw = int(self.crop_rect.width() * inv_scale)
+        rh = int(self.crop_rect.height() * inv_scale)
+        
+        # 원본 이미지 경계 안쪽으로 정밀 제한
+        rx = max(0, rx)
+        ry = max(0, ry)
+        rw = min(rw, self.original_pixmap.width() - rx)
+        rh = min(rh, self.original_pixmap.height() - ry)
+        
+        # 원본 복사
+        cropped = self.original_pixmap.copy(rx, ry, rw, rh)
+        
+        # 디스크 최종 규격인 가로 150px, 세로 150px (정사각형 1:1 아이콘 규격)으로 스케일핏 가공
+        return cropped.scaled(150, 150, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+
+
+class ImageCropDialog(QDialog):
+    """인물 사진 등록 시, 얼굴 영역만 1:1 정사각형 비율로 정밀 드래그 절단하는 모던 크롭 다이얼로그"""
+    def __init__(self, file_path, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("✂️ 프로필 아이콘 정밀 크롭 (1:1)")
+        self.setWindowFlags(Qt.Window | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
+        self.resize(500, 580)
+        self.setStyleSheet("background-color: #FFFFFF;")
+        
+        self.original_pixmap = QPixmap(file_path)
+        self.cropped_pixmap = QPixmap()
+        
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # 1. 수려한 타이틀 가이드
+        title_layout = QVBoxLayout()
+        title_layout.setSpacing(4)
+        
+        title_lbl = QLabel("✂️ 아이콘용 프로필 영역 자르기")
+        title_lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #111827;")
+        desc_lbl = QLabel("상자 안을 마우스로 드래그해 이동하고, 우측 하단 모서리를 끌어\n얼굴이 중앙에 오는 최상의 구도로 조절해 주세요 (1:1 비율 고정).")
+        desc_lbl.setStyleSheet("font-size: 11px; color: #6B7280; line-height: 14px;")
+        
+        title_layout.addWidget(title_lbl)
+        title_layout.addWidget(desc_lbl)
+        layout.addLayout(title_layout)
+        
+        # 2. 크롭 위젯 배치 프레임 (가운데 정렬)
+        self.crop_container = QHBoxLayout()
+        self.crop_container.addStretch()
+        
+        self.crop_widget = CropWidget(self.original_pixmap, self)
+        self.crop_container.addWidget(self.crop_widget)
+        
+        self.crop_container.addStretch()
+        layout.addLayout(self.crop_container, 1)
+        
+        # 3. 하단 컨트롤 버튼
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+        btn_layout.addStretch()
+        
+        btn_cancel = QPushButton("취소")
+        btn_cancel.setStyleSheet("""
+            QPushButton {
+                background-color: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 4px;
+                padding: 7px 16px;
+                font-weight: bold;
+                color: #4B5563;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #F9FAFB;
+            }
+        """)
+        btn_cancel.clicked.connect(self.reject)
+        
+        btn_apply = QPushButton("크롭 적용")
+        btn_apply.setStyleSheet("""
+            QPushButton {
+                background-color: #FF4B4B;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 7px 18px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #E03E3E;
+            }
+        """)
+        btn_apply.clicked.connect(self.on_apply)
+        
+        btn_layout.addWidget(btn_cancel)
+        btn_layout.addWidget(btn_apply)
+        layout.addLayout(btn_layout)
+
+    def on_apply(self):
+        # 최종 정밀 크롭 완성본 낚아채기
+        self.cropped_pixmap = self.crop_widget.get_cropped_pixmap()
+        self.accept()
+

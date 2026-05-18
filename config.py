@@ -75,6 +75,9 @@ ICON_MENU = os.path.join(ASSETS_DIR, "menu.svg")
 ICON_UNDO = os.path.join(ASSETS_DIR, "undo.svg")
 ICON_REDO = os.path.join(ASSETS_DIR, "redo.svg")
 ICON_IDIOM = ICON_LIBRARY # 관용구 아이콘 별칭 추가
+ICON_USER = os.path.join(ASSETS_DIR, "user.svg") # 사람 모양 캐릭터 아이콘 추가
+ICON_SETTINGS_COG = os.path.join(ASSETS_DIR, "settings.svg") # 톱니바퀴 설정 아이콘 추가
+ICON_AVATAR_UPLOAD = os.path.join(ASSETS_DIR, "avatar-upload.svg") # 아바타 전용 업로드 아이콘
 # =================================================================
 
 OCR_API_KEY = ""
