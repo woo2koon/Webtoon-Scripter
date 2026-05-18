@@ -2546,6 +2546,7 @@ class WebtoonManager(QMainWindow):
         df.to_csv(os.path.join(e_path, "character_info.csv"), index=False, encoding='utf-8-sig')
 
         # [자동화] 스텝 2에서 추가/수정된 캐릭터가 글로벌 데이터베이스(characters.json)에 없다면 자동 등록
+        # (안전장치: 이름, 역할, 나이, 성별이 모두 채워진 완성된 상태의 캐릭터만 자동 등록 대상으로 삼음)
         if self.current_title:
             import config
             global_chars = config.load_global_characters(self.current_title)
@@ -2554,19 +2555,25 @@ class WebtoonManager(QMainWindow):
             changed = False
             for row in rows:
                 c_name = row.get("Character", "").strip()
-                if c_name and c_name not in global_names:
-                    # 새로운 캐릭터 발견 시 글로벌 DB에 기본값들과 함께 자동 생성
-                    new_char = {
-                        "name": c_name,
-                        "role": row.get("Role", "단역") or "단역",
-                        "age": row.get("Age", "미상") or "미상",
-                        "gender": row.get("Gender", "미상") or "미상",
-                        "color": "#3B82F6", # 기본 블루 지정
-                        "memo": f"스텝 2 회차 편집 중 자동 추가됨"
-                    }
-                    global_chars.append(new_char)
-                    global_names.add(c_name)
-                    changed = True
+                c_role = row.get("Role", "").strip()
+                c_age = row.get("Age", "").strip()
+                c_gender = row.get("Gender", "").strip()
+                
+                # 안전장치: 이름, 역할, 나이, 성별이 모두 공백이 아닐 때만 유효한 캐릭터로 간주하여 글로벌 추가
+                if c_name and c_role and c_age and c_gender:
+                    if c_name not in global_names:
+                        # 새로운 완성형 캐릭터 발견 시 글로벌 DB에 자동 생성
+                        new_char = {
+                            "name": c_name,
+                            "role": c_role,
+                            "age": c_age,
+                            "gender": c_gender,
+                            "color": "#3B82F6", # 기본 블루 지정
+                            "memo": f"스텝 2 회차 편집 중 자동 추가됨"
+                        }
+                        global_chars.append(new_char)
+                        global_names.add(c_name)
+                        changed = True
             
             if changed:
                 config.save_global_characters(self.current_title, global_chars)
