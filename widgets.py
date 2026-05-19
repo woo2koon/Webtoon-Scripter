@@ -1871,8 +1871,9 @@ class ProjectManagementDialog(QDialog):
         self.epi_stack.setCurrentIndex(1)
         t_path = os.path.join(PROJECTS_DIR, title)
         if os.path.exists(t_path):
+            exclude_dirs = {"images", "character_images", "cache", "temp"}
             episodes = sorted([d for d in os.listdir(t_path) 
-                             if os.path.isdir(os.path.join(t_path, d))])
+                              if os.path.isdir(os.path.join(t_path, d)) and d not in exclude_dirs])
             
             for epi in episodes:
                 epi_dir = os.path.join(t_path, epi)
@@ -5130,7 +5131,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         
         for ep_dir in os.listdir(t_path):
             ep_path = os.path.join(t_path, ep_dir)
-            if not os.path.isdir(ep_path) or ep_dir == "images":
+            if not os.path.isdir(ep_path) or ep_dir in {"images", "character_images", "cache", "temp"}:
                 continue
                 
             c_csv = os.path.join(ep_path, "character_info.csv")
