@@ -1283,12 +1283,17 @@ class SpellCheckDialog(QDialog):
                     fmt_org.setFontStrikeOut(True)
                     cursor_org.insertText(s_org.replace(' ', '✓'), fmt_org)
                     
+                    fmt_new.setProperty(QTextFormat.UserProperty + 1, current_idx)
                     if s_org.strip() == "":
                         fmt_new.setBackground(QColor("#E0E7FF"))
                         fmt_new.setForeground(QColor("#4338CA"))
                         fmt_new.setFontWeight(QFont.Bold)
-                        fmt_new.setProperty(QTextFormat.UserProperty + 1, current_idx)
                         cursor_new.insertText("⁀", fmt_new)
+                    else:
+                        fmt_new.setBackground(QColor("#FFCDD2"))
+                        fmt_new.setForeground(QColor("#B71C1C"))
+                        fmt_new.setFontStrikeOut(True)
+                        cursor_new.insertText(s_org.replace(' ', '✓'), fmt_new)
                     
                 elif s_tag == 'insert':
                     fmt_new.setBackground(QColor("#FFB74D"))
@@ -1404,8 +1409,31 @@ class SpellCheckDialog(QDialog):
 
         self.undo_btn.hide()
     def apply_changes(self):
-        # HTML 태그가 섞일 수 있으므로 toPlainText()로 순수 텍스트만 가져옴
-        text = self.edit_new.toPlainText()
+        doc = self.edit_new.document()
+        result_chunks = []
+        
+        block = doc.begin()
+        while block.isValid():
+            block_text = ""
+            it = block.begin()
+            while not it.atEnd():
+                if hasattr(it, "fragment"):
+                    fragment = it.fragment()
+                    if fragment.isValid():
+                        val = fragment.charFormat().property(QTextFormat.UserProperty + 1)
+                        is_deleted_item = False
+                        if val is not None and isinstance(val, int):
+                            item = next((x for x in self.diff_data if x["id"] == val), None)
+                            if item and item["tag"] == "delete":
+                                is_deleted_item = True
+                                
+                        if not is_deleted_item:
+                            block_text += fragment.text()
+                it += 1
+            result_chunks.append(block_text)
+            block = block.next()
+            
+        text = "\n".join(result_chunks)
         # 시각적 피드백을 위해 넣은 부호들을 다시 복구/제거
         text = text.replace("✓", " ")
         text = text.replace("⁀", "")
