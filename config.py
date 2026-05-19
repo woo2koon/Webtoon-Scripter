@@ -21,7 +21,7 @@ MY_DEFAULT_AI_KEY = ""   # <-- 여기에 직접 입력하지 마세요!
 
 # 1. 앱 이름 (이 이름으로 사용자의 컴퓨터에 폴더가 생깁니다)
 APP_NAME = "Webtoon_Script_Manager"
-APP_VERSION = "2.2.3"
+APP_VERSION = "2.5"
 
 if getattr(sys, 'frozen', False):
     # [읽기전용] EXE 내부에 압축된 아이콘 등 (임시 폴더)
@@ -60,6 +60,7 @@ if not os.path.exists(CACHE_DIR):
 ICON_MOVIE   = os.path.join(ASSETS_DIR, "movie.svg")
 ICON_SAVE    = os.path.join(ASSETS_DIR, "save.svg")
 ICON_UPLOAD  = os.path.join(ASSETS_DIR, "image-upload.svg")
+ICON_IMPORT  = os.path.join(ASSETS_DIR, "import.svg")
 ICON_CHECK   = os.path.join(ASSETS_DIR, "wand.svg")
 ICON_FILE    = os.path.join(ASSETS_DIR, "file-image.svg")
 ICON_FOLDER    = os.path.join(ASSETS_DIR, "folder.svg")

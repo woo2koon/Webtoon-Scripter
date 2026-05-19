@@ -55,6 +55,8 @@ class GlobalToolTipFilter(QObject):
         self.active_widget = None
 
     def eventFilter(self, obj, event):
+        if not isinstance(obj, QObject):
+            return False
         try:
             # 1. 툴팁 이벤트 가로채기
             if event.type() == QEvent.ToolTip:
@@ -141,10 +143,14 @@ class WebtoonManager(QMainWindow):
         
         self.idiom_viewer = None
         self.character_viewer = None
+        self.last_active_editor = None # [추가] 관용구 스마트 삽입용 활성 에디터 기록 변수
         self.init_ui()
         self.refresh_project_list()
         self.idiom_shortcuts = []
         self.setup_idiom_shortcuts()
+        
+        # [추가] 전역 포커스 변경 감지 장치를 통해 마지막으로 텍스트를 타이핑하던 에디터를 추적
+        QApplication.instance().focusChanged.connect(self.on_focus_changed)
 
         self.sidebar_anim = QPropertyAnimation(self.sidebar, b"maximumWidth")
         self.sidebar_anim.setDuration(300)
@@ -307,6 +313,21 @@ class WebtoonManager(QMainWindow):
                 pass
 
         return super().eventFilter(source, event)
+
+    def event(self, event):
+        """앱 전체 이벤트를 처리합니다. (macOS 독 활성화 및 메인 창 활성 시 플로팅 도우미 일괄 복원)"""
+        if event.type() == QEvent.ApplicationActivate:
+            # 앱이 전체적으로 활성화될 때 메인 창을 먼저 올립니다.
+            self.raise_()
+            self.activateWindow()
+            
+        if event.type() in [QEvent.ApplicationActivate, QEvent.WindowActivate]:
+            # 메인 창이 활성화되거나 포커스를 받을 때, 화면에 켜져 있는 플로팅 도우미들도 함께 메인 창 위로 띄워 묶어줍니다.
+            if hasattr(self, 'idiom_viewer') and self.idiom_viewer and self.idiom_viewer.isVisible():
+                self.idiom_viewer.raise_()
+            if hasattr(self, 'character_viewer') and self.character_viewer and self.character_viewer.isVisible():
+                self.character_viewer.raise_()
+        return super().event(event)
     
     def open_management_system(self):
         # 1. 현재 선택된 텍스트를 가져옵니다. (없으면 빈 문자열)
@@ -1355,6 +1376,11 @@ class WebtoonManager(QMainWindow):
         scroll_area_char.setStyleSheet("background-color: #f8f9fa; border: none;") 
         self.char_container = CharacterListContainer()
         self.char_container.order_changed_signal.connect(self.save_char_data)
+        
+        # [신설] 우클릭 컨텍스트 메뉴 설정
+        self.char_container.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.char_container.customContextMenuRequested.connect(self.show_character_context_menu)
+        
         self.char_layout = self.char_container.layout()
         scroll_area_char.setWidget(self.char_container)
         tab2_layout.addWidget(scroll_area_char)
@@ -1437,9 +1463,71 @@ class WebtoonManager(QMainWindow):
         """)
         btn_view_idioms_step3.clicked.connect(self.toggle_idiom_viewer)
         
-        top_bar.addStretch() # 왼쪽을 비워서 버튼들을 오른쪽으로 밀어냅니다.
-        top_bar.addWidget(btn_view_idioms_step3)
+        # [추가] 스텝 3 전용 "작품 캐릭터 보기" 버튼
+        self.btn_view_global_chars_step3 = HoverIconButton(
+            " 작품 캐릭터 보기", 
+            config.ICON_USER,
+            normal_color="#2563EB",
+            hover_color="#1D4ED8"
+        )
+        self.btn_view_global_chars_step3.setIconSize(QSize(16, 16))
+        self.btn_view_global_chars_step3.setFixedHeight(32)
+        self.btn_view_global_chars_step3.setStyleSheet("""
+            QPushButton { 
+                border: 1px solid #D1D5DB; 
+                background-color: #EFF6FF; 
+                border-radius: 4px; 
+                color: #2563EB; 
+                font-size: 13px; 
+                font-weight: bold;
+                padding: 0 12px;
+            } 
+            QPushButton:hover { 
+                background-color: #DBEAFE; 
+                border-color: #93C5FD; 
+                color: #1D4ED8;
+            } 
+            QPushButton:pressed { 
+                background-color: #BFDBFE; 
+            }
+        """)
+        self.btn_view_global_chars_step3.clicked.connect(self.toggle_character_viewer)
+
+        # [추가] 스텝 3 전용 "작품 캐릭터 설정" 버튼
+        self.btn_global_char_settings_step3 = HoverIconButton(
+            " 작품 캐릭터 설정", 
+            config.ICON_SETTINGS_COG,
+            normal_color="#374151",
+            hover_color="#111827"
+        )
+        self.btn_global_char_settings_step3.setIconSize(QSize(16, 16))
+        self.btn_global_char_settings_step3.setFixedHeight(32)
+        self.btn_global_char_settings_step3.setStyleSheet("""
+            QPushButton { 
+                border: 1px solid #D1D5DB; 
+                background-color: #F3F4F6; 
+                border-radius: 4px; 
+                color: #374151; 
+                font-size: 13px; 
+                font-weight: bold;
+                padding: 0 12px;
+            } 
+            QPushButton:hover { 
+                background-color: #E5E7EB; 
+                border-color: #9CA3AF; 
+                color: #111827;
+            } 
+            QPushButton:pressed { 
+                background-color: #D1D5DB; 
+            }
+        """)
+        self.btn_global_char_settings_step3.clicked.connect(self.open_global_character_settings)
+
         top_bar.addWidget(self.btn_load_script)
+        top_bar.addStretch() # 왼쪽을 비워서 버튼들을 오른쪽으로 밀어냅니다.
+        top_bar.addWidget(self.btn_view_global_chars_step3)
+        top_bar.addWidget(self.btn_global_char_settings_step3)
+        top_bar.addWidget(btn_view_idioms_step3)
         tab3_layout.addLayout(top_bar)
 
         # B. [핵심] 에디터 컨테이너 (흰색 박스) 생성
@@ -1667,12 +1755,137 @@ class WebtoonManager(QMainWindow):
             if self.character_viewer and self.character_viewer.isVisible():
                 self.character_viewer.load_data()
 
+    def on_focus_changed(self, old, now):
+        """키보드 포커스가 전환될 때 텍스트를 입력받을 수 있는 활성 에디터 위젯을 기억합니다."""
+        from PySide6.QtWidgets import QLineEdit, QTextEdit
+        
+        # [신규] 포커스가 풀리는 시점에 셀 에디터였다면, 커서 위치 및 활성 셀 정보를 미리 캡처하여 저장해 둡니다.
+        if old and isinstance(old, QLineEdit):
+            if hasattr(self, 'table_script') and self.table_script and self.table_script.isAncestorOf(old):
+                self.last_sheet_editor_cursor_pos = old.cursorPosition()
+                self.last_sheet_editor_cell = (self.table_script.currentRow(), self.table_script.currentColumn())
+        
+        if now and isinstance(now, (QLineEdit, QTextEdit)):
+            # 도우미 팝업이나 설정 다이얼로그 내의 검색창 등은 주 대본 에디터가 아니므로 제외
+            window_title = str(now.window().windowTitle())
+            if "도우미" in window_title or "설정" in window_title:
+                return
+            # 콤보박스 내부 ReadOnly lineEdit도 제외
+            if isinstance(now, QLineEdit) and now.isReadOnly():
+                return
+            self.last_active_editor = now
+
     def handle_idiom_viewer_select(self, text):
-        """플로팅 뷰어에서 선택된 문구를 메인 에디터에 삽입합니다."""
+        """플로팅 뷰어에서 선택된 문구를 현재 활성화된 에디터(메인 또는 셀 입력창)에 스마트하게 삽입합니다."""
+        from PySide6.QtWidgets import QLineEdit, QTextEdit, QTableWidgetItem
+        
+        # 1. 이전 활성 에디터 기록이 있는 경우 스마트 체크
+        if hasattr(self, 'last_active_editor') and self.last_active_editor:
+            try:
+                editor = self.last_active_editor
+                
+                # 이전 에디터가 스텝 3 스프레드시트의 셀 에디터(QLineEdit 등)였는지 여부 판별
+                is_sheet_editor = False
+                if hasattr(self, 'table_script') and self.table_script:
+                    try:
+                        if self.table_script.isAncestorOf(editor):
+                            is_sheet_editor = True
+                    except Exception:
+                        pass
+                
+                if is_sheet_editor:
+                    # 셀 에디터가 아직 떠 있는 상태라면 직접 삽입
+                    if editor.isVisible() and not editor.isReadOnly():
+                        if isinstance(editor, QLineEdit):
+                            editor.insert(text)
+                            editor.setFocus()
+                            return
+                    else:
+                        # 포커스 아웃 등으로 셀 에디터가 닫혔다면, 저장된 커서 위치에 정확히 삽입 후 에디터 재진입
+                        row = self.table_script.currentRow()
+                        col = self.table_script.currentColumn()
+                        if row >= 0 and col >= 0:
+                            item = self.table_script.item(row, col)
+                            if not item:
+                                item = QTableWidgetItem("")
+                                self.table_script.setItem(row, col, item)
+                            current_text = item.text()
+                            
+                            # 포커스 아웃 전 캡처해 두었던 커서 위치가 존재하면 그 위치에 정확히 삽입
+                            cursor_pos = len(current_text)
+                            if hasattr(self, 'last_sheet_editor_cell') and self.last_sheet_editor_cell == (row, col):
+                                cursor_pos = getattr(self, 'last_sheet_editor_cursor_pos', len(current_text))
+                                if cursor_pos < 0 or cursor_pos > len(current_text):
+                                    cursor_pos = len(current_text)
+                            
+                            new_text = current_text[:cursor_pos] + text + current_text[cursor_pos:]
+                            item.setText(new_text)
+                            self.table_script.editItem(item)
+                            
+                            # 새 에디터 오픈 시 커서를 방금 삽입한 텍스트 바로 뒤에 안착시킵니다.
+                            new_cursor_pos = cursor_pos + len(text)
+                            QTimer.singleShot(50, lambda: self.set_sheet_editor_cursor(new_cursor_pos))
+                            return
+                else:
+                    # 일반 에디터(메인 대본창 등) 처리
+                    if editor.isVisible() and not editor.isReadOnly():
+                        if isinstance(editor, QTextEdit):
+                            editor.insertPlainText(text)
+                            editor.setFocus()
+                            return
+                        elif isinstance(editor, QLineEdit):
+                            editor.insert(text)
+                            editor.setFocus()
+                            return
+            except RuntimeError:
+                # C++ 객체가 이미 소멸된 경우 대비 안전망
+                self.last_active_editor = None
+                
+        # 2. 현재 탭이 Step 3 (배정 시트 탭)인 경우 활성 셀에 스마트 삽입
+        if hasattr(self, 'tabs') and self.tabs.currentIndex() == 2:
+            if hasattr(self, 'table_script') and self.table_script:
+                row = self.table_script.currentRow()
+                col = self.table_script.currentColumn()
+                if row >= 0 and col >= 0:
+                    item = self.table_script.item(row, col)
+                    if not item:
+                        item = QTableWidgetItem("")
+                        self.table_script.setItem(row, col, item)
+                    current_text = item.text()
+                    
+                    # 커서 위치 판별 및 중간 삽입
+                    cursor_pos = len(current_text)
+                    if hasattr(self, 'last_sheet_editor_cell') and self.last_sheet_editor_cell == (row, col):
+                        cursor_pos = getattr(self, 'last_sheet_editor_cursor_pos', len(current_text))
+                        if cursor_pos < 0 or cursor_pos > len(current_text):
+                            cursor_pos = len(current_text)
+                            
+                    new_text = current_text[:cursor_pos] + text + current_text[cursor_pos:]
+                    item.setText(new_text)
+                    self.table_script.editItem(item)
+                    
+                    new_cursor_pos = cursor_pos + len(text)
+                    QTimer.singleShot(50, lambda: self.set_sheet_editor_cursor(new_cursor_pos))
+                    return
+                
+        # 3. 기본 폴백: 메인 에디터(Step 1)에 삽입
         if hasattr(self, 'text_editor') and self.text_editor:
-            self.text_editor.insertPlainText(text)
-            # 입력을 마친 후 에디터로 포커스를 돌려주어 계속 타이핑할 수 있게 함
-            self.text_editor.setFocus()
+            try:
+                self.text_editor.insertPlainText(text)
+                self.text_editor.setFocus()
+            except Exception as e:
+                print(f"폴백 에디터 문구 삽입 실패: {e}")
+
+    def set_sheet_editor_cursor(self, pos):
+        """재개방된 시트 셀 에디터의 커서 위치를 복구합니다."""
+        if hasattr(self, 'table_script') and self.table_script:
+            from PySide6.QtWidgets import QLineEdit
+            line_edits = self.table_script.findChildren(QLineEdit)
+            if line_edits:
+                # 활성 셀 에디터는 대개 하나만 존재합니다.
+                editor = line_edits[0]
+                editor.setCursorPosition(pos)
+                editor.setFocus()
 
     def setup_idiom_shortcuts(self):
         """설정된 관용구들에 대해 Alt + 숫자 단축키를 생성합니다."""
@@ -2397,6 +2610,59 @@ class WebtoonManager(QMainWindow):
         
         return combo
 
+    def sync_new_character(self, name):
+        """스프레드시트에서 새로 입력되거나 드롭된 신규 캐릭터명을 스텝 2 및 로컬 DB에 역류 동기화합니다."""
+        name = name.strip()
+        if not name:
+            return
+            
+        # 1. 현재 스텝 2 캐릭터 목록에 이미 등록되어 있는지 확인
+        char_list = self.get_character_list()
+        if name in char_list:
+            return
+            
+        # [수정] 글로벌 캐릭터 DB에서 먼저 조회하여 원래 정보(역할, 연령, 성별)가 있으면 이를 계승 적용
+        age = "미상"
+        gender = "미상"
+        role = "단역"
+        
+        if self.current_title:
+            import config
+            global_chars = config.load_global_characters(self.current_title)
+            for gc in global_chars:
+                if gc.get("name", "").strip() == name:
+                    age = gc.get("age", "미상")
+                    gender = gc.get("gender", "미상")
+                    role = gc.get("role", "단역")
+                    break
+            
+        # 2. 존재하지 않는 신규 이름인 경우 스텝 2 목록에 추가 (글로벌 DB 매칭 정보 또는 미지정 값 적용)
+        self.add_character_card(name=name, age=age, gender=gender, role=role)
+        
+        # 3. 변경된 스텝 2 목록을 character_info.csv 파일에 즉시 저장
+        self.save_char_data()
+        
+        # 4. 스텝 3의 모든 역할명 콤보박스 리스트에 실시간 즉각 합류되도록 갱신
+        self.refresh_all_table_combos()
+        
+        # 5. 하단에 세련된 토스트 메시지 출력
+        self.toast.show_message(f"👥 새 캐릭터 '{name}'이 추가되었습니다.", 1500)
+
+    def refresh_all_table_combos(self):
+        """스프레드시트 내의 모든 역할 행 콤보박스의 캐릭터 리스트 풀을 실시간 갱신합니다."""
+        char_list = self.get_character_list()
+        self.table_script.blockSignals(True)
+        for i in range(self.table_script.rowCount()):
+            combo = self.table_script.cellWidget(i, 0)
+            if isinstance(combo, QComboBox):
+                current_text = combo.currentText()
+                combo.blockSignals(True)
+                combo.clear()
+                combo.addItems(char_list)
+                combo.setCurrentText(current_text)
+                combo.blockSignals(False)
+        self.table_script.blockSignals(False)
+
     def add_character_card_at(self, index, name="", age="", gender="", role=""):
         # 중복 등록 방지: 현재 회차에 이미 등록된 동일한 이름의 캐릭터는 추가하지 않음
         for i in range(self.char_layout.count()):
@@ -2419,9 +2685,346 @@ class WebtoonManager(QMainWindow):
         self.add_character_card_at(self.char_layout.count(), name, age, gender, role)
 
     def remove_character_card(self, card_widget):
+        deleted_name = card_widget.input_name.text().strip()
         card_widget.deleteLater()
         self.char_layout.removeWidget(card_widget)
-        QTimer.singleShot(100, self.save_char_data)
+        
+        # 안전한 지연 삭제 및 실시간 연동 갱신 처리
+        def after_removal():
+            self.save_char_data()
+            if deleted_name:
+                self.clear_character_from_table(deleted_name)
+                
+        QTimer.singleShot(100, after_removal)
+
+    def clear_character_from_table(self, deleted_name):
+        """삭제된 캐릭터를 스텝 3 테이블 드롭다운에서 실시간 제거하고, 지정된 셀은 비웁니다."""
+        if not deleted_name:
+            return
+            
+        char_list = self.get_character_list() # 삭제 완료 후 남아있는 캐릭터 목록
+        
+        self.table_script.blockSignals(True)
+        changed = False
+        
+        for i in range(self.table_script.rowCount()):
+            combo = self.table_script.cellWidget(i, 0)
+            if isinstance(combo, QComboBox):
+                current_text = combo.currentText().strip()
+                
+                # 삭제된 캐릭터가 지정되어 있던 경우 -> 비우기 처리
+                if current_text == deleted_name:
+                    combo.blockSignals(True)
+                    combo.clear()
+                    combo.addItems(char_list)
+                    combo.setCurrentIndex(-1)
+                    combo.setCurrentText("")
+                    combo.blockSignals(False)
+                    changed = True
+                else:
+                    # 다른 캐릭터가 설정되어 있었던 경우 드롭다운 목록만 리프레시
+                    combo.blockSignals(True)
+                    combo.clear()
+                    combo.addItems(char_list)
+                    if current_text in char_list:
+                        combo.setCurrentText(current_text)
+                    else:
+                        combo.setCurrentIndex(-1)
+                        combo.setCurrentText("")
+                    combo.blockSignals(False)
+                
+        self.table_script.blockSignals(False)
+        
+        # 하나라도 비워진 행이 생겼다면 대본 데이터 즉시 저장
+        if changed:
+            self.save_script_data()
+
+    def show_character_context_menu(self, pos):
+        """캐릭터 목록 빈 공간 우클릭 시 컨텍스트 메뉴 팝업"""
+        if getattr(self, 'is_simple_mode', False):
+            return
+
+        menu = QMenu(self)
+        
+        # 1. 캐릭터 추가 액션
+        action_add = QAction("캐릭터 추가", self)
+        action_add.setIcon(get_icon(config.ICON_USER))
+        action_add.triggered.connect(lambda: self.add_character_card())
+        menu.addAction(action_add)
+        
+        # 1.5. 외부 캐릭터 마이그레이션 (HTML) 액션 추가
+        action_migrate = QAction("외부 캐릭터 가져오기 (HTML)", self)
+        action_migrate.setIcon(get_icon(config.ICON_UPLOAD))
+        action_migrate.triggered.connect(self.migrate_external_characters)
+        menu.addAction(action_migrate)
+        
+        menu.addSeparator()
+        
+        # 2. 정렬 서브메뉴
+        sort_menu = menu.addMenu("정렬")
+        
+        action_sort_role = QAction("배역 순", self)
+        action_sort_role.triggered.connect(lambda: self.sort_characters("role"))
+        sort_menu.addAction(action_sort_role)
+        
+        action_sort_name = QAction("가나다 순", self)
+        action_sort_name.triggered.connect(lambda: self.sort_characters("name"))
+        sort_menu.addAction(action_sort_name)
+        
+        action_sort_role_name = QAction("배역 > 가나다 순", self)
+        action_sort_role_name.triggered.connect(lambda: self.sort_characters("role_name"))
+        sort_menu.addAction(action_sort_role_name)
+        
+        menu.exec(self.char_container.mapToGlobal(pos))
+
+    def sort_characters(self, criteria):
+        """정해진 기준(criteria)에 따라 현재 캐릭터 카드들을 자동 정렬합니다."""
+        widgets = []
+        for i in range(self.char_layout.count()):
+            w = self.char_layout.itemAt(i).widget()
+            if isinstance(w, CharacterRow):
+                widgets.append(w)
+                
+        if not widgets:
+            return
+            
+        def get_sort_key(widget):
+            name = widget.input_name.text().strip()
+            role = widget.combo_role.currentText().strip()
+            
+            from config import ROLE_OPTIONS
+            try:
+                role_idx = ROLE_OPTIONS.index(role)
+            except ValueError:
+                role_idx = len(ROLE_OPTIONS) # 지정되지 않은 역할은 가장 후순위
+                
+            is_empty = 1 if not name else 0  # 빈 이름은 맨 뒤로 정렬하기 위한 플래그
+            
+            if criteria == "role":
+                return (role_idx, is_empty, name)
+            elif criteria == "name":
+                return (is_empty, name)
+            elif criteria == "role_name":
+                return (role_idx, is_empty, name)
+            return (is_empty, name)
+
+        # 정렬 수행
+        sorted_widgets = sorted(widgets, key=get_sort_key)
+        
+        # 레이아웃 갱신
+        self.char_layout.blockSignals(True)
+        for w in widgets:
+            self.char_layout.removeWidget(w)
+            
+        for i, w in enumerate(sorted_widgets):
+            self.char_layout.insertWidget(i, w)
+        self.char_layout.blockSignals(False)
+        
+        # 동기화 저장 및 스텝3 드롭다운 목록 실시간 리프레시
+        self.save_char_data()
+        self.refresh_all_table_combos()
+        
+        # 부드러운 피드백 토스트 알림
+        criteria_kr = {
+            "role": "배역 순",
+            "name": "가나다 순",
+            "role_name": "배역 > 가나다 순"
+        }.get(criteria, "")
+        self.toast.show_message(f"📶 캐릭터가 {criteria_kr}으로 정렬되었습니다.", 1500)
+
+    def migrate_external_characters(self):
+        """외부 저장된 HTML 또는 마이그레이션 폴더로부터 글로벌 캐릭터 DB로 캐릭터 데이터를 가져옵니다."""
+        if not self.current_title:
+            QMessageBox.warning(self, "마이그레이션 오류", "먼저 마이그레이션할 작품을 선택해주세요.")
+            return
+
+        import os
+        import re
+        import urllib.parse
+        import config
+        from widgets import get_round_rect_pixmap
+        from PySide6.QtGui import QPixmap
+        from PySide6.QtWidgets import QMessageBox, QInputDialog
+
+        migration_dir = "migration"
+        os.makedirs(migration_dir, exist_ok=True)
+
+        # 1. migration 폴더에서 HTML 파일 스캔
+        html_files = [f for f in os.listdir(migration_dir) if f.endswith(".html")]
+        if not html_files:
+            QMessageBox.information(
+                self, 
+                "캐릭터 가져오기 안내", 
+                "마이그레이션 폴더 내에 HTML 파일이 없습니다.\n\n"
+                "사용 방법:\n"
+                "1. 덥라이트 캐릭터 관리 페이지에서 '다른 이름으로 저장'을 선택합니다.\n"
+                "2. 저장된 [파일명].html 파일과 [파일명]_files 폴더를 로컬 작업 폴더의 'migration' 폴더에 복사해 주세요.\n"
+                f"(현재 로컬 경로: {os.path.abspath(migration_dir)})"
+            )
+            # 폴더 열어주기 (윈도우 탐색기)
+            os.startfile(os.path.abspath(migration_dir))
+            return
+
+        # HTML 파일이 여러개면 선택 창, 하나면 자동 선택
+        if len(html_files) == 1:
+            selected_html = html_files[0]
+        else:
+            item, ok = QInputDialog.getItem(
+                self, "HTML 파일 선택", "마이그레이션할 HTML 파일을 선택하세요:", html_files, 0, False
+            )
+            if not ok or not item:
+                return
+            selected_html = item
+
+        html_path = os.path.join(migration_dir, selected_html)
+        
+        try:
+            with open(html_path, "r", encoding="utf-8") as f:
+                html_content = f.read()
+        except Exception as e:
+            QMessageBox.critical(self, "파일 오류", f"HTML 파일을 읽는 데 실패했습니다:\n{e}")
+            return
+
+        blocks = html_content.split('class="character-image')
+        if len(blocks) <= 1:
+            QMessageBox.warning(self, "파싱 오류", "HTML 파일에서 유효한 캐릭터 영역을 찾을 수 없습니다.\n올바른 덥라이트 캐릭터 페이지 HTML 파일이 맞는지 확인해 주세요.")
+            return
+
+        role_map = {
+            "CHARACTER_ROLE_STARRING": "주연",
+            "CHARACTER_ROLE_SUPPORTING": "조연",
+            "CHARACTER_ROLE_MINOR": "단역"
+        }
+        gender_map = {
+            "CHARACTER_GENDER_MALE": "남성",
+            "CHARACTER_GENDER_FEMALE": "여성",
+            "CHARACTER_GENDER_FEAMLE": "여성",
+            "CHARACTER_GENDER_UNKNOWN": "미상"
+        }
+        age_map = {
+            "CHARACTER_AGE_BABY": "영유아",
+            "CHARACTER_AGE_CHILD": "어린이",
+            "CHARACTER_AGE_YOUTH": "청소년",
+            "CHARACTER_AGE_MIDDLE": "청년",
+            "CHARACTER_AGE_ADULT": "중년",
+            "CHARACTER_AGE_OLD": "노년",
+            "CHARACTER_AGE_UNKNOWN": "미상"
+        }
+
+        # 작품별 기존 캐릭터 목록 로드
+        global_chars = config.load_global_characters(self.current_title)
+        global_dict = {char["name"]: char for char in global_chars if "name" in char}
+        
+        PASTEL_COLORS = [
+            "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", 
+            "#EC4899", "#06B6D4", "#F97316", "#14B8A6", "#84CC16"
+        ]
+        color_idx = len(global_chars) % len(PASTEL_COLORS)
+
+        imported_count = 0
+        updated_count = 0
+        img_copied_count = 0
+
+        # 캐릭터 이미지용 디렉토리 생성
+        img_dir = os.path.join(config.PROJECTS_DIR, self.current_title, "character_images")
+        os.makedirs(img_dir, exist_ok=True)
+
+        for i, block in enumerate(blocks[1:]):
+            name_match = re.search(r'\bname="([^"]*)"', block)
+            if not name_match:
+                continue
+            name = name_match.group(1).strip()
+            if not name or name == "NA":
+                continue
+
+            role_raw = re.search(r'\brole="([^"]*)"', block)
+            age_raw = re.search(r'\bage="([^"]*)"', block)
+            gender_raw = re.search(r'\bgender="([^"]*)"', block)
+            img_match = re.search(r'<img[^>]+src="([^"]*)"', block)
+
+            role = role_map.get(role_raw.group(1) if role_raw else "", "단역")
+            age = age_map.get(age_raw.group(1) if age_raw else "", "미상")
+            gender = gender_map.get(gender_raw.group(1) if gender_raw else "", "미상")
+            img_src = img_match.group(1) if img_match else ""
+
+            # 이미지 마이그레이션 처리
+            image_field_val = ""
+            if img_src:
+                img_src_decoded = urllib.parse.unquote(img_src)
+                src_img_path = os.path.abspath(os.path.join(migration_dir, img_src_decoded))
+                
+                if os.path.exists(src_img_path):
+                    target_img_relative = f"character_images/{name}.png"
+                    target_img_absolute = os.path.join(config.PROJECTS_DIR, self.current_title, target_img_relative)
+                    try:
+                        pix = QPixmap(src_img_path)
+                        if not pix.isNull():
+                            scaled_pix = get_round_rect_pixmap(pix, 150, 150, 12)
+                            scaled_pix.save(target_img_absolute, "PNG")
+                            image_field_val = target_img_relative
+                            img_copied_count += 1
+                    except Exception as img_err:
+                        print(f"이미지 마이그레이션 실패 ({name}): {img_err}")
+
+            if name not in global_dict:
+                # 신규 캐릭터
+                new_char = {
+                    "name": name,
+                    "role": role,
+                    "age": age,
+                    "gender": gender,
+                    "color": PASTEL_COLORS[color_idx],
+                    "image_path": image_field_val,
+                    "memo": ""
+                }
+                global_dict[name] = new_char
+                color_idx = (color_idx + 1) % len(PASTEL_COLORS)
+                imported_count += 1
+            else:
+                # 기존 캐릭터 정보 보강 및 이미지 덮어쓰기
+                existing = global_dict[name]
+                changed = False
+                if existing.get("age") == "미상" and age != "미상":
+                    existing["age"] = age
+                    changed = True
+                if existing.get("gender") == "미상" and gender != "미상":
+                    existing["gender"] = gender
+                    changed = True
+                if existing.get("role") == "단역" and role in ["주연", "조연"]:
+                    existing["role"] = role
+                    changed = True
+                if image_field_val and not existing.get("image_path"):
+                    existing["image_path"] = image_field_val
+                    changed = True
+                if changed:
+                    updated_count += 1
+
+        # 저장
+        if imported_count > 0 or updated_count > 0:
+            config.save_global_characters(self.current_title, list(global_dict.values()))
+            
+            # 현재 열려 있는 스텝2 캐릭터 카드가 있다면 새로고침
+            self.load_data()
+            
+            # 캐릭터 도우미 창이 열려 있다면 즉시 리로드
+            if hasattr(self, 'character_viewer') and self.character_viewer is not None and self.character_viewer.isVisible():
+                self.character_viewer.load_data()
+
+            self.toast.show_message("✅ 외부 캐릭터 DB 마이그레이션 완료!", 3000)
+            QMessageBox.information(
+                self,
+                "마이그레이션 완료",
+                f"캐릭터 마이그레이션이 완료되었습니다!\n\n"
+                f"• 신규 등록 캐릭터: {imported_count}명\n"
+                f"• 기존 캐릭터 정보 보강: {updated_count}명\n"
+                f"• 프로필 이미지 가져옴: {img_copied_count}개"
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "마이그레이션 결과",
+                "HTML 파일에서 새로 추가하거나 보완할 캐릭터 정보가 없습니다.\n이미 모두 최신 상태로 등록되어 있습니다."
+            )
 
     def insert_script_row_at(self, row_idx):
         if row_idx < 0: row_idx = self.table_script.rowCount()
@@ -2563,11 +3166,17 @@ class WebtoonManager(QMainWindow):
             line_item = self.table_script.item(i, 1)
             line_text = line_item.text() if line_item else ""
             rows.append({'Character': char_name, 'Line': line_text})
+            
+            # [추가] 신규 배역 입력 또는 외부/글로벌 캐릭터 카드 드롭 시 스텝 2 캐릭터 목록에 자동 추가!
+            if char_name and char_name.strip():
+                self.sync_new_character(char_name)
         df = pd.DataFrame(rows)
         df.to_csv(os.path.join(e_path, "script_data.csv"), index=False, encoding='utf-8-sig')
         self.table_script.resizeRowsToContents()
-        # self.lbl_step3_status.setText("💾 저장 완료")
-        # QTimer.singleShot(1500, lambda: self.lbl_step3_status.setText(""))
+        
+        # [추가] 실시간 캐릭터 도우미 "현재 회차" 탭 동기화
+        if hasattr(self, 'character_viewer') and self.character_viewer is not None and self.character_viewer.isVisible():
+            self.character_viewer.load_current_episode_characters()
         pass
 
     def save_char_data(self):
@@ -2581,32 +3190,45 @@ class WebtoonManager(QMainWindow):
                 rows.append(widget.get_data())
         df = pd.DataFrame(rows)
         df.to_csv(os.path.join(e_path, "character_info.csv"), index=False, encoding='utf-8-sig')
+        
+        # [추가] 실시간 캐릭터 도우미 "현재 회차" 탭 동기화
+        if hasattr(self, 'character_viewer') and self.character_viewer is not None and self.character_viewer.isVisible():
+            self.character_viewer.load_current_episode_characters()
 
     def load_data(self):
         import pandas as pd
         e_path, _, s_path = self.get_paths()
         if not e_path or not s_path: return # 경로가 없으면 로드 중단
 
+        # 1. 스크립트 원본 텍스트 로드
         self.text_editor.blockSignals(True)
         if os.path.exists(s_path):
             with open(s_path, 'r', encoding='utf-8') as f: self.text_editor.setText(f.read())
         else: self.text_editor.clear()
         self.text_editor.blockSignals(False)
+        
+        # 2. 스텝 2 캐릭터 목록 초기화 및 로드
         while self.char_layout.count():
             child = self.char_layout.takeAt(0)
             if child.widget(): child.widget().deleteLater()
+            
         c_csv = os.path.join(e_path, "character_info.csv")
         if os.path.exists(c_csv):
-            df = pd.read_csv(c_csv, keep_default_na=False)
-            for _, row in df.iterrows():
-                self.add_character_card(
-                    name=str(row.get('Character','')),
-                    age=str(row.get('Age','')),
-                    gender=str(row.get('Gender','')),
-                    role=str(row.get('Role',''))
-                )
+            # [수정] 빈 파일이거나 파싱 오류 시 예외 처리를 통해 다음 단계(스크립트 테이블 로드)를 방해하지 않도록 보호
+            try:
+                if os.path.getsize(c_csv) > 0:
+                    df = pd.read_csv(c_csv, keep_default_na=False)
+                    for _, row in df.iterrows():
+                        self.add_character_card(
+                            name=str(row.get('Character','')),
+                            age=str(row.get('Age','')),
+                            gender=str(row.get('Gender','')),
+                            role=str(row.get('Role',''))
+                        )
+            except Exception as e:
+                print(f"character_info.csv 로드 중 오류 발생 (무시하고 대본 계속 로드): {e}")
         
-        # 3. 스크립트 테이블 데이터 로드
+        # 3. 스텝 3 스크립트 테이블 데이터 로드
         self.table_script.blockSignals(True)
         self.table_script.setRowCount(0)
         s_csv = os.path.join(e_path, "script_data.csv")
@@ -2615,17 +3237,22 @@ class WebtoonManager(QMainWindow):
         char_list = self.get_character_list()
         
         if os.path.exists(s_csv):
-            df = pd.read_csv(s_csv, keep_default_na=False)
-            for _, row in df.iterrows():
-                r = self.table_script.rowCount()
-                self.table_script.insertRow(r)
-                
-                # 캐릭터 콤보박스
-                combo = self.create_table_combo(char_list, str(row.get('Character','')))
-                self.table_script.setCellWidget(r, 0, combo)
-                
-                # 대사
-                self.table_script.setItem(r, 1, QTableWidgetItem(str(row.get('Line',''))))
+            # [수정] 스크립트 데이터 로드 시에도 빈 파일 예외 처리를 추가하여 비정상 종료로부터 보호
+            try:
+                if os.path.getsize(s_csv) > 0:
+                    df = pd.read_csv(s_csv, keep_default_na=False)
+                    for _, row in df.iterrows():
+                        r = self.table_script.rowCount()
+                        self.table_script.insertRow(r)
+                        
+                        # 캐릭터 콤보박스
+                        combo = self.create_table_combo(char_list, str(row.get('Character','')))
+                        self.table_script.setCellWidget(r, 0, combo)
+                        
+                        # 대사
+                        self.table_script.setItem(r, 1, QTableWidgetItem(str(row.get('Line',''))))
+            except Exception as e:
+                print(f"script_data.csv 로드 중 오류 발생: {e}")
         
         self.table_script.blockSignals(False)
         self.table_script.resizeRowsToContents()

@@ -795,13 +795,17 @@ class SpreadsheetTable(QTableWidget):
                 return
 
     def dragEnterEvent(self, event):
-        if event.source() == self:
+        if event.mimeData().hasFormat("application/x-character-row"):
+            event.acceptProposedAction()
+        elif event.source() == self:
             event.accept()
         else:
             super().dragEnterEvent(event)
 
     def dragMoveEvent(self, event):
-        if event.source() == self:
+        if event.mimeData().hasFormat("application/x-character-row"):
+            event.acceptProposedAction()
+        elif event.source() == self:
             event.setDropAction(Qt.MoveAction)
             event.accept()
             row = self.rowAt(event.pos().y())
@@ -835,9 +839,46 @@ class SpreadsheetTable(QTableWidget):
             painter.drawLine(0, y, self.viewport().width(), y)
 
     def dropEvent(self, event):
-        """드래그 앤 드롭으로 행 전체를 이동시키는 로직 (커스텀 위젯 대응)"""
+        """드래그 앤 드롭으로 행 전체를 이동시키거나 외부 캐릭터를 배정하는 로직"""
         self.drop_target_row = None
         self.viewport().update()
+
+        # [추가] 외부 캐릭터 도우미에서 캐릭터 카드를 시트의 배역 셀로 떨어뜨렸을 때 처리
+        if event.mimeData().hasFormat("application/x-character-row"):
+            import json
+            event.acceptProposedAction()
+            mime_text = event.mimeData().text()
+            if mime_text:
+                try:
+                    char_info = json.loads(mime_text)
+                    char_name = char_info.get("name", "")
+                    if char_name:
+                        row = self.rowAt(event.pos().y())
+                        
+                        # 시트의 아래쪽 빈 공간이나 행이 없는 곳에 떨궜다면 자동으로 새 행을 추가하여 배정
+                        if row == -1:
+                            mw = self.window()
+                            if hasattr(mw, 'insert_script_row_at'):
+                                mw.insert_script_row_at(-1)
+                                row = self.rowCount() - 1
+                                
+                        if 0 <= row < self.rowCount():
+                            self.save_state_for_undo()
+                            combo = self.cellWidget(row, 0)
+                            if isinstance(combo, QComboBox):
+                                combo.setCurrentText(char_name)
+                            else:
+                                item = self.item(row, 0)
+                                if item:
+                                    item.setText(char_name)
+                            
+                            # 즉시 변경사항 저장 및 연동 갱신 호출
+                            mw = self.window()
+                            if hasattr(mw, 'save_script_data'):
+                                mw.save_script_data()
+                except Exception as e:
+                    print("Error dropping character:", e)
+            return
 
         if event.source() != self or not (event.dropAction() & (Qt.MoveAction | Qt.CopyAction)):
             return
@@ -3371,8 +3412,8 @@ class FloatingIdiomViewer(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("관용구 도우미")
-        # 윈도우 모드 + 항상 위 옵션 (비모달로 띄워야 함)
-        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
+        # [수정] 표준 최소화/최대화/닫기 단추가 다 있는 일반 윈도우 스타일로 지정하되, 항상 메인 프로그램 창의 위에 뜨고 타 앱 전환 시에는 같이 뒤로 숨도록 구성
+        self.setWindowFlags(Qt.Window | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
         self.setMinimumSize(300, 450)
         self.init_ui()
         self.refresh_list()
@@ -3503,7 +3544,7 @@ from PySide6.QtCore import Qt, QMimeData, QPoint, Signal, QSize
 from PySide6.QtGui import QDrag, QPixmap, QPainter, QColor, QFont
 from PySide6.QtWidgets import (QListWidget, QDialog, QVBoxLayout, QHBoxLayout, 
                              QLineEdit, QLabel, QPushButton, QListWidgetItem, 
-                             QWidget, QGridLayout, QComboBox, QScrollArea, QMessageBox)
+                             QWidget, QGridLayout, QComboBox, QScrollArea, QMessageBox, QTabWidget)
 
 class DraggableCharacterListWidget(QListWidget):
     """드래그 앤 드롭을 지원하는 캐릭터 전용 QListWidget"""
@@ -3562,23 +3603,76 @@ class FloatingCharacterViewer(QDialog):
         super().__init__(parent)
         self.project_name = project_name
         self.setWindowTitle("👤 캐릭터 도우미")
-        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint) # 항상 위 플로팅 옵션
-        self.resize(320, 500)
+        # [수정] 표준 최소화/최대화/닫기 단추가 다 있는 일반 윈도우 스타일로 지정하되, 항상 메인 프로그램 창의 위에 뜨고 타 앱 전환 시에는 같이 뒤로 숨도록 구성
+        self.setWindowFlags(Qt.Window | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
+        self.resize(340, 520)
         
         self.init_ui()
         self.load_data()
         
     def init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 12, 10, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(8, 10, 8, 10)
+        layout.setSpacing(8)
+        
+        # 탭 위젯 생성
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("""
+            QTabBar {
+                qproperty-drawBase: 0;
+            }
+            QTabWidget::pane {
+                border: 1px solid #E5E7EB;
+                border-top-left-radius: 0px;
+                border-top-right-radius: 8px;
+                border-bottom-left-radius: 8px;
+                border-bottom-right-radius: 8px;
+                background-color: #FFFFFF;
+            }
+            QTabBar::tab {
+                background: #F3F4F6;
+                border: 1px solid #E5E7EB;
+                border-top-left-radius: 6px;
+                border-top-right-radius: 6px;
+                padding: 8px 16px;
+                font-size: 13px;
+                font-weight: 500;
+                color: #4B5563;
+                margin-right: 2px;
+                margin-bottom: 0px;
+            }
+            QTabBar::tab:first {
+                margin-left: 0px;
+            }
+            QTabBar::tab:selected {
+                background: #FFFFFF;
+                border-color: #E5E7EB;
+                border-bottom: 2px solid #FFFFFF;
+                font-weight: bold;
+                color: #FF4B4B;
+                margin-bottom: -2px;
+            }
+            QTabBar::tab:hover:!selected {
+                background: #E5E7EB;
+            }
+        """)
+        
+        # ----------------------------------------------------
+        # 1. 전체 캐릭터 탭
+        # ----------------------------------------------------
+        self.tab_all = QWidget()
+        self.tab_all.setObjectName("tab_all")
+        self.tab_all.setStyleSheet("QWidget#tab_all { background-color: #FFFFFF; border-radius: 8px; }")
+        all_layout = QVBoxLayout(self.tab_all)
+        all_layout.setContentsMargins(8, 8, 8, 8)
+        all_layout.setSpacing(8)
         
         # 상단 안내 타이틀
-        info_label = QLabel("💡 캐릭터를 더블클릭 하거나 스텝 2의\n등장인물 영역으로 드래그해서 추가하세요.")
-        info_label.setStyleSheet("font-size: 12px; color: #4B5563; font-weight: 500; line-height: 140%;")
-        layout.addWidget(info_label)
+        info_label = QLabel("💡 캐릭터를 더블클릭 하거나 스텝 3의\n대사 영역으로 드래그해서 추가하세요.")
+        info_label.setStyleSheet("font-size: 11px; color: #6B7280; font-weight: 500; line-height: 140%;")
+        all_layout.addWidget(info_label)
         
-        # 검색 바
+        # 검색 + 리프레시 레이아웃
         search_layout = QHBoxLayout()
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("🔍 캐릭터 이름 검색...")
@@ -3599,7 +3693,7 @@ class FloatingCharacterViewer(QDialog):
         self.search_bar.textChanged.connect(self.filter_list)
         search_layout.addWidget(self.search_bar)
         
-        # 리프레시 버튼 (32x32의 동적 벡터 새로고침 SVG 아이콘 버튼화)
+        # 리프레시 버튼
         self.btn_refresh = QPushButton()
         self.btn_refresh.setToolTip("목록 새로고침")
         self.btn_refresh.setFixedSize(32, 32)
@@ -3614,13 +3708,13 @@ class FloatingCharacterViewer(QDialog):
                 background-color: #FFF5F5;
             }
         """)
+        self.btn_refresh.clicked.connect(self.load_data)
         
-        # Lucide refresh-ccw SVG 기반 칼정밀 렌더링 구현 (철통 예외 처리 포함)
+        # SVG 아이콘 렌더링
         try:
             from PySide6.QtSvg import QSvgRenderer
             from PySide6.QtGui import QPixmap, QPainter, QIcon
             from PySide6.QtCore import QByteArray, QSize
-            
             svg_code = """
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
@@ -3629,76 +3723,49 @@ class FloatingCharacterViewer(QDialog):
                 <path d="M16 16h5v5"/>
             </svg>
             """
-            
             renderer = QSvgRenderer(QByteArray(svg_code.encode('utf-8')))
-            pixmap = QPixmap(20, 20)
-            pixmap.fill(Qt.transparent)
-            painter = QPainter(pixmap)
+            pix = QPixmap(20, 20)
+            pix.fill(Qt.transparent)
+            painter = QPainter(pix)
             renderer.render(painter)
             painter.end()
-            
-            self.btn_refresh.setIcon(QIcon(pixmap))
+            self.btn_refresh.setIcon(QIcon(pix))
             self.btn_refresh.setIconSize(QSize(20, 20))
-            
         except Exception:
-            # Fallback 안전 예비 드로잉 (절대 프로그램이 튕기지 않게 방어)
-            from PySide6.QtGui import QPixmap, QPainter, QPen, QBrush, QIcon, QColor
-            from PySide6.QtCore import QPointF, QRectF, QSize
+            pass
             
-            fallback_pixmap = QPixmap(32, 32)
-            fallback_pixmap.fill(Qt.transparent)
-            painter = QPainter(fallback_pixmap)
-            painter.setRenderHint(QPainter.Antialiasing)
-            
-            arc_pen = QPen(QColor("#4B5563"), 2.2)
-            arc_pen.setCapStyle(Qt.RoundCap)
-            painter.setPen(arc_pen)
-            
-            rect = QRectF(8, 8, 16, 16)
-            painter.drawArc(rect, 55 * 16, -280 * 16)
-            
-            painter.setBrush(QBrush(QColor("#4B5563")))
-            painter.setPen(Qt.NoPen)
-            arrow_points = [
-                QPointF(20, 5),
-                QPointF(24, 10),
-                QPointF(16, 10)
-            ]
-            painter.drawPolygon(arrow_points)
-            painter.end()
-            
-            self.btn_refresh.setIcon(QIcon(fallback_pixmap))
-            self.btn_refresh.setIconSize(QSize(32, 32))
-            
-        self.btn_refresh.clicked.connect(self.load_data)
         search_layout.addWidget(self.btn_refresh)
+        all_layout.addLayout(search_layout)
         
-        layout.addLayout(search_layout)
-        
-        # 캐릭터 리스트 위젯 (드래그앤드롭 전용 위젯 사용)
         self.list_widget = DraggableCharacterListWidget(self)
-        self.list_widget.setStyleSheet("""
-            QListWidget {
-                border: 1px solid #E5E7EB;
-                border-radius: 8px;
-                background-color: #FFFFFF;
-                padding: 5px;
-                outline: none; /* 클릭 시 겉돌던 점선/실선 포커스 아웃라인 완벽 제거! */
-            }
-            QListWidget::item {
-                border-radius: 6px;
-                margin: 2px 0px;
-            }
-            QListWidget::item:hover {
-                background-color: #FFF5F5;
-            }
-            QListWidget::item:selected {
-                background-color: #FFECEC;
-                border: 1px solid #FFCDCD;
-            }
-        """)
+        self.list_widget.setStyleSheet(self._list_stylesheet())
         self.list_widget.itemDoubleClicked.connect(self.on_item_double_clicked)
-        layout.addWidget(self.list_widget)
+        all_layout.addWidget(self.list_widget)
+        
+        self.tabs.addTab(self.tab_all, "👥 전체 캐릭터")
+        
+        # ----------------------------------------------------
+        # 2. 현재 회차 탭
+        # ----------------------------------------------------
+        self.tab_current = QWidget()
+        self.tab_current.setObjectName("tab_current")
+        self.tab_current.setStyleSheet("QWidget#tab_current { background-color: #FFFFFF; border-radius: 8px; }")
+        current_layout = QVBoxLayout(self.tab_current)
+        current_layout.setContentsMargins(8, 8, 8, 8)
+        current_layout.setSpacing(8)
+        
+        current_info = QLabel("⭐ 시트 대사에 한 번이라도 배정된 캐릭터들이\n자동으로 이곳에 나타나 초간편 드래그를 도웁니다.")
+        current_info.setStyleSheet("font-size: 11px; color: #059669; font-weight: 500; line-height: 140%;")
+        current_layout.addWidget(current_info)
+        
+        self.list_widget_current = DraggableCharacterListWidget(self)
+        self.list_widget_current.setStyleSheet(self._list_stylesheet())
+        self.list_widget_current.itemDoubleClicked.connect(self.on_item_double_clicked)
+        current_layout.addWidget(self.list_widget_current)
+        
+        self.tabs.addTab(self.tab_current, "✨ 현재 회차 등장인물")
+        
+        layout.addWidget(self.tabs)
         
         # 하단 닫기 버튼
         self.btn_close = QPushButton("닫기")
@@ -3708,7 +3775,7 @@ class FloatingCharacterViewer(QDialog):
                 color: white;
                 border: none;
                 border-radius: 6px;
-                padding: 8px;
+                padding: 8px 24px;
                 font-weight: bold;
             }
             QPushButton:hover {
@@ -3718,13 +3785,110 @@ class FloatingCharacterViewer(QDialog):
         self.btn_close.clicked.connect(self.close)
         layout.addWidget(self.btn_close)
         
+    def _list_stylesheet(self):
+        return """
+            QListWidget {
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                background-color: #FFFFFF;
+                padding: 5px;
+                outline: none;
+            }
+            QListWidget::item {
+                border-radius: 6px;
+                margin: 2px 0px;
+                padding: 0px; /* 글로벌 패딩 8px 무력화 */
+            }
+            QListWidget::item:hover {
+                background-color: #FFF5F5;
+            }
+            QListWidget::item:selected {
+                background-color: #FFECEC;
+                border: 1px solid #FFCDCD;
+            }
+        """
+
+    def _create_character_card_widget(self, char):
+        name = char.get("name", "")
+        container = QWidget()
+        container.setStyleSheet("background: transparent; border: none;")
+        item_layout = QHBoxLayout(container)
+        item_layout.setContentsMargins(12, 6, 12, 6)
+        item_layout.setSpacing(12)
+        
+        lbl_item_avatar = QLabel()
+        lbl_item_avatar.setFixedSize(44, 44)
+        lbl_item_avatar.setStyleSheet("border: none; background: transparent;")
+        
+        img_path = char.get("image_path", "")
+        full_img_path = ""
+        if img_path:
+            import config
+            full_img_path = os.path.join(config.PROJECTS_DIR, self.project_name, img_path)
+            
+        if full_img_path and os.path.exists(full_img_path):
+            pix = QPixmap(full_img_path)
+            if not pix.isNull():
+                lbl_item_avatar.setPixmap(get_round_rect_pixmap(pix, 44, 44, 8))
+            else:
+                full_img_path = ""
+                
+        if not full_img_path:
+            default_pix = QPixmap(44, 44)
+            default_pix.fill(Qt.transparent)
+            
+            painter = QPainter(default_pix)
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.setPen(QPen(QColor("#E5E7EB"), 1))
+            painter.setBrush(QColor("#F3F4F6"))
+            painter.drawRoundedRect(0, 0, 44, 44, 8, 8)
+            
+            font = QFont("Pretendard", 20, QFont.Bold)
+            painter.setFont(font)
+            painter.setPen(QColor("#9CA3AF"))
+            painter.drawText(QRect(0, 0, 44, 44), Qt.AlignCenter, "👤")
+            painter.end()
+            lbl_item_avatar.setPixmap(default_pix)
+            
+        item_layout.addWidget(lbl_item_avatar, 0, Qt.AlignVCenter)
+        
+        lbl_name = QLabel(name)
+        lbl_name.setStyleSheet("font-size: 14px; font-weight: bold; color: #1F2937; background: transparent;")
+        item_layout.addWidget(lbl_name, 1, Qt.AlignVCenter)
+        
+        role = char.get("role", "단역")
+        lbl_role = QLabel(role)
+        lbl_role.setAlignment(Qt.AlignCenter)
+        
+        role_colors = {
+            "주연": {"bg": "#FEE2E2", "text": "#EF4444", "border": "#FCA5A5"},
+            "조연": {"bg": "#FEF3C7", "text": "#D97706", "border": "#FCD34D"},
+            "단역": {"bg": "#F3F4F6", "text": "#4B5563", "border": "#E5E7EB"}
+        }
+        colors = role_colors.get(role, role_colors["단역"])
+        
+        lbl_role.setStyleSheet(f"""
+            QLabel {{
+                background-color: {colors['bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 4px;
+                padding: 2px 6px;
+                font-size: 11px;
+                font-weight: bold;
+            }}
+        """)
+        item_layout.addWidget(lbl_role, 0, Qt.AlignVCenter)
+        
+        return container
+
     def load_data(self):
         self.list_widget.clear()
         
         import config
         chars = config.load_global_characters(self.project_name)
         
-        # [정렬 추가] 역할 우선순위(주연 ➔ 조연 ➔ 단역) 및 가나다 이름 순 다중 정렬
+        # 역할 우선순위(주연 ➔ 조연 ➔ 단역) 및 가나다 이름 순 다중 정렬
         role_priority = {"주연": 0, "조연": 1, "단역": 2}
         chars.sort(key=lambda c: (role_priority.get(c.get("role", "단역"), 2), c.get("name", "")))
         
@@ -3734,85 +3898,9 @@ class FloatingCharacterViewer(QDialog):
                 continue
                 
             list_item = QListWidgetItem()
-            list_item.setSizeHint(QSize(0, 62)) # 리스트 카드의 높이를 48px에서 62px로 대폭 키워 시원하고 넓은 레이아웃 확보!
+            list_item.setSizeHint(QSize(0, 60))
             
-            # 커스텀 위젯 생성 및 투명 스타일시트 부여하여 클릭 시 붕 뜨는 볼록 프레임 현상 완벽 박멸!
-            container = QWidget()
-            container.setStyleSheet("background: transparent; border: none;")
-            item_layout = QHBoxLayout(container)
-            item_layout.setContentsMargins(10, 0, 10, 0)
-            item_layout.setSpacing(12)
-            
-            # 앙증맞았던 미니 아바타를 44x44로 웅장하게 키워 작화 시인성 대폭 극대화!
-            lbl_item_avatar = QLabel()
-            lbl_item_avatar.setFixedSize(44, 44)
-            lbl_item_avatar.setStyleSheet("border: none; background: transparent;")
-            
-            img_path = char.get("image_path", "")
-            full_img_path = ""
-            if img_path:
-                import config
-                full_img_path = os.path.join(config.PROJECTS_DIR, self.project_name, img_path)
-                
-            if full_img_path and os.path.exists(full_img_path):
-                pix = QPixmap(full_img_path)
-                if not pix.isNull():
-                    lbl_item_avatar.setPixmap(get_round_rect_pixmap(pix, 44, 44, 8)) # 44x44 크기에 맞춰 8px 반경으로 부드럽게 라운딩!
-                else:
-                    full_img_path = ""
-                    
-            if not full_img_path:
-                # 기본 👤 아바타 플레이스홀더도 44x44에 맞춰 시원하게 스케일업! (radius 8px, 폰트 20px)
-                default_pix = QPixmap(44, 44)
-                default_pix.fill(Qt.transparent)
-                
-                painter = QPainter(default_pix)
-                painter.setRenderHint(QPainter.Antialiasing, True)
-                painter.setPen(QPen(QColor("#E5E7EB"), 1))
-                painter.setBrush(QColor("#F3F4F6"))
-                painter.drawRoundedRect(0, 0, 44, 44, 8, 8)
-                
-                font = QFont("Pretendard", 20, QFont.Bold)
-                painter.setFont(font)
-                painter.setPen(QColor("#9CA3AF"))
-                painter.drawText(QRect(0, 0, 44, 44), Qt.AlignCenter, "👤")
-                painter.end()
-                lbl_item_avatar.setPixmap(default_pix)
-                
-            item_layout.addWidget(lbl_item_avatar)
-            
-            # 이름 텍스트
-            lbl_name = QLabel(name)
-            lbl_name.setStyleSheet("font-size: 14px; font-weight: bold; color: #1F2937; background: transparent;")
-            item_layout.addWidget(lbl_name, 1)
-            
-            # 역할 뱃지
-            role = char.get("role", "단역")
-            lbl_role = QLabel(role)
-            lbl_role.setAlignment(Qt.AlignCenter)
-            
-            # 역할별 스타일 색상 배정
-            role_colors = {
-                "주연": {"bg": "#FEE2E2", "text": "#EF4444", "border": "#FCA5A5"},
-                "조연": {"bg": "#FEF3C7", "text": "#D97706", "border": "#FCD34D"},
-                "단역": {"bg": "#F3F4F6", "text": "#4B5563", "border": "#E5E7EB"}
-            }
-            colors = role_colors.get(role, role_colors["단역"])
-            
-            lbl_role.setStyleSheet(f"""
-                QLabel {{
-                    background-color: {colors['bg']};
-                    color: {colors['text']};
-                    border: 1px solid {colors['border']};
-                    border-radius: 4px;
-                    padding: 2px 6px;
-                    font-size: 11px;
-                    font-weight: bold;
-                }}
-            """)
-            item_layout.addWidget(lbl_role)
-            
-            # 데이터를 아이템 객체에 저장
+            container = self._create_character_card_widget(char)
             list_item.setData(Qt.UserRole, char)
             
             self.list_widget.addItem(list_item)
@@ -3820,6 +3908,87 @@ class FloatingCharacterViewer(QDialog):
             
         self.filter_list()
         
+        # 현재 회차 캐릭터 로드
+        self.load_current_episode_characters()
+        
+    def load_current_episode_characters(self):
+        """현재 회차 스프레드시트 시트 대사에 사용되고 있는 배역 목록을 파악해서
+        실시간으로 차곡차곡 리스트에 동기화해 줍니다."""
+        self.list_widget_current.clear()
+        
+        mw = self.parent()
+        if not mw or not hasattr(mw, 'table_script'):
+            from PySide6.QtWidgets import QApplication
+            for widget in QApplication.topLevelWidgets():
+                if widget.__class__.__name__ == 'MainWindow':
+                    mw = widget
+                    break
+        
+        if not mw or not hasattr(mw, 'table_script'):
+            return
+            
+        # 1. 스프레드시트 0번째 열(배역 콤보박스)의 텍스트들을 전부 수집
+        table = mw.table_script
+        active_names = set()
+        for r in range(table.rowCount()):
+            combo = table.cellWidget(r, 0)
+            if isinstance(combo, QComboBox):
+                name = combo.currentText().strip()
+                if name:
+                    active_names.add(name)
+            else:
+                item = table.item(r, 0)
+                if item:
+                    name = item.text().strip()
+                    if name:
+                        active_names.add(name)
+                        
+        # [추가] 1-2. 스텝 2 캐릭터 목록(현재 작품에 추가된 캐릭터 카드 목록)의 이름들도 현재 회차 등장인물 탭에 포함 수집
+        if hasattr(mw, 'get_character_list'):
+            step2_names = mw.get_character_list()
+            for name in step2_names:
+                name_clean = name.strip()
+                if name_clean:
+                    active_names.add(name_clean)
+                        
+        if not active_names:
+            return
+            
+        # 2. 글로벌 캐릭터 정보와 매핑하여 고품격 아바타 카드로 현재 회차 탭에 등록
+        import config
+        global_chars = config.load_global_characters(self.project_name)
+        global_chars_dict = {c.get("name", ""): c for c in global_chars}
+        
+        # [수정] 배역(주연 > 조연 > 단역) > 가나다 순으로 다중 정렬 적용
+        role_priority = {"주연": 0, "조연": 1, "단역": 2}
+        def get_current_char_sort_key(name):
+            char = global_chars_dict.get(name)
+            role = char.get("role", "단역") if char else "단역"
+            return (role_priority.get(role, 2), name)
+            
+        sorted_names = sorted(list(active_names), key=get_current_char_sort_key)
+        for name in sorted_names:
+            char = global_chars_dict.get(name)
+            if not char:
+                # 글로벌 DB에 없는 임시 캐릭터일 경우 플레이스홀더 데이터 자동 빌드
+                char = {
+                    "name": name,
+                    "role": "단역",
+                    "gender": "기타",
+                    "age": "미정",
+                    "image_path": "",
+                    "color": "#6B7280"
+                }
+                
+            list_item = QListWidgetItem()
+            list_item.setSizeHint(QSize(0, 60))
+            
+            container = self._create_character_card_widget(char)
+            list_item.setData(Qt.UserRole, char)
+            
+            self.list_widget_current.addItem(list_item)
+            self.list_widget_current.setItemWidget(list_item, container)
+
     def set_project_name(self, project_name):
         """작품 변경 시 실시간으로 캐릭터 데이터를 갱신하여 표시합니다."""
         self.project_name = project_name
@@ -3837,7 +4006,6 @@ class FloatingCharacterViewer(QDialog):
         char_info = item.data(Qt.UserRole)
         if char_info:
             self.character_selected.emit(char_info)
-            # 메인 윈도우 찾기 (부모 위젯 우선 검색 및 전체 topLevelWidgets 검색으로 견고하게 보정)
             mw = self.parent()
             if not mw or not hasattr(mw, 'add_character_card'):
                 from PySide6.QtWidgets import QApplication
@@ -3854,6 +4022,212 @@ class FloatingCharacterViewer(QDialog):
                     role=char_info.get("role", "")
                 )
 
+    def import_characters_from_html(self):
+        """선택한 HTML/MHTML 파일로부터 캐릭터 목록을 고급 파싱 및 프로필 추출하여 로드합니다."""
+        html_path, _ = QFileDialog.getOpenFileName(
+            self, 
+            "캐릭터 HTML/MHTML 파일 열기", 
+            "", 
+            "HTML/MHTML 파일 (*.html *.htm *.mhtml *.mht)"
+        )
+        if not html_path:
+            return
+            
+        import os
+        import re
+        import uuid
+        import email
+        from email import policy
+        
+        html_content = ""
+        image_parts = {}
+        is_mhtml = html_path.lower().endswith(('.mhtml', '.mht'))
+        
+        if is_mhtml:
+            try:
+                with open(html_path, 'rb') as f:
+                    msg = email.message_from_binary_file(f, policy=policy.default)
+                
+                for part in msg.walk():
+                    content_type = part.get_content_type()
+                    content_location = part.get("Content-Location", "")
+                    content_id = part.get("Content-ID", "")
+                    
+                    if content_type == "text/html":
+                        if not html_content:
+                            html_bytes = part.get_payload(decode=True)
+                            charset = part.get_content_charset() or "utf-8"
+                            html_content = html_bytes.decode(charset, errors='ignore')
+                    elif content_type.startswith("image/"):
+                        img_bytes = part.get_payload(decode=True)
+                        key = content_location or content_id
+                        if key:
+                            image_parts[key] = img_bytes
+            except Exception as e:
+                QMessageBox.critical(self, "가져오기 오류", f"MHTML 파일을 디코딩하는 중 오류가 발생했습니다:\n{str(e)}")
+                return
+        else:
+            try:
+                with open(html_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    html_content = f.read()
+            except Exception as e:
+                QMessageBox.critical(self, "가져오기 오류", f"HTML 파일을 읽는 중 오류가 발생했습니다:\n{str(e)}")
+                return
+                
+        # 캐릭터 div 엘리먼트 파싱을 위한 강력하고 유연한 정규식
+        div_pattern = re.compile(
+            r'<div\b[^>]*class\s*=\s*[\"\'][^\"\']*character-image[^\"\']*[\"\'][^>]*>', 
+            re.IGNORECASE
+        )
+        matches = list(div_pattern.finditer(html_content))
+        
+        if not matches:
+            QMessageBox.warning(
+                self, 
+                "파싱 오류", 
+                "선택한 파일에서 유효한 캐릭터 영역을 찾을 수 없습니다.\n올바른 캐릭터 설정 페이지에서 저장된 파일인지 확인해주세요."
+            )
+            return
+            
+        import config
+        global_chars = config.load_global_characters(self.project_name)
+        existing_names = {c.get("name", "").strip() for c in global_chars}
+        
+        imported_count = 0
+        skipped_count = 0
+        
+        role_map = {
+            "CHARACTER_ROLE_STARRING": "주연",
+            "CHARACTER_ROLE_SUPPORTING": "조연",
+            "CHARACTER_ROLE_MINOR": "단역"
+        }
+        
+        gender_map = {
+            "CHARACTER_GENDER_MALE": "남성",
+            "CHARACTER_GENDER_FEAMLE": "여성",
+            "CHARACTER_GENDER_FEMALE": "여성",
+            "CHARACTER_GENDER_UNKNOWN": "미상"
+        }
+        
+        age_map = {
+            "CHARACTER_AGE_CHILD": "어린이",
+            "CHARACTER_AGE_YOUTH": "청소년",
+            "CHARACTER_AGE_MIDDLE": "청년",
+            "CHARACTER_AGE_ADULT": "중년",
+            "CHARACTER_AGE_OLD": "노년",
+            "CHARACTER_AGE_SENIOR": "노년",
+            "CHARACTER_AGE_UNKNOWN": "미상"
+        }
+        
+        pastel_colors = ["#EF4444", "#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EC4899", "#6B7280"]
+        char_images_dir = os.path.join(config.PROJECTS_DIR, self.project_name, "characters")
+        os.makedirs(char_images_dir, exist_ok=True)
+        
+        for i, match in enumerate(matches):
+            div_tag = match.group(0)
+            
+            def get_attr(attr_name):
+                m = re.search(fr'{attr_name}\s*=\s*[\"\']([^\"\']*)[\"\']', div_tag, re.IGNORECASE)
+                return m.group(1).strip() if m else ""
+                
+            name = get_attr("name")
+            if not name:
+                continue
+                
+            if name in existing_names:
+                skipped_count += 1
+                continue
+                
+            html_role = get_attr("role")
+            html_gender = get_attr("gender")
+            html_age = get_attr("age")
+            
+            mapped_role = role_map.get(html_role, "단역")
+            mapped_gender = gender_map.get(html_gender, "미상")
+            mapped_age = age_map.get(html_age, "미상")
+            
+            # div 내부 이미지 소스 파싱
+            start_pos = match.start()
+            end_pos = min(len(html_content), start_pos + 1200)
+            div_block = html_content[start_pos:end_pos]
+            
+            img_src_match = re.search(r'<img\b[^>]*src\s*=\s*[\"\']([^\"\']*)[\"\']', div_block, re.IGNORECASE)
+            img_src = img_src_match.group(1).strip() if img_src_match else ""
+            
+            img_rel_path = ""
+            if img_src:
+                img_data = None
+                if is_mhtml and img_src in image_parts:
+                    img_data = image_parts[img_src]
+                elif img_src.startswith("data:image/"):
+                    base64_match = re.search(r'data:image/[^;]+;base64,(.*)', img_src)
+                    if base64_match:
+                        import base64
+                        try:
+                            img_data = base64.b64decode(base64_match.group(1))
+                        except Exception:
+                            pass
+                elif not is_mhtml:
+                    html_dir = os.path.dirname(html_path)
+                    html_base = os.path.splitext(os.path.basename(html_path))[0]
+                    files_dir = os.path.join(html_dir, f"{html_base}_files")
+                    
+                    local_img_name = img_src.split('/')[-1].split('?')[0]
+                    local_img_path = os.path.join(files_dir, local_img_name)
+                    
+                    if os.path.exists(local_img_path):
+                        try:
+                            with open(local_img_path, 'rb') as img_f:
+                                img_data = img_f.read()
+                        except Exception:
+                            pass
+                            
+                if img_data:
+                    safe_name = re.sub(r'[\\/*?:"<>|]', "", name)
+                    img_filename = f"{safe_name}_{uuid.uuid4().hex[:8]}.png"
+                    img_full_path = os.path.join(char_images_dir, img_filename)
+                    
+                    try:
+                        with open(img_full_path, 'wb') as img_f:
+                            img_f.write(img_data)
+                        img_rel_path = f"characters/{img_filename}"
+                    except Exception as e:
+                        print("Failed to save character avatar:", e)
+                        
+            import random
+            char_color = random.choice(pastel_colors)
+            
+            new_char = {
+                "name": name,
+                "role": mapped_role,
+                "gender": mapped_gender,
+                "age": mapped_age,
+                "image_path": img_rel_path,
+                "color": char_color
+            }
+            global_chars.append(new_char)
+            existing_names.add(name)
+            imported_count += 1
+            
+        config.save_global_characters(self.project_name, global_chars)
+        self.load_data()
+        
+        mw = self.parent()
+        if not mw or not hasattr(mw, 'add_character_card'):
+            from PySide6.QtWidgets import QApplication
+            for widget in QApplication.topLevelWidgets():
+                if widget.__class__.__name__ == 'MainWindow':
+                    mw = widget
+                    break
+                    
+        if mw and hasattr(mw, 'load_project_characters'):
+            mw.load_project_characters()
+            
+        QMessageBox.information(
+            self, 
+            "가져오기 완료", 
+            f"캐릭터 정보 가져오기가 완료되었습니다!\n\n- 성공적으로 가져옴: {imported_count}명\n- 중복으로 제외됨: {skipped_count}명"
+        )
 
 def get_round_pixmap(pixmap, size=32):
     """QPixmap을 인자로 받아 안티앨리어싱이 적용된 원형으로 깎아낸 QPixmap을 반환합니다.
@@ -3884,7 +4258,7 @@ def get_round_pixmap(pixmap, size=32):
 
 def get_round_rect_pixmap(pixmap, w, h, radius=8):
     """QPixmap을 받아 안티앨리어싱이 적용된 둥근 모서리 직사각형(Rounded Rectangle)으로 깎아낸 QPixmap을 반환합니다.
-    AspectFill 비율로 배치합니다."""
+    AspectFill 비율로 배치하며, 외곽 경계선에 부드러운 테두리를 입혀 흰색 배경에서도 또렷하게 구분되도록 합니다."""
     if pixmap.isNull():
         return pixmap
         
@@ -3904,6 +4278,13 @@ def get_round_rect_pixmap(pixmap, w, h, radius=8):
     x = (w - scaled.width()) // 2
     y = (h - scaled.height()) // 2
     painter.drawPixmap(x, y, scaled)
+    
+    # [수정] 테두리가 지저분하게 뭉개지지 않도록 클립 해제 후 외곽 1px 경계선 드로잉
+    painter.setClipping(False)
+    painter.setPen(QPen(QColor("#E5E7EB"), 1))
+    painter.setBrush(Qt.NoBrush)
+    painter.drawRoundedRect(0.5, 0.5, w - 1, h - 1, radius, radius)
+    
     painter.end()
     
     return target
@@ -4365,6 +4746,35 @@ class GlobalCharacterSettingsDialog(QDialog):
         list_header_layout.addWidget(self.lbl_count)
         list_header_layout.addStretch()
         
+        # 캐릭터 정보 가져오기 버튼 (동기화 버튼 왼쪽에 배치)
+        self.btn_import = HoverIconButton(
+            " 캐릭터 정보 가져오기",
+            config.ICON_IMPORT,
+            normal_color="#2563EB",
+            hover_color="#1D4ED8"
+        )
+        self.btn_import.setIconSize(QSize(13, 13))
+        self.btn_import.setToolTip("HTML/MHTML 파일로부터 캐릭터 정보를 가져옵니다.")
+        self.btn_import.setStyleSheet("""
+            QPushButton {
+                background-color: #EFF6FF;
+                border: 1px solid #BFDBFE;
+                border-radius: 4px;
+                padding: 4px 10px;
+                font-size: 12px;
+                font-weight: bold;
+                color: #2563EB;
+                min-height: 18px;
+            }
+            QPushButton:hover {
+                background-color: #DBEAFE;
+                border-color: #2563EB;
+                color: #1D4ED8;
+            }
+        """)
+        self.btn_import.clicked.connect(self.import_characters_from_html)
+        list_header_layout.addWidget(self.btn_import)
+        
         # 일괄 동기화 버튼 (🔄 이모지 대신 리프레시 SVG가 탑재된 HoverIconButton)
         self.btn_sync_all = HoverIconButton(
             " 모든 회차 동기화",
@@ -4750,6 +5160,211 @@ class GlobalCharacterSettingsDialog(QDialog):
         QMessageBox.information(self, "동기화 완료", 
                                 f"총 {success_count}개 회차의 캐릭터 정보 동기화가 성공적으로 완료되었습니다.\n"
                                 f"(실패 회차 수: {error_count})")
+
+    def import_characters_from_html(self):
+        """선택한 HTML/MHTML 파일로부터 캐릭터 목록을 고급 파싱 및 프로필 추출하여 로드합니다."""
+        html_path, _ = QFileDialog.getOpenFileName(
+            self, 
+            "캐릭터 HTML/MHTML 파일 열기", 
+            "", 
+            "HTML/MHTML 파일 (*.html *.htm *.mhtml *.mht)"
+        )
+        if not html_path:
+            return
+            
+        import os
+        import re
+        import uuid
+        import email
+        from email import policy
+        
+        html_content = ""
+        image_parts = {}
+        
+        try:
+            if html_path.lower().endswith(('.mhtml', '.mht')):
+                with open(html_path, 'rb') as f:
+                    msg = email.message_from_binary_file(f, policy=policy.default)
+                
+                for part in msg.walk():
+                    content_type = part.get_content_type()
+                    content_location = part.get("Content-Location", "")
+                    content_id = part.get("Content-ID", "")
+                    
+                    if content_type == "text/html":
+                        if not html_content:
+                            html_bytes = part.get_payload(decode=True)
+                            charset = part.get_content_charset() or "utf-8"
+                            html_content = html_bytes.decode(charset, errors='ignore')
+                    elif content_type.startswith("image/"):
+                        img_bytes = part.get_payload(decode=True)
+                        key = content_location or content_id
+                        if key:
+                            image_parts[key] = img_bytes
+            else:
+                with open(html_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    html_content = f.read()
+        except Exception as e:
+            QMessageBox.critical(self, "가져오기 오류", f"MHTML 파일을 디코딩하는 중 오류가 발생했습니다:\n{str(e)}")
+            return
+            
+        div_pattern = re.compile(
+            r'<div\b[^>]*class\s*=\s*[\"\'][^\"\']*character-image[^\"\']*[\"\'][^>]*>', 
+            re.IGNORECASE
+        )
+        matches = list(div_pattern.finditer(html_content))
+        
+        if not matches:
+            QMessageBox.warning(
+                self, 
+                "파싱 실패", 
+                "선택한 파일에서 유효한 캐릭터 정보를 찾지 못했습니다.\n"
+                "올바른 캐릭터 정보 페이지 HTML/MHTML 파일인지 확인해 주세요."
+            )
+            return
+            
+        role_map = {
+            "CHARACTER_ROLE_STARRING": "주연",
+            "CHARACTER_ROLE_SUPPORTING": "조연",
+            "CHARACTER_ROLE_MINOR": "단역"
+        }
+        
+        gender_map = {
+            "CHARACTER_GENDER_MALE": "남성",
+            "CHARACTER_GENDER_FEAMLE": "여성",
+            "CHARACTER_GENDER_FEMALE": "여성",
+            "CHARACTER_GENDER_UNKNOWN": "미상"
+        }
+        
+        age_map = {
+            "CHARACTER_AGE_CHILD": "어린이",
+            "CHARACTER_AGE_YOUTH": "청소년",
+            "CHARACTER_AGE_MIDDLE": "청년",
+            "CHARACTER_AGE_ADULT": "중년",
+            "CHARACTER_AGE_OLD": "노년",
+            "CHARACTER_AGE_SENIOR": "노년",
+            "CHARACTER_AGE_UNKNOWN": "미상"
+        }
+        
+        PASTEL_COLORS = [
+            "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", 
+            "#EC4899", "#06B6D4", "#F97316", "#14B8A6", "#84CC16"
+        ]
+        
+        import config
+        global_chars = config.load_global_characters(self.project_name)
+        char_map = {char["name"]: char for char in global_chars if "name" in char}
+        
+        # 캐릭터 이미지용 디렉토리 생성
+        img_dir = os.path.join(config.PROJECTS_DIR, self.project_name, "character_images")
+        os.makedirs(img_dir, exist_ok=True)
+        
+        imported_count = 0
+        updated_count = 0
+        
+        for match in matches:
+            div_tag = match.group(0)
+            
+            def get_attr(attr_name):
+                m = re.search(fr'{attr_name}\s*=\s*[\"\']([^\"\']*)[\"\']', div_tag, re.IGNORECASE)
+                return m.group(1).strip() if m else ""
+                
+            name = get_attr("name")
+            if not name:
+                continue
+                
+            is_new = name not in char_map
+            
+            html_role = get_attr("role")
+            html_gender = get_attr("gender")
+            html_age = get_attr("age")
+            
+            mapped_role = role_map.get(html_role, "단역")
+            mapped_gender = gender_map.get(html_gender, "미상")
+            mapped_age = age_map.get(html_age, "미상")
+            
+            # inner img src
+            start_pos = match.start()
+            end_pos = min(len(html_content), start_pos + 1200)
+            div_block = html_content[start_pos:end_pos]
+            
+            img_src_match = re.search(r'<img\b[^>]*src\s*=\s*[\"\']([^\"\']*)[\"\']', div_block, re.IGNORECASE)
+            img_src = img_src_match.group(1).strip() if img_src_match else ""
+            
+            img_rel_path = ""
+            img_data = None
+            if img_src:
+                if img_src in image_parts:
+                    img_data = image_parts[img_src]
+                else:
+                    # 로컬 폴더 모드
+                    import urllib.parse
+                    img_src_decoded = urllib.parse.unquote(img_src)
+                    src_dir = os.path.dirname(html_path)
+                    local_img_path = os.path.join(src_dir, img_src_decoded)
+                    if os.path.exists(local_img_path):
+                        try:
+                            with open(local_img_path, 'rb') as im_f:
+                                img_data = im_f.read()
+                        except Exception as e:
+                            print("Local image read error:", e)
+                            
+                if img_data:
+                    unique_id = uuid.uuid4().hex[:8]
+                    img_filename = f"{name}_{unique_id}.png"
+                    img_abs_path = os.path.join(img_dir, img_filename)
+                    try:
+                        with open(img_abs_path, 'wb') as im_w:
+                            im_w.write(img_data)
+                        img_rel_path = f"character_images/{img_filename}"
+                    except Exception as e:
+                        print("Save imported image error:", e)
+            
+            if is_new:
+                char_color = PASTEL_COLORS[len(global_chars) % len(PASTEL_COLORS)]
+                new_char = {
+                    "name": name,
+                    "role": mapped_role,
+                    "gender": mapped_gender,
+                    "age": mapped_age,
+                    "image_path": img_rel_path,
+                    "color": char_color
+                }
+                global_chars.append(new_char)
+                char_map[name] = new_char
+                imported_count += 1
+            else:
+                existing_char = char_map[name]
+                # 기존 캐릭터 정보 업데이트
+                existing_char["role"] = mapped_role
+                existing_char["gender"] = mapped_gender
+                existing_char["age"] = mapped_age
+                
+                # 프로필 이미지가 있고, 기존에 프로필이 없었거나 새로운 이미지가 로드된 경우 업데이트
+                if img_rel_path:
+                    existing_char["image_path"] = img_rel_path
+                
+                updated_count += 1
+            
+        config.save_global_characters(self.project_name, global_chars)
+        self.load_characters()
+        
+        mw = self.parent()
+        if not mw or not hasattr(mw, 'add_character_card'):
+            from PySide6.QtWidgets import QApplication
+            for widget in QApplication.topLevelWidgets():
+                if widget.__class__.__name__ == 'MainWindow':
+                    mw = widget
+                    break
+                    
+        if mw and hasattr(mw, 'load_project_characters'):
+            mw.load_project_characters()
+            
+        QMessageBox.information(
+            self, 
+            "가져오기 완료", 
+            f"캐릭터 정보 가져오기가 완료되었습니다!\n\n- 신규 추가: {imported_count}명\n- 업데이트(프로필 포함): {updated_count}명"
+        )
 
 
 # =================================================================
