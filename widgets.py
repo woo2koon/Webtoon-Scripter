@@ -5418,22 +5418,19 @@ class CropWidget(QWidget):
         self.init_scale()
 
     def init_scale(self):
-        """다이얼로그 크기에 맞춰 이미지를 핏스케일링하고 초기 1:1 크롭 영역을 정중앙 배치합니다."""
+        """이미지를 가로 500픽셀 규격으로 고정 비율 스케일링하고 초기 1:1 크롭 영역을 정중앙 배치합니다."""
         if self.original_pixmap.isNull():
             return
             
-        # 최대 뷰 해상도 450x450 제한하여 핏팅
-        max_w, max_h = 450, 450
         orig_w = self.original_pixmap.width()
         orig_h = self.original_pixmap.height()
         
-        # 비율 계산
-        ratio = min(max_w / orig_w, max_h / orig_h)
-        if ratio > 1.0:
-            ratio = 1.0 # 억지로 키우지 않음
+        # 가로 500픽셀 기준으로 고정 비율 스케일링 (크든 작든 500픽셀로 표시)
+        target_w = 500
+        ratio = target_w / orig_w
             
         self.scale_factor = ratio
-        new_w = int(orig_w * ratio)
+        new_w = target_w
         new_h = int(orig_h * ratio)
         
         self.scaled_pixmap = self.original_pixmap.scaled(
@@ -5614,7 +5611,6 @@ class ImageCropDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("✂️ 프로필 아이콘 정밀 크롭 (1:1)")
         self.setWindowFlags(Qt.Window | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
-        self.resize(500, 580)
         self.setStyleSheet("background-color: #FFFFFF;")
         
         self.original_pixmap = QPixmap(file_path)
@@ -5692,6 +5688,12 @@ class ImageCropDialog(QDialog):
         btn_layout.addWidget(btn_cancel)
         btn_layout.addWidget(btn_apply)
         layout.addLayout(btn_layout)
+        
+        # 창 크기 조정 (가로 500px 이미지 크기에 맞춰 유연하게 조절)
+        img_h = self.crop_widget.height() if self.crop_widget else 300
+        dialog_w = 540
+        dialog_h = max(400, img_h + 190)
+        self.resize(dialog_w, dialog_h)
 
     def on_apply(self):
         # 최종 정밀 크롭 완성본 낚아채기
