@@ -461,7 +461,7 @@ class CharacterRow(QFrame):
         self.input_name = QLineEdit(name)
         self.input_name.setPlaceholderText("이름")
         self.input_name.setFixedHeight(WIDGET_HEIGHT)
-        self.input_name.setStyleSheet(f"QLineEdit {{ {BASIC_BOX_STYLE} }} QLineEdit:focus {{ {FOCUS_STYLE} }}")
+        self.input_name.setStyleSheet(f"QLineEdit {{ {BASIC_BOX_STYLE} }} QLineEdit:focus {{ {FOCUS_STYLE} }}\n" + config.MODERN_MENU_STYLE)
         layout.addWidget(self.input_name, 3)
 
         self.combo_role = ClickableComboBox()
@@ -601,7 +601,7 @@ class ExcelTextDelegate(QStyledItemDelegate):
                 font-family: 'Pretendard';
                 font-size: 15px;
             }
-        """)
+        """ + "\n" + config.MODERN_MENU_STYLE)
         # 글자가 위아래 중앙에 오도록 정렬합니다.
         editor.setAlignment(Qt.AlignVCenter) 
         return editor
@@ -1725,7 +1725,7 @@ class ProjectManagementDialog(QDialog):
                 border: 2px solid #FF5722;
                 background-color: white;
             }
-        """)
+        """ + "\n" + config.MODERN_MENU_STYLE)
         self.search_bar.textChanged.connect(self.filter_projects)
         left_layout.addWidget(self.search_bar)
         
@@ -3194,7 +3194,7 @@ class IdiomCard(QFrame):
         """)
         key_layout = QHBoxLayout(self.frame_key)
         key_layout.setContentsMargins(0, 0, 0, 0)
-        self.lbl_key = QLabel(f"Alt + {data['key'].upper()}")
+        self.lbl_key = QLabel(f"{config.MODIFIER_NAME} + {data['key'].upper()}")
         self.lbl_key.setAlignment(Qt.AlignCenter)
         self.lbl_key.setStyleSheet("color: #4b5563; font-weight: bold; font-size: 12px; border: none; background: transparent;")
         key_layout.addWidget(self.lbl_key)
@@ -3248,7 +3248,7 @@ class IdiomSettingsDialog(QDialog):
         lbl_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #1f2937;")
         header_layout.addWidget(lbl_title)
 
-        lbl_desc = QLabel("Alt + [키]를 누르면 해당 지문이 즉시 입력됩니다.")
+        lbl_desc = QLabel(f"{config.MODIFIER_NAME} + [키]를 누르면 해당 지문이 즉시 입력됩니다.")
         lbl_desc.setStyleSheet("color: #6b7280; font-size: 13px;")
         header_layout.addWidget(lbl_desc)
         
@@ -3441,8 +3441,8 @@ class FloatingIdiomViewer(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("관용구 도우미")
-        # [수정] 표준 최소화/최대화/닫기 단추가 다 있는 일반 윈도우 스타일로 지정하되, 항상 메인 프로그램 창의 위에 뜨고 타 앱 전환 시에는 같이 뒤로 숨도록 구성
-        self.setWindowFlags(Qt.Window | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
+        # [수정] 항상 메인 프로그램 창의 위에 뜨는 플로팅 툴 창 스타일로 지정 (타 앱 전환 시에는 같이 뒤로 숨음)
+        self.setWindowFlags(Qt.Tool | Qt.WindowCloseButtonHint | Qt.WindowMinMaxButtonsHint)
         self.setMinimumSize(300, 450)
         self.init_ui()
         self.refresh_list()
@@ -3469,7 +3469,7 @@ class FloatingIdiomViewer(QDialog):
                 border: 2px solid #FF5722;
                 background-color: white;
             }
-        """)
+        """ + "\n" + config.MODERN_MENU_STYLE)
         self.search_bar.textChanged.connect(self.filter_list)
         layout.addWidget(self.search_bar)
 
@@ -3501,7 +3501,7 @@ class FloatingIdiomViewer(QDialog):
         """)
         layout.addWidget(self.list_widget)
 
-        lbl_info = QLabel("💡 단축키(Alt+키) 혹은 더블 클릭하면 자동 삽입됩니다.")
+        lbl_info = QLabel(f"💡 단축키({config.MODIFIER_NAME}+키) 혹은 더블 클릭하면 자동 삽입됩니다.")
         lbl_info.setStyleSheet("color: #6B7280; font-size: 11px; font-family: 'Pretendard';")
         layout.addWidget(lbl_info)
 
@@ -3523,7 +3523,7 @@ class FloatingIdiomViewer(QDialog):
             lbl_text.setStyleSheet("font-size: 14px; font-weight: 500; color: #1F2937; border: none; background: transparent;")
             
             # 우측: 단축키 뱃지
-            key_text = f"Alt + {item['key']}"
+            key_text = f"{config.MODIFIER_NAME} + {item['key']}"
             lbl_key = QLabel(key_text)
             lbl_key.setAlignment(Qt.AlignCenter)
             lbl_key.setStyleSheet("""
@@ -3565,6 +3565,13 @@ class FloatingIdiomViewer(QDialog):
     def on_item_clicked(self, item):
         text = item.data(Qt.UserRole)
         self.idiom_selected.emit(text)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.search_bar.clear()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
 # =================================================================
 # [글로벌 캐릭터 관리 & 도우미 위젯군]
@@ -3632,8 +3639,8 @@ class FloatingCharacterViewer(QDialog):
         super().__init__(parent)
         self.project_name = project_name
         self.setWindowTitle("👤 캐릭터 도우미")
-        # [수정] 표준 최소화/최대화/닫기 단추가 다 있는 일반 윈도우 스타일로 지정하되, 항상 메인 프로그램 창의 위에 뜨고 타 앱 전환 시에는 같이 뒤로 숨도록 구성
-        self.setWindowFlags(Qt.Window | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
+        # [수정] 항상 메인 프로그램 창의 위에 뜨는 플로팅 툴 창 스타일로 지정 (타 앱 전환 시에는 같이 뒤로 숨음)
+        self.setWindowFlags(Qt.Tool | Qt.WindowCloseButtonHint | Qt.WindowMinMaxButtonsHint)
         self.resize(340, 520)
         
         self.init_ui()
@@ -3697,7 +3704,7 @@ class FloatingCharacterViewer(QDialog):
         all_layout.setSpacing(8)
         
         # 상단 안내 타이틀
-        info_label = QLabel("💡 캐릭터를 더블클릭 하거나 스텝 3의\n대사 영역으로 드래그해서 추가하세요.")
+        info_label = QLabel("💡 사용 안내\n• Step 2: 더블클릭 또는 드래그로 캐릭터 추가\n• Step 3: 대본 캐릭터 셀로 드래그하여 역할 배정")
         info_label.setStyleSheet("font-size: 11px; color: #6B7280; font-weight: 500; line-height: 140%;")
         all_layout.addWidget(info_label)
         
@@ -3705,11 +3712,12 @@ class FloatingCharacterViewer(QDialog):
         search_layout = QHBoxLayout()
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("🔍 캐릭터 이름 검색...")
+        self.search_bar.setClearButtonEnabled(True)
         self.search_bar.setStyleSheet("""
             QLineEdit {
                 border: 1px solid #D1D5DB;
                 border-radius: 6px;
-                padding: 4px 10px;
+                padding: 4px 30px 4px 10px;
                 font-size: 13px;
                 background-color: #F9FAFB;
                 min-height: 22px;
@@ -3718,7 +3726,7 @@ class FloatingCharacterViewer(QDialog):
                 border-color: #FF4B4B;
                 background-color: #FFFFFF;
             }
-        """)
+        """ + "\n" + config.MODERN_MENU_STYLE)
         self.search_bar.textChanged.connect(self.filter_list)
         search_layout.addWidget(self.search_bar)
         
@@ -3771,7 +3779,7 @@ class FloatingCharacterViewer(QDialog):
         self.list_widget.itemDoubleClicked.connect(self.on_item_double_clicked)
         all_layout.addWidget(self.list_widget)
         
-        self.tabs.addTab(self.tab_all, "👥 전체 캐릭터")
+        self.tabs.addTab(self.tab_all, "전체 캐릭터")
         
         # ----------------------------------------------------
         # 2. 현재 회차 탭
@@ -3783,8 +3791,8 @@ class FloatingCharacterViewer(QDialog):
         current_layout.setContentsMargins(8, 8, 8, 8)
         current_layout.setSpacing(8)
         
-        current_info = QLabel("⭐ 시트 대사에 한 번이라도 배정된 캐릭터들이\n자동으로 이곳에 나타나 초간편 드래그를 도웁니다.")
-        current_info.setStyleSheet("font-size: 11px; color: #059669; font-weight: 500; line-height: 140%;")
+        current_info = QLabel("💡 사용 안내\n• 자동 등록: 대본 캐릭터 셀에 배정된 인물이 자동으로 노출됩니다.\n• 빠른 입력: 등장 비중이 높은 인물을 빠르게 드래그하여 입력합니다.")
+        current_info.setStyleSheet("font-size: 11px; color: #6B7280; font-weight: 500; line-height: 140%;")
         current_layout.addWidget(current_info)
         
         self.list_widget_current = DraggableCharacterListWidget(self)
@@ -3792,7 +3800,7 @@ class FloatingCharacterViewer(QDialog):
         self.list_widget_current.itemDoubleClicked.connect(self.on_item_double_clicked)
         current_layout.addWidget(self.list_widget_current)
         
-        self.tabs.addTab(self.tab_current, "✨ 현재 회차 등장인물")
+        self.tabs.addTab(self.tab_current, "현재 회차 등장인물")
         
         layout.addWidget(self.tabs)
         
@@ -4258,6 +4266,13 @@ class FloatingCharacterViewer(QDialog):
             f"캐릭터 정보 가져오기가 완료되었습니다!\n\n- 성공적으로 가져옴: {imported_count}명\n- 중복으로 제외됨: {skipped_count}명"
         )
 
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.search_bar.clear()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
 def get_round_pixmap(pixmap, size=32):
     """QPixmap을 인자로 받아 안티앨리어싱이 적용된 원형으로 깎아낸 QPixmap을 반환합니다.
      AspectFill 비율로 배치합니다."""
@@ -4492,8 +4507,8 @@ class GlobalCharacterSettingsDialog(QDialog):
     def __init__(self, parent=None, project_name=""):
         super().__init__(parent)
         self.project_name = project_name
-        self.setWindowTitle("👥 캐릭터 설정")
-        self.resize(553, 650) # 20픽셀 증량하여 아바타 상자 확장 및 콤보박스 여백 극대화!
+        self.setWindowTitle("👥 캐릭터 관리")
+        self.resize(580, 710) # 20픽셀 증량하여 아바타 상자 확장 및 콤보박스 여백 극대화!
         self.selected_color = "#3B82F6" # 기본 색상
         self.editing_name = None # 현재 수정 중인 캐릭터 이름 (None이면 신규 생성 모드)
         
@@ -4634,7 +4649,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         grid_layout.addWidget(QLabel("이름"), 0, 0)
         self.input_name = QLineEdit()
         self.input_name.setPlaceholderText("예: 밤, 쿤, 라헬")
-        self.input_name.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px 8px; min-height: 28px;")
+        self.input_name.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px 8px; min-height: 28px;\n" + config.MODERN_MENU_STYLE)
         grid_layout.addWidget(self.input_name, 0, 1)
         
         # 역할 라벨은 0열에 단독 배치
@@ -4694,7 +4709,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         grid_layout.addWidget(QLabel("메모"), 2, 0)
         self.input_memo = QLineEdit()
         self.input_memo.setPlaceholderText("캐릭터 특징 및 설정 메모 (생략 가능)")
-        self.input_memo.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px 8px; min-height: 28px;")
+        self.input_memo.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px 8px; min-height: 28px;\n" + config.MODERN_MENU_STYLE)
         grid_layout.addWidget(self.input_memo, 2, 1)
         
         # 수평 바디 레이아웃 완성 조립 (바닥 기준 수평 칼대칭 정렬 적용)
@@ -4833,7 +4848,38 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.btn_sync_all.clicked.connect(self.sync_all_episodes_confirm)
         list_header_layout.addWidget(self.btn_sync_all)
         
-        main_layout.addLayout(list_header_layout)
+        # 아래 리스트와 검색창을 묶을 세로 레이아웃 (간격을 8px로 대폭 줄여 컴팩트하게 배치)
+        list_section_layout = QVBoxLayout()
+        list_section_layout.setContentsMargins(0, 0, 0, 0)
+        list_section_layout.setSpacing(8)
+        
+        list_section_layout.addLayout(list_header_layout)
+        
+        # 검색 필터 추가
+        search_layout = QHBoxLayout()
+        search_layout.setContentsMargins(0, 0, 0, 0)
+        self.search_input = QLineEdit()
+        self.search_input.setFixedHeight(24)
+        self.search_input.setPlaceholderText("🔍 캐릭터 이름, 역할 또는 메모 검색...")
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.setStyleSheet("""
+            QLineEdit {
+                background-color: white;
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                padding: 2px 10px;
+                font-size: 13px;
+                color: #111827;
+                min-height: 24px;
+                max-height: 24px;
+            }
+            QLineEdit:focus {
+                border-color: #3B82F6;
+            }
+        """)
+        self.search_input.textChanged.connect(self.filter_characters)
+        search_layout.addWidget(self.search_input)
+        list_section_layout.addLayout(search_layout)
         
         # 3. 캐릭터 리스트 스크롤 영역 (원래의 부드러운 회색 캔버스와 간격 레이아웃 완벽 복원)
         scroll_area = QScrollArea()
@@ -4848,7 +4894,9 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.list_layout.setAlignment(Qt.AlignTop)
         
         scroll_area.setWidget(self.list_container)
-        main_layout.addWidget(scroll_area, 1)
+        list_section_layout.addWidget(scroll_area, 1)
+        
+        main_layout.addLayout(list_section_layout, 1)
         
         # 4. 하단 닫기 버튼
         footer_layout = QHBoxLayout()
@@ -4871,6 +4919,9 @@ class GlobalCharacterSettingsDialog(QDialog):
         footer_layout.addWidget(btn_close)
         main_layout.addLayout(footer_layout)
         
+    def filter_characters(self, text):
+        self.load_characters()
+
     def load_characters(self):
         # 레이아웃 비우기
         for i in range(self.list_layout.count()):
@@ -4885,10 +4936,21 @@ class GlobalCharacterSettingsDialog(QDialog):
         role_priority = {"주연": 0, "조연": 1, "단역": 2}
         chars.sort(key=lambda c: (role_priority.get(c.get("role", "단역"), 2), c.get("name", "")))
         
+        query = ""
+        if hasattr(self, 'search_input'):
+            query = self.search_input.text().strip().lower()
+            
+        visible_count = 0
         for i, char in enumerate(chars):
-            # [수정] 개별 둥근 모서리 카드 간의 경계를 100% 명확하게 시각적으로 나누기 위해,
-            # 카드 사이의 8px 간격 정중앙에 실제 수평 회색 실선(QFrame)을 정밀 삽입합니다!
-            if i > 0:
+            name = char.get("name", "")
+            role = char.get("role", "단역")
+            memo = char.get("memo", "")
+            
+            # 검색어 필터링
+            if query and not (query in name.lower() or query in role.lower() or query in memo.lower()):
+                continue
+                
+            if visible_count > 0:
                 line = QWidget() # QFrame 대신 플랫 QWidget을 사용하여 입체 이중선 현상을 원천 방지하고 초미세 1px 플랫 라인을 구현!
                 line.setStyleSheet("background-color: #ECEEF1; min-height: 1px; max-height: 1px; border: none; margin: 4px 10px;")
                 self.list_layout.addWidget(line)
@@ -4897,6 +4959,20 @@ class GlobalCharacterSettingsDialog(QDialog):
             card.delete_clicked.connect(self.delete_character)
             card.edit_clicked.connect(self.edit_character)
             self.list_layout.addWidget(card)
+            visible_count += 1
+            
+        if query:
+            self.lbl_count.setText(f"(검색 결과 {visible_count}명 / 총 {len(chars)}명)")
+        else:
+            self.lbl_count.setText(f"(총 {len(chars)}명)")
+            
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            if hasattr(self, 'search_input') and self.search_input.text():
+                self.search_input.clear()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
             
     def set_avatar_pixmap(self, img_path):
         """프로필 이미지 아바타 라벨에 1:1 비율의 정사각형 이미지를 안전하게 장착합니다."""
@@ -5109,9 +5185,15 @@ class GlobalCharacterSettingsDialog(QDialog):
         if hasattr(mw, 'get_character_list'):
             mw.get_character_list()
     def delete_character(self, name):
-        reply = QMessageBox.question(self, "캐릭터 삭제", f"'{name}' 캐릭터를 정말 삭제하시겠습니까?",
-                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if reply == QMessageBox.Yes:
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("캐릭터 삭제")
+        msg_box.setText(f"'{name}' 캐릭터를 정말 삭제하시겠습니까?")
+        msg_box.setIcon(QMessageBox.Question)
+        btn_yes = msg_box.addButton("예", QMessageBox.YesRole)
+        btn_no = msg_box.addButton("아니오", QMessageBox.NoRole)
+        msg_box.setDefaultButton(btn_no)
+        msg_box.exec()
+        if msg_box.clickedButton() == btn_yes:
             import config
             chars = config.load_global_characters(self.project_name)
             
@@ -5134,12 +5216,17 @@ class GlobalCharacterSettingsDialog(QDialog):
                 mw.get_character_list()
                 
     def sync_all_episodes_confirm(self):
-        reply = QMessageBox.question(self, "모든 회차 동기화", 
-                                     "⚠️ 이 작업은 생성된 기존 모든 회차 폴더의 character_info.csv 파일을 검사하여,\n"
-                                     "현재 글로벌 DB에 저장된 나이, 성별, 역할 정보로 일괄 덮어쓰고 동기화합니다.\n"
-                                     "계속하시겠습니까?",
-                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if reply == QMessageBox.Yes:
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("모든 회차 동기화")
+        msg_box.setText("⚠️ 이 작업은 생성된 기존 모든 회차 폴더의 character_info.csv 파일을 검사하여,\n"
+                        "현재 글로벌 DB에 저장된 나이, 성별, 역할 정보로 일괄 덮어쓰고 동기화합니다.\n"
+                        "계속하시겠습니까?")
+        msg_box.setIcon(QMessageBox.Question)
+        btn_yes = msg_box.addButton("예", QMessageBox.YesRole)
+        btn_no = msg_box.addButton("아니오", QMessageBox.NoRole)
+        msg_box.setDefaultButton(btn_no)
+        msg_box.exec()
+        if msg_box.clickedButton() == btn_yes:
             self.sync_all_episodes()
             
     def sync_all_episodes(self):
@@ -5411,6 +5498,7 @@ class CropWidget(QWidget):
         self.crop_rect = QRect(0, 0, 100, 100) # 1:1 기본 규격
         self.is_dragging = False
         self.is_resizing = False
+        self.active_handle = None
         self.drag_start_pos = QPoint()
         self.crop_start_rect = QRect()
         
@@ -5418,15 +5506,15 @@ class CropWidget(QWidget):
         self.init_scale()
 
     def init_scale(self):
-        """이미지를 가로 500픽셀 규격으로 고정 비율 스케일링하고 초기 1:1 크롭 영역을 정중앙 배치합니다."""
+        """이미지를 가로 400픽셀 규격으로 고정 비율 스케일링하고 초기 1:1 크롭 영역을 정중앙 배치합니다."""
         if self.original_pixmap.isNull():
             return
             
         orig_w = self.original_pixmap.width()
         orig_h = self.original_pixmap.height()
         
-        # 가로 500픽셀 기준으로 고정 비율 스케일링 (크든 작든 500픽셀로 표시)
-        target_w = 500
+        # 가로 400픽셀 기준으로 고정 비율 스케일링 (크든 작든 400픽셀로 표시)
+        target_w = 400
         ratio = target_w / orig_w
             
         self.scale_factor = ratio
@@ -5439,7 +5527,6 @@ class CropWidget(QWidget):
         self.setFixedSize(new_w, new_h)
         
         # 초기 크롭 영역 지정 (이미지 중앙에 1:1 비율로 매칭)
-        # 이미지 가로세로 중 작은 쪽에 비례하여 1:1 박스 계산
         crop_size = int(min(new_w, new_h) * 0.75)
         crop_size = max(crop_size, 80) # 최소 크기 한계
         
@@ -5457,7 +5544,7 @@ class CropWidget(QWidget):
         # 1. 핏팅된 원본 이미지 드로잉
         painter.drawPixmap(0, 0, self.scaled_pixmap)
         
-        # 2. 크롭 영역을 뻥 뚫은 '도넛 모양' 마스킹 경로 빌드 (검은색 땜빵 버그 완전 박멸!)
+        # 2. 크롭 영역을 뻥 뚫은 '도넛 모양' 마스킹 경로 빌드
         from PySide6.QtGui import QPainterPath
         outer_path = QPainterPath()
         outer_path.addRect(QRectF(self.rect())) # 전체 캔버스 영역
@@ -5476,7 +5563,7 @@ class CropWidget(QWidget):
         painter.setPen(pen)
         painter.drawRect(self.crop_rect)
         
-        # 5. 가로세로 삼등분 은은한 가이드라인 점선 드로잉 (1:1 비율에 맞춰 조율)
+        # 5. 가로세로 삼등분 은은한 가이드라인 점선 드로잉
         grid_pen = QPen(QColor(255, 75, 75, 70), 1.0, Qt.DashLine)
         painter.setPen(grid_pen)
         step = self.crop_rect.width() // 3
@@ -5503,25 +5590,67 @@ class CropWidget(QWidget):
         # 좌하단 모서리
         painter.drawLine(r.x(), r.bottom(), r.x() + L_len, r.bottom())
         painter.drawLine(r.x(), r.bottom(), r.x(), r.bottom() - L_len)
-        # 우하단 모서리 (리사이즈 핵심 조절 핸들)
+        # 우하단 모서리
         painter.drawLine(r.right(), r.bottom(), r.right() - L_len, r.bottom())
         painter.drawLine(r.right(), r.bottom(), r.right(), r.bottom() - L_len)
 
+    def get_handle_at(self, pos):
+        px, py = pos.x(), pos.y()
+        
+        tl = self.crop_rect.topLeft()
+        tr = self.crop_rect.topRight()
+        bl = self.crop_rect.bottomLeft()
+        br = self.crop_rect.bottomRight()
+        
+        tol = 16
+        if (pos - tl).manhattanLength() <= tol:
+            return 'TL'
+        if (pos - tr).manhattanLength() <= tol:
+            return 'TR'
+        if (pos - bl).manhattanLength() <= tol:
+            return 'BL'
+        if (pos - br).manhattanLength() <= tol:
+            return 'BR'
+            
+        edge_tol = 8
+        rect = self.crop_rect
+        if abs(py - rect.top()) <= edge_tol and rect.left() <= px <= rect.right():
+            return 'T'
+        if abs(py - rect.bottom()) <= edge_tol and rect.left() <= px <= rect.right():
+            return 'B'
+        if abs(px - rect.left()) <= edge_tol and rect.top() <= py <= rect.bottom():
+            return 'L'
+        if abs(px - rect.right()) <= edge_tol and rect.top() <= py <= rect.bottom():
+            return 'R'
+            
+        if rect.contains(pos):
+            return 'MOVE'
+            
+        return None
+
     def mousePressEvent(self, event):
         pos = event.position().toPoint()
+        handle = self.get_handle_at(pos)
         
-        # 1. 우측 하단 모서리 영역(Resize 핸들 반경 16px) 감지
-        bottom_right = self.crop_rect.bottomRight()
-        dist = (pos - bottom_right).manhattanLength()
-        
-        if dist <= 16:
+        if handle in ('TL', 'TR', 'BL', 'BR', 'T', 'B', 'L', 'R'):
             self.is_resizing = True
+            self.active_handle = handle
             self.drag_start_pos = pos
             self.crop_start_rect = QRect(self.crop_rect)
-            self.setCursor(Qt.SizeFDiagCursor)
-        # 2. 크롭 박스 내부 선택 (Drag/Move)
-        elif self.crop_rect.contains(pos):
+            
+            # 커서 설정
+            if handle in ('TL', 'BR'):
+                self.setCursor(Qt.SizeFDiagCursor)
+            elif handle in ('TR', 'BL'):
+                self.setCursor(Qt.SizeBDiagCursor)
+            elif handle in ('T', 'B'):
+                self.setCursor(Qt.SizeVerCursor)
+            elif handle in ('L', 'R'):
+                self.setCursor(Qt.SizeHorCursor)
+                
+        elif handle == 'MOVE':
             self.is_dragging = True
+            self.active_handle = 'MOVE'
             self.drag_start_pos = pos
             self.crop_start_rect = QRect(self.crop_rect)
             self.setCursor(Qt.SizeAllCursor)
@@ -5529,45 +5658,95 @@ class CropWidget(QWidget):
     def mouseMoveEvent(self, event):
         pos = event.position().toPoint()
         
-        # 마우스 커서 호버 상태 시각 피드백 제공
         if not self.is_dragging and not self.is_resizing:
-            bottom_right = self.crop_rect.bottomRight()
-            dist = (pos - bottom_right).manhattanLength()
-            if dist <= 16:
+            handle = self.get_handle_at(pos)
+            if handle in ('TL', 'BR'):
                 self.setCursor(Qt.SizeFDiagCursor)
-            elif self.crop_rect.contains(pos):
+            elif handle in ('TR', 'BL'):
+                self.setCursor(Qt.SizeBDiagCursor)
+            elif handle in ('T', 'B'):
+                self.setCursor(Qt.SizeVerCursor)
+            elif handle in ('L', 'R'):
+                self.setCursor(Qt.SizeHorCursor)
+            elif handle == 'MOVE':
                 self.setCursor(Qt.SizeAllCursor)
             else:
                 self.setCursor(Qt.ArrowCursor)
             return
 
-        # 1. 크기 조절 모드 (1:1 비율 강제 락인 조절!)
         if self.is_resizing:
-            delta_x = pos.x() - self.drag_start_pos.x()
+            px, py = pos.x(), pos.y()
+            rect = self.crop_start_rect
             
-            # 가로 변경 폭에 맞춰 세로를 1:1로 동기화
-            new_size = self.crop_start_rect.width() + delta_x
-            
-            # 최소 크기 한계 제어
-            new_size = max(new_size, 60)
-            
-            # 우하단 조절이므로 원본 이미지 우하단 영역 경계를 넘어가지 않도록 잠금(Clamp)
-            if self.crop_start_rect.x() + new_size > self.width():
-                new_size = self.width() - self.crop_start_rect.x()
+            # --- 1. 모서리 조절 (반대편 모서리 고정) ---
+            if self.active_handle == 'BR':
+                ax, ay = rect.x(), rect.y()
+                new_size = px - ax
+                new_size = max(60, new_size)
+                new_size = min(new_size, self.width() - ax, self.height() - ay)
+                self.crop_rect = QRect(ax, ay, new_size, new_size)
                 
-            if self.crop_start_rect.y() + new_size > self.height():
-                new_size = self.height() - self.crop_start_rect.y()
+            elif self.active_handle == 'TL':
+                ax, ay = rect.right(), rect.bottom()
+                new_size = ax - px
+                new_size = max(60, new_size)
+                new_size = min(new_size, ax, ay)
+                self.crop_rect = QRect(ax - new_size, ay - new_size, new_size, new_size)
                 
-            self.crop_rect = QRect(self.crop_start_rect.x(), self.crop_start_rect.y(), new_size, new_size)
+            elif self.active_handle == 'TR':
+                ax, ay = rect.x(), rect.bottom()
+                new_size = px - ax
+                new_size = max(60, new_size)
+                new_size = min(new_size, self.width() - ax, ay)
+                self.crop_rect = QRect(ax, ay - new_size, new_size, new_size)
+                
+            elif self.active_handle == 'BL':
+                ax, ay = rect.right(), rect.y()
+                new_size = ax - px
+                new_size = max(60, new_size)
+                new_size = min(new_size, ax, self.height() - ay)
+                self.crop_rect = QRect(ax - new_size, ay, new_size, new_size)
+                
+            # --- 2. 변 조절 (해당 변이 이동하며, 반대편 변은 고정되고 나머지 두 변은 대칭적으로 늘어남) ---
+            elif self.active_handle == 'R':
+                new_w = px - rect.left()
+                new_w = max(60, new_w)
+                max_half_delta = min(rect.top(), self.height() - rect.bottom())
+                new_w = min(new_w, self.width() - rect.left(), rect.width() + 2 * max_half_delta)
+                half_delta = (new_w - rect.width()) // 2
+                self.crop_rect = QRect(rect.left(), rect.top() - half_delta, new_w, new_w)
+                
+            elif self.active_handle == 'L':
+                new_w = rect.right() - px
+                new_w = max(60, new_w)
+                max_half_delta = min(rect.top(), self.height() - rect.bottom())
+                new_w = min(new_w, rect.right(), rect.width() + 2 * max_half_delta)
+                half_delta = (new_w - rect.width()) // 2
+                self.crop_rect = QRect(rect.right() - new_w, rect.top() - half_delta, new_w, new_w)
+                
+            elif self.active_handle == 'B':
+                new_h = py - rect.top()
+                new_h = max(60, new_h)
+                max_half_delta = min(rect.left(), self.width() - rect.right())
+                new_h = min(new_h, self.height() - rect.top(), rect.height() + 2 * max_half_delta)
+                half_delta = (new_h - rect.height()) // 2
+                self.crop_rect = QRect(rect.left() - half_delta, rect.top(), new_h, new_h)
+                
+            elif self.active_handle == 'T':
+                new_h = rect.bottom() - py
+                new_h = max(60, new_h)
+                max_half_delta = min(rect.left(), self.width() - rect.right())
+                new_h = min(new_h, rect.bottom(), rect.height() + 2 * max_half_delta)
+                half_delta = (new_h - rect.height()) // 2
+                self.crop_rect = QRect(rect.left() - half_delta, rect.bottom() - new_h, new_h, new_h)
+                
             self.update()
 
-        # 2. 이동 모드 (경계 고정 Constrain 완벽 바인딩!)
         elif self.is_dragging:
             delta = pos - self.drag_start_pos
             new_x = self.crop_start_rect.x() + delta.x()
             new_y = self.crop_start_rect.y() + delta.y()
             
-            # 이미지 밖으로 삐져나가지 못하도록 Clamp 연산 적용
             new_x = max(0, min(new_x, self.width() - self.crop_rect.width()))
             new_y = max(0, min(new_y, self.height() - self.crop_rect.height()))
             
@@ -5577,6 +5756,7 @@ class CropWidget(QWidget):
     def mouseReleaseEvent(self, event):
         self.is_dragging = False
         self.is_resizing = False
+        self.active_handle = None
         self.setCursor(Qt.ArrowCursor)
 
     def get_cropped_pixmap(self):
@@ -5586,22 +5766,17 @@ class CropWidget(QWidget):
             
         inv_scale = 1.0 / self.scale_factor
         
-        # 원본 스케일 상의 정확한 정밀 좌표 계산
         rx = int(self.crop_rect.x() * inv_scale)
         ry = int(self.crop_rect.y() * inv_scale)
         rw = int(self.crop_rect.width() * inv_scale)
         rh = int(self.crop_rect.height() * inv_scale)
         
-        # 원본 이미지 경계 안쪽으로 정밀 제한
         rx = max(0, rx)
         ry = max(0, ry)
         rw = min(rw, self.original_pixmap.width() - rx)
         rh = min(rh, self.original_pixmap.height() - ry)
         
-        # 원본 복사
         cropped = self.original_pixmap.copy(rx, ry, rw, rh)
-        
-        # 디스크 최종 규격인 가로 150px, 세로 150px (정사각형 1:1 아이콘 규격)으로 스케일핏 가공
         return cropped.scaled(150, 150, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
 
 
@@ -5629,7 +5804,7 @@ class ImageCropDialog(QDialog):
         
         title_lbl = QLabel("✂️ 아이콘용 프로필 영역 자르기")
         title_lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #111827;")
-        desc_lbl = QLabel("상자 안을 마우스로 드래그해 이동하고, 우측 하단 모서리를 끌어\n얼굴이 중앙에 오는 최상의 구도로 조절해 주세요 (1:1 비율 고정).")
+        desc_lbl = QLabel("상자 안을 마우스로 드래그해 이동하고, 모서리나 사방의 변을 끌어\n얼굴이 중앙에 오는 최상의 구도로 조절해 주세요 (1:1 비율 고정).")
         desc_lbl.setStyleSheet("font-size: 11px; color: #6B7280; line-height: 14px;")
         
         title_layout.addWidget(title_lbl)

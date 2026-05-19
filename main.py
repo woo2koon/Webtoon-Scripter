@@ -161,6 +161,12 @@ class WebtoonManager(QMainWindow):
         self.shortcut_sidebar = QShortcut(QKeySequence("Ctrl+B"), self)
         self.shortcut_sidebar.activated.connect(self.toggle_sidebar)
 
+        # [추가] 관용구 도우미 및 캐릭터 도우미 토글 단축키 등록 (Ctrl+J, Ctrl+K)
+        self.shortcut_idiom_viewer = QShortcut(QKeySequence("Ctrl+J"), self)
+        self.shortcut_idiom_viewer.activated.connect(self.toggle_idiom_viewer)
+        self.shortcut_character_viewer = QShortcut(QKeySequence("Ctrl+K"), self)
+        self.shortcut_character_viewer.activated.connect(self.toggle_character_viewer)
+
         self.update_button_pos()
         
         # [추가] 모든 UI가 생성된 후 API 호출수 로드
@@ -1085,16 +1091,19 @@ class WebtoonManager(QMainWindow):
         
         btn_zoom_out = QPushButton("-")
         btn_zoom_out.setFixedSize(32, 32)
+        btn_zoom_out.setCursor(Qt.PointingHandCursor)
         btn_zoom_out.setStyleSheet(zoom_btn_style)
         btn_zoom_out.clicked.connect(self.text_zoom_out)
         
         btn_zoom_reset = QPushButton("초기화")
         btn_zoom_reset.setFixedSize(60, 32)
+        btn_zoom_reset.setCursor(Qt.PointingHandCursor)
         btn_zoom_reset.setStyleSheet(zoom_btn_style)
         btn_zoom_reset.clicked.connect(self.text_zoom_reset)
         
         btn_zoom_in = QPushButton("+")
         btn_zoom_in.setFixedSize(32, 32)
+        btn_zoom_in.setCursor(Qt.PointingHandCursor)
         btn_zoom_in.setStyleSheet(zoom_btn_style)
         btn_zoom_in.clicked.connect(self.text_zoom_in)
         
@@ -1148,7 +1157,7 @@ class WebtoonManager(QMainWindow):
                 line-height: 160%;         /* 줄 간격 */
                 color: #333333;            /* 글자색 */
             }
-        """)
+        """ + "\n" + config.MODERN_MENU_STYLE)
         
         current_font = QApplication.font()
         current_font.setPointSize(11) 
@@ -1285,9 +1294,9 @@ class WebtoonManager(QMainWindow):
         self.btn_view_global_chars.clicked.connect(self.toggle_character_viewer)
         top_bar_step2.addWidget(self.btn_view_global_chars)
         
-        # [추가] 작품 캐릭터 설정 버튼 (유니코드 이모지 ⚙️ 대신 고해상도 SVG 아이콘으로 고급 업그레이드!)
+        # [추가] 작품 캐릭터 관리 버튼 (유니코드 이모지 ⚙️ 대신 고해상도 SVG 아이콘으로 고급 업그레이드!)
         self.btn_global_char_settings = HoverIconButton(
-            " 작품 캐릭터 설정", 
+            " 작품 캐릭터 관리", 
             config.ICON_SETTINGS_COG,
             normal_color="#374151",
             hover_color="#111827"
@@ -1322,6 +1331,7 @@ class WebtoonManager(QMainWindow):
         btn_add_char.setObjectName("PrimaryBtn")
         btn_add_char.setFixedHeight(32)
         btn_add_char.setFixedWidth(108)
+        btn_add_char.setCursor(Qt.PointingHandCursor)
         btn_add_char.clicked.connect(lambda: self.add_character_card())
         top_bar_step2.addWidget(btn_add_char)
         tab2_layout.addLayout(top_bar_step2)
@@ -1493,9 +1503,9 @@ class WebtoonManager(QMainWindow):
         """)
         self.btn_view_global_chars_step3.clicked.connect(self.toggle_character_viewer)
 
-        # [추가] 스텝 3 전용 "작품 캐릭터 설정" 버튼
+        # [추가] 스텝 3 전용 "작품 캐릭터 관리" 버튼
         self.btn_global_char_settings_step3 = HoverIconButton(
-            " 작품 캐릭터 설정", 
+            " 작품 캐릭터 관리", 
             config.ICON_SETTINGS_COG,
             normal_color="#374151",
             hover_color="#111827"
@@ -1888,7 +1898,7 @@ class WebtoonManager(QMainWindow):
                 editor.setFocus()
 
     def setup_idiom_shortcuts(self):
-        """설정된 관용구들에 대해 Alt + 숫자 단축키를 생성합니다."""
+        """설정된 관용구들에 대해 Alt(Windows)/Opt(Mac) + 단축키를 생성합니다."""
         # 기존 단축키 제거
         for sc in self.idiom_shortcuts:
             sc.setEnabled(False)
@@ -2752,12 +2762,6 @@ class WebtoonManager(QMainWindow):
         action_add.triggered.connect(lambda: self.add_character_card())
         menu.addAction(action_add)
         
-        # 1.5. 외부 캐릭터 마이그레이션 (HTML) 액션 추가
-        action_migrate = QAction("외부 캐릭터 가져오기 (HTML)", self)
-        action_migrate.setIcon(get_icon(config.ICON_UPLOAD))
-        action_migrate.triggered.connect(self.migrate_external_characters)
-        menu.addAction(action_migrate)
-        
         menu.addSeparator()
         
         # 2. 정렬 서브메뉴
@@ -3439,6 +3443,18 @@ class WebtoonManager(QMainWindow):
 if __name__ == "__main__":
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.Round)
     app = QApplication(sys.argv)
+    
+    # [추가] 기본 콘텍스트 메뉴 및 공통 위젯 한글화 (QTranslator 등록)
+    from PySide6.QtCore import QTranslator, QLibraryInfo
+    trans_path = QLibraryInfo.path(QLibraryInfo.TranslationsPath)
+    
+    translator_base = QTranslator(app)
+    if translator_base.load("qtbase_ko", trans_path):
+        app.installTranslator(translator_base)
+        
+    translator_qt = QTranslator(app)
+    if translator_qt.load("qt_ko", trans_path):
+        app.installTranslator(translator_qt)
     
     # [추가] 메뉴 및 드롭다운 애니메이션 효과 끄기 (즉시 표시)
     app.setEffectEnabled(Qt.UI_AnimateMenu, False)

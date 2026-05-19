@@ -3,13 +3,15 @@ import os
 import json
 import sys
 
-# 1. OS별 최적화된 폰트 리스트 정의
+# 1. OS별 최적화된 폰트 리스트 정의 및 단축키 수식어 설정
 if sys.platform == "darwin":  # macOS (진우님의 M1 맥북 에어)
     # 맥에서는 윈도우 폰트를 아예 빼버려 검색 시간을 0으로 만듭니다.
     FONT_FAMILY = "'Pretendard', '-apple-system', 'Helvetica Neue', sans-serif"
+    MODIFIER_NAME = "⌥"
 else:  # Windows 또는 기타
     # 윈도우에서는 기존처럼 Segoe UI와 맑은 고딕을 포함합니다.
     FONT_FAMILY = "'Pretendard', 'Segoe UI', 'Malgun Gothic', sans-serif"
+    MODIFIER_NAME = "Alt"
 
 # =================================================================
 # [사용자 지정 기본 키]
@@ -373,3 +375,31 @@ QProgressBar { border: none; background-color: #f0f0f0; border-radius: 2px; text
 QProgressBar::chunk { background-color: #ff4b4b; border-radius: 2px; }
 QTextEdit { color: #333333; line-height: 160%; background-color: white; border: 1px solid #d1d5db; border-radius: 4px; }
 """
+
+MODERN_MENU_STYLE = """
+QMenu { 
+    background-color: white; 
+    border: 1px solid #d1d5db; 
+    border-radius: 0px; 
+    padding: 3px; 
+}
+QMenu::item { 
+    padding: 8px 10px 8px 22px; 
+    border-radius: 4px;
+    margin: 2px 5px;
+    color: #333333;
+}
+QMenu::icon {
+    position: absolute;
+    left: 12px;
+}
+QMenu::item:selected { 
+    background-color: #FFECEC; 
+    color: #FF4B4B; 
+}
+QMenu::separator {
+    height: 1px;
+    background: #e5e7eb;
+    margin: 5px 10px;
+}
+"""
