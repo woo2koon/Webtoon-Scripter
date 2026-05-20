@@ -1832,8 +1832,10 @@ class WebtoonManager(QMainWindow):
         # [신규] 포커스가 풀리는 시점에 셀 에디터였다면, 커서 위치 및 활성 셀 정보를 미리 캡처하여 저장해 둡니다.
         if old and isinstance(old, QLineEdit):
             if hasattr(self, 'table_script') and self.table_script and self.table_script.isAncestorOf(old):
-                self.last_sheet_editor_cursor_pos = old.cursorPosition()
-                self.last_sheet_editor_cell = (self.table_script.currentRow(), self.table_script.currentColumn())
+                pos = old.cursorPosition()
+                if pos > 0:  # 포커스 아웃 시점의 강제 0 리셋 방지
+                    self.last_sheet_editor_cursor_pos = pos
+                    self.last_sheet_editor_cell = (self.table_script.currentRow(), self.table_script.currentColumn())
         
         if now and isinstance(now, (QLineEdit, QTextEdit)):
             # 도우미 팝업이나 설정 다이얼로그 내의 검색창 등은 주 대본 에디터가 아니므로 제외
@@ -1867,7 +1869,9 @@ class WebtoonManager(QMainWindow):
                     # 셀 에디터가 아직 떠 있는 상태라면 직접 삽입
                     if editor.isVisible() and not editor.isReadOnly():
                         if isinstance(editor, QLineEdit):
+                            pos = editor.cursorPosition()
                             editor.insert(text)
+                            editor.setCursorPosition(pos + len(text))
                             editor.setFocus()
                             return
                     else:
@@ -1894,6 +1898,8 @@ class WebtoonManager(QMainWindow):
                             
                             # 새 에디터 오픈 시 커서를 방금 삽입한 텍스트 바로 뒤에 안착시킵니다.
                             new_cursor_pos = cursor_pos + len(text)
+                            self.last_sheet_editor_cursor_pos = new_cursor_pos
+                            self.last_sheet_editor_cell = (row, col)
                             QTimer.singleShot(50, lambda: self.set_sheet_editor_cursor(new_cursor_pos))
                             return
                 else:
@@ -1904,7 +1910,9 @@ class WebtoonManager(QMainWindow):
                             editor.setFocus()
                             return
                         elif isinstance(editor, QLineEdit):
+                            pos = editor.cursorPosition()
                             editor.insert(text)
+                            editor.setCursorPosition(pos + len(text))
                             editor.setFocus()
                             return
             except RuntimeError:
@@ -1935,6 +1943,8 @@ class WebtoonManager(QMainWindow):
                     self.table_script.editItem(item)
                     
                     new_cursor_pos = cursor_pos + len(text)
+                    self.last_sheet_editor_cursor_pos = new_cursor_pos
+                    self.last_sheet_editor_cell = (row, col)
                     QTimer.singleShot(50, lambda: self.set_sheet_editor_cursor(new_cursor_pos))
                     return
                 
@@ -1954,8 +1964,8 @@ class WebtoonManager(QMainWindow):
             if line_edits:
                 # 활성 셀 에디터는 대개 하나만 존재합니다.
                 editor = line_edits[0]
-                editor.setCursorPosition(pos)
                 editor.setFocus()
+                editor.setCursorPosition(pos)
 
     def setup_idiom_shortcuts(self):
         """설정된 관용구들에 대해 Alt(Windows)/Opt(Mac) + 단축키를 생성합니다."""
@@ -2735,13 +2745,14 @@ class WebtoonManager(QMainWindow):
         self.table_script.blockSignals(False)
 
     def add_character_card_at(self, index, name="", age="", gender="", role=""):
-        # 중복 등록 방지: 현재 회차에 이미 등록된 동일한 이름의 캐릭터는 추가하지 않음
-        for i in range(self.char_layout.count()):
-            widget = self.char_layout.itemAt(i).widget()
-            if isinstance(widget, CharacterRow):
-                if widget.input_name.text().strip() == name.strip():
-                    self.toast.show_message(f"⚠️ '{name}' 캐릭터는 이미 추가되어 있습니다.", 1500)
-                    return
+        # 중복 등록 방지: 이름이 입력된 경우에만 중복 검사 진행
+        if name.strip():
+            for i in range(self.char_layout.count()):
+                widget = self.char_layout.itemAt(i).widget()
+                if isinstance(widget, CharacterRow):
+                    if widget.input_name.text().strip() == name.strip():
+                        self.toast.show_message(f"⚠️ '{name}' 캐릭터는 이미 추가되어 있습니다.", 1500)
+                        return
                     
         card = CharacterRow(name, age, gender, role, self)
         card.delete_signal.connect(self.remove_character_card)
@@ -3199,8 +3210,6 @@ class WebtoonManager(QMainWindow):
             if msg_box.clickedButton() != btn_yes:
                 return
 
-        self.table_script.save_state_for_undo() # [추가] 상태 백업
-
         text = self.text_editor.toPlainText()
         lines = [line.strip() for line in text.split('\n') if line.strip()]
         clean_lines = [re.sub(r'^(\[\d+\]|\d+\.)\s*', '', line).strip() for line in lines]
@@ -3217,6 +3226,10 @@ class WebtoonManager(QMainWindow):
         self.table_script.blockSignals(False)
         self.table_script.resizeRowsToContents() 
         self.save_script_data()
+
+        # 불러온 스크립트 데이터를 새로운 기준점으로 삼기 위해 실행취소 스택을 초기화합니다.
+        if hasattr(self.table_script, 'clear_undo_stack'):
+            self.table_script.clear_undo_stack()
 
     def save_script_data(self, *args):
         import pandas as pd
@@ -3264,6 +3277,10 @@ class WebtoonManager(QMainWindow):
         import pandas as pd
         e_path, _, s_path = self.get_paths()
         if not e_path or not s_path: return # 경로가 없으면 로드 중단
+
+        # 테이블 실행취소(Undo) / 다시실행(Redo) 스택 초기화 (이전 회차 데이터 복원 방지 안전장치)
+        if hasattr(self.table_script, 'clear_undo_stack'):
+            self.table_script.clear_undo_stack()
 
         # 1. 스크립트 원본 텍스트 로드
         self.text_editor.blockSignals(True)
