@@ -1760,6 +1760,8 @@ class ProjectManagementDialog(QDialog):
             }
         """)
         self.list_titles.currentTextChanged.connect(self.load_episodes)
+        self.list_titles.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.list_titles.customContextMenuRequested.connect(self.show_project_context_menu)
         left_layout.addWidget(self.list_titles)
 
         # 버튼 행
@@ -1978,6 +1980,40 @@ class ProjectManagementDialog(QDialog):
                 return
             os.makedirs(path, exist_ok=True)
             self.load_episodes(title)
+
+    def show_project_context_menu(self, pos):
+        item = self.list_titles.itemAt(pos)
+        if not item: return
+        
+        project_name = item.text()
+        
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu { background-color: white; border: 1px solid #D1D5DB; padding: 3px; }
+            QMenu::item { padding: 8px 10px 8px 25px; border-radius: 4px; color: #374151; font-size: 14px; margin: 2px 5px; }
+            QMenu::item:selected { background-color: #FFECEC; color: #FF4B4B; }
+            QMenu::item:disabled { color: #9CA3AF; }
+            QMenu::separator { height: 1px; background: #E5E7EB; margin: 5px 10px; }
+        """)
+        
+        action_open_folder = menu.addAction(get_icon(config.ICON_FOLDER), "폴더 열기")
+        action_manage_chars = menu.addAction(get_icon(config.ICON_USER), "캐릭터 관리")
+        
+        action = menu.exec(self.list_titles.mapToGlobal(pos))
+        if not action: return
+        
+        if action == action_open_folder:
+            project_path = os.path.join(PROJECTS_DIR, project_name)
+            if os.path.exists(project_path):
+                open_path(project_path)
+        elif action == action_manage_chars:
+            dialog = GlobalCharacterSettingsDialog(self, project_name=project_name)
+            if dialog.exec() == QDialog.Accepted:
+                # 메인 윈도우의 캐릭터 뷰어가 열려 있고, 방금 수정한 작품이 현재 활성화된 작품인 경우 리로드
+                mw = self.parent()
+                if mw and hasattr(mw, 'character_viewer') and mw.character_viewer and mw.character_viewer.isVisible():
+                    if getattr(mw, 'current_title', '') == project_name:
+                        mw.character_viewer.load_data()
 
     def show_episode_context_menu(self, pos):
         selected_items = self.list_episodes.selectedItems()
@@ -3441,8 +3477,8 @@ class FloatingIdiomViewer(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("관용구 도우미")
-        # [수정] 항상 메인 프로그램 창의 위에 뜨는 플로팅 툴 창 스타일로 지정 (타 앱 전환 시에는 같이 뒤로 숨음)
-        self.setWindowFlags(Qt.Tool | Qt.WindowCloseButtonHint | Qt.WindowMinMaxButtonsHint)
+        # [수정] 표준 최소화/최대화/닫기 단추가 다 있는 일반 윈도우 스타일로 지정하되, 항상 메인 프로그램 창의 위에 뜨고 타 앱 전환 시에는 같이 뒤로 숨도록 구성
+        self.setWindowFlags(Qt.Window | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
         self.setMinimumSize(300, 450)
         self.init_ui()
         self.refresh_list()
@@ -3639,8 +3675,8 @@ class FloatingCharacterViewer(QDialog):
         super().__init__(parent)
         self.project_name = project_name
         self.setWindowTitle("👤 캐릭터 도우미")
-        # [수정] 항상 메인 프로그램 창의 위에 뜨는 플로팅 툴 창 스타일로 지정 (타 앱 전환 시에는 같이 뒤로 숨음)
-        self.setWindowFlags(Qt.Tool | Qt.WindowCloseButtonHint | Qt.WindowMinMaxButtonsHint)
+        # [수정] 표준 최소화/최대화/닫기 단추가 다 있는 일반 윈도우 스타일로 지정하되, 항상 메인 프로그램 창의 위에 뜨고 타 앱 전환 시에는 같이 뒤로 숨도록 구성
+        self.setWindowFlags(Qt.Window | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
         self.resize(340, 520)
         
         self.init_ui()
