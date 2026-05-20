@@ -2661,6 +2661,14 @@ class SmartTextEdit(QTextEdit):
         super().__init__(parent)
         self.setAcceptDrops(True)
 
+    def keyPressEvent(self, event):
+        # Ctrl + Shift + Z 입력 시 다시 실행(Redo) 작동
+        if event.modifiers() == (Qt.ControlModifier | Qt.ShiftModifier) and event.key() == Qt.Key_Z:
+            self.redo()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             mw = self.window()
@@ -2692,25 +2700,43 @@ class SmartTextEdit(QTextEdit):
         # 1. 표준 컨텍스트 메뉴 생성
         menu = self.createStandardContextMenu()
         
-        # 2. 영문 메뉴 항목들을 친근한 한국어로 동적 맵핑
-        for action in menu.actions():
+        # 2. 영문/한글 메뉴 항목들을 친근한 한국어로 동적 맵핑 및 단축키 조정
+        actions = menu.actions()
+        for action in actions:
             text = action.text()
             clean_text = text.replace("&", "")
+            clean_text_lower = clean_text.lower()
             
-            if clean_text == "Undo":
+            # Undo 매칭: "undo" 또는 "되돌리기" 또는 "실행 취소"
+            if "undo" in clean_text_lower or "되돌리기" in clean_text_lower or "실행 취소" in clean_text_lower or "실행취소" in clean_text_lower:
                 action.setText("되돌리기 (&U)")
-            elif clean_text == "Redo":
-                action.setText("다시 실행 (&R)")
-            elif clean_text == "Cut":
+                action.setShortcut(QKeySequence("Ctrl+Z"))
+            # Redo 매칭: "redo" 또는 "다시 실행" 또는 "다시실행"
+            elif "redo" in clean_text_lower or "다시 실행" in clean_text_lower or "다시실행" in clean_text_lower:
+                # 기존 Redo 액션 대신 새로운 커스텀 액션 생성하여 단축키 표시를 확실히 바꿉니다.
+                redo_action = QAction("다시 실행 (&R)", self)
+                redo_action.setIcon(action.icon()) # 기존 아이콘 복사
+                redo_action.setShortcut(QKeySequence("Ctrl+Shift+Z"))
+                redo_action.setEnabled(action.isEnabled()) # 활성화 상태 복사
+                redo_action.triggered.connect(self.redo)
+                
+                # 기존 액션 위치에 삽입하고 기존 액션은 제거
+                menu.insertAction(action, redo_action)
+                menu.removeAction(action)
+            elif "cut" in clean_text_lower or "잘라내기" in clean_text_lower:
                 action.setText("잘라내기 (&T)")
-            elif clean_text == "Copy":
+                action.setShortcut(QKeySequence("Ctrl+X"))
+            elif "copy" in clean_text_lower or "복사" in clean_text_lower:
                 action.setText("복사 (&C)")
-            elif clean_text == "Paste":
+                action.setShortcut(QKeySequence("Ctrl+C"))
+            elif "paste" in clean_text_lower or "붙여넣기" in clean_text_lower:
                 action.setText("붙여넣기 (&P)")
-            elif clean_text == "Delete":
+                action.setShortcut(QKeySequence("Ctrl+V"))
+            elif "delete" in clean_text_lower or "삭제" in clean_text_lower:
                 action.setText("삭제 (&D)")
-            elif clean_text == "Select All":
+            elif "select all" in clean_text_lower or "모두 선택" in clean_text_lower or "모두선택" in clean_text_lower:
                 action.setText("모두 선택 (&A)")
+                action.setShortcut(QKeySequence("Ctrl+A"))
                 
         # 3. 메뉴 표시
         menu.exec(event.globalPos())
@@ -2900,7 +2926,8 @@ class SettingsDialog(QDialog):
 
         row_preset = QHBoxLayout()
         self.combo_presets = QComboBox()
-        self.combo_presets.setFixedHeight(36)
+        self.combo_presets.setObjectName("PresetCombo")
+        self.combo_presets.setFixedHeight(33)
 
         # [핵심 1] 맥의 중앙 팝업 대신 아래로 열리는 리스트 뷰를 강제 적용합니다.
         self.combo_presets.setView(QListView()) 
@@ -2912,12 +2939,15 @@ class SettingsDialog(QDialog):
 
         # [핵심 2] 스타일시트로 드롭다운 위치를 아래(0)로 고정합니다.
         self.combo_presets.setStyleSheet("""
-            QComboBox {
+            QComboBox#PresetCombo {
                 combobox-popup: 0; /* 0으로 설정해야 아래로 열립니다. */
                 border: 1px solid #ccc;
                 border-radius: 4px;
                 padding-left: 10px;
                 background: white;
+                min-height: 33px;
+                max-height: 33px;
+                height: 33px;
             }
             /* 드롭다운 목록창 스타일 */
             QComboBox QAbstractItemView {
@@ -2941,11 +2971,13 @@ class SettingsDialog(QDialog):
         self.combo_presets.currentTextChanged.connect(self.on_preset_changed)
         
         btn_add = QPushButton("추가")
-        btn_add.setFixedSize(60, 36)
+        btn_add.setFixedSize(60, 33)
+        btn_add.setCursor(Qt.PointingHandCursor)
         btn_add.clicked.connect(self.add_preset)
         
         btn_del = QPushButton("삭제")
-        btn_del.setFixedSize(60, 36)
+        btn_del.setFixedSize(60, 33)
+        btn_del.setCursor(Qt.PointingHandCursor)
         btn_del.clicked.connect(self.delete_preset)
         
         row_preset.addWidget(self.combo_presets)
@@ -3197,17 +3229,34 @@ class SettingsDialog(QDialog):
 class IdiomCard(QFrame):
     delete_signal = Signal(dict)
 
-    def __init__(self, data, parent=None):
+    def __init__(self, data, index, parent=None):
         super().__init__(parent)
         self.data = data
-        self.setFixedHeight(40) # 높이 살짝 축소
+        self.index = index
+        self.setFixedHeight(45) # 높이를 45로 조정 (갭 공간 확보)
         self.setStyleSheet("background-color: transparent; border: none;")
         
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0) # 메인 레이아웃 여백 제거
+        layout.setContentsMargins(10, 3, 10, 3) # 좌우 10px 마진으로 헤더와 완벽히 열 정렬 맞춤
         layout.setSpacing(8) # 박스 간 간격
         
-        # 1. 지문 내용 박스
+        # 1. 드래그 핸들 (☰)
+        self.lbl_handle = QLabel("☰")
+        self.lbl_handle.setFixedWidth(30)
+        self.lbl_handle.setAlignment(Qt.AlignCenter)
+        self.lbl_handle.setStyleSheet("""
+            QLabel {
+                color: #9ca3af; 
+                font-size: 16px; 
+                font-weight: bold;
+                border: none;
+                background: transparent;
+            }
+        """)
+        self.lbl_handle.setCursor(Qt.SizeAllCursor)
+        layout.addWidget(self.lbl_handle)
+        
+        # 2. 지문 내용 박스
         self.frame_text = QFrame()
         self.frame_text.setStyleSheet("""
             QFrame { background-color: white; border: 1px solid #e5e7eb; border-radius: 6px; }
@@ -3221,40 +3270,219 @@ class IdiomCard(QFrame):
         text_layout.addWidget(self.lbl_text)
         layout.addWidget(self.frame_text, 1)
         
-        # 2. 단축키 박스
+        # 3. 단축키 박스 (순서에 따른 자동 할당)
         self.frame_key = QFrame()
-        self.frame_key.setFixedWidth(100)
+        self.frame_key.setFixedWidth(80)
         self.frame_key.setStyleSheet("""
             QFrame { background-color: white; border: 1px solid #e5e7eb; border-radius: 6px; }
             QFrame:hover { border: 1px solid #FF5722; }
         """)
         key_layout = QHBoxLayout(self.frame_key)
         key_layout.setContentsMargins(0, 0, 0, 0)
-        self.lbl_key = QLabel(f"{config.MODIFIER_NAME} + {data['key'].upper()}")
+        
+        # 단축키 번호 부여 (1 ~ 9, 0, 그 외에는 단축키 없음)
+        if index < 9:
+            key_text = f"{config.MODIFIER_NAME} + {index + 1}"
+        elif index == 9:
+            key_text = f"{config.MODIFIER_NAME} + 0"
+        else:
+            key_text = "-"
+            
+        self.lbl_key = QLabel(key_text)
         self.lbl_key.setAlignment(Qt.AlignCenter)
         self.lbl_key.setStyleSheet("color: #4b5563; font-weight: bold; font-size: 12px; border: none; background: transparent;")
         key_layout.addWidget(self.lbl_key)
         layout.addWidget(self.frame_key)
         
-        # 3. 삭제 버튼 박스
+        # 4. 삭제 버튼 박스
         self.frame_del = QFrame()
         self.frame_del.setFixedWidth(40)
         self.frame_del.setStyleSheet("""
-            QFrame { background-color: #e5e7eb; border: 1px solid #d1d5db; border-radius: 6px; }
-            QFrame:hover { border: 1px solid #ef4444; background-color: #fee2e2; }
+            QFrame { 
+                background-color: #FF5722; 
+                border: none; 
+                border-radius: 6px; 
+            }
+            QFrame:hover { 
+                background-color: #E64A19; 
+            }
         """)
         del_layout = QHBoxLayout(self.frame_del)
         del_layout.setContentsMargins(0, 0, 0, 0)
-        self.btn_del = QPushButton("✕")
-        self.btn_del.setFixedSize(38, 38)
+        self.btn_del = QPushButton() # 텍스트 제거 (SVG 아이콘 적용)
+        self.btn_del.setFixedSize(36, 36) # 36x36으로 축소하여 상하 3px 여백 내에 완벽 정렬
         self.btn_del.setCursor(Qt.PointingHandCursor)
-        self.btn_del.setStyleSheet("""
-            QPushButton { border: none; color: #9ca3af; font-size: 18px; background: transparent; }
-            QPushButton:hover { color: #ef4444; }
+        
+        icon_path = os.path.join(config.ASSETS_DIR, "close_white.svg").replace("\\", "/")
+        icon_hover_path = os.path.join(config.ASSETS_DIR, "close_white_hover.svg").replace("\\", "/")
+        self.btn_del.setStyleSheet(f"""
+            QPushButton {{ 
+                border: none; 
+                background: transparent; 
+                qproperty-icon: url("{icon_path}");
+                qproperty-iconSize: 18px 18px;
+            }}
+            QPushButton:hover {{ 
+                qproperty-icon: url("{icon_hover_path}");
+            }}
         """)
         self.btn_del.clicked.connect(lambda: self.delete_signal.emit(self.data))
         del_layout.addWidget(self.btn_del)
         layout.addWidget(self.frame_del)
+
+
+# =======================================================
+# 드래그앤드롭 시 삽입 위치를 표시하는 오버레이 위젯
+# =======================================================
+class DropOverlay(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WA_NoSystemBackground)
+        self.line_y = -1
+        self.hide()
+
+    def paintEvent(self, event):
+        if self.line_y != -1:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing)
+            # 선명하고 두꺼운 3px 주황색 선
+            pen = QPen(QColor("#FF5722"), 3, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+            painter.setPen(pen)
+            
+            # 카드의 좌우 10px 마진에 정밀 매칭되도록 10px 마진 설정
+            margin = 10
+            painter.drawLine(margin, self.line_y, self.width() - margin, self.line_y)
+
+
+# =======================================================
+# 드래그앤드롭 지원 QListWidget
+# =======================================================
+class DragDropListWidget(QListWidget):
+    def __init__(self, parent_dialog, parent=None):
+        super().__init__(parent)
+        self.parent_dialog = parent_dialog
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(False) # 기본 검은색 얇은 지시선 비활성화 (오버레이로 대체)
+        self.setDragDropMode(QAbstractItemView.InternalMove)
+        self.drag_src_row = -1
+        
+        # 뷰포트 위에 덧씌울 투명 오버레이 생성
+        self.overlay = DropOverlay(self.viewport())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.overlay.setGeometry(self.viewport().rect())
+
+    def startDrag(self, supportedActions):
+        self.drag_src_row = self.currentRow()
+        if self.drag_src_row < 0:
+            return
+            
+        item = self.currentItem()
+        if not item:
+            return
+            
+        card_widget = self.itemWidget(item)
+        if not card_widget:
+            super().startDrag(supportedActions)
+            return
+            
+        # 1. 커스텀 위젯 스냅샷 이미지 얻기
+        pixmap = card_widget.grab()
+        
+        # 2. 반투명(투명도 75%) 마스크 처리
+        transparent_pixmap = QPixmap(pixmap.size())
+        transparent_pixmap.fill(Qt.transparent)
+        painter = QPainter(transparent_pixmap)
+        painter.setOpacity(0.75)
+        painter.drawPixmap(0, 0, pixmap)
+        painter.end()
+        
+        # 3. QDrag 객체 생성 및 설정
+        drag = QDrag(self)
+        mime_data = QMimeData()
+        mime_data.setData("application/x-qabstractitemmodeldatalist", QByteArray())
+        drag.setMimeData(mime_data)
+        
+        drag.setPixmap(transparent_pixmap)
+        # 마우스 커서가 드래그 핸들(☰) 위에 딱 놓이도록 핫스팟(x=25, y=중앙) 설정
+        drag.setHotSpot(QPoint(25, transparent_pixmap.height() // 2))
+        
+        drag.exec(supportedActions)
+
+    def dragMoveEvent(self, event):
+        super().dragMoveEvent(event)
+        
+        target_pos = event.position().toPoint()
+        hover_item = self.itemAt(target_pos)
+        
+        if hover_item:
+            rect = self.visualItemRect(hover_item)
+            # 마우스 y좌표가 아이템 높이의 절반을 넘었는지 확인
+            if target_pos.y() < rect.y() + rect.height() // 2:
+                line_y = rect.y()
+            else:
+                line_y = rect.y() + rect.height()
+            
+            self.overlay.line_y = line_y
+            self.overlay.show()
+            self.overlay.update()
+        else:
+            if self.count() > 0:
+                last_item = self.item(self.count() - 1)
+                rect = self.visualItemRect(last_item)
+                self.overlay.line_y = rect.y() + rect.height()
+                self.overlay.show()
+                self.overlay.update()
+            else:
+                self.overlay.hide()
+                
+        event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event):
+        self.overlay.line_y = -1
+        self.overlay.hide()
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event):
+        self.overlay.line_y = -1
+        self.overlay.hide()
+        
+        target_pos = event.position().toPoint()
+        hover_item = self.itemAt(target_pos)
+        
+        N = self.count()
+        if N == 0:
+            event.accept()
+            return
+            
+        # 대상 삽입 라인 인덱스 L 계산 (0 ~ N)
+        if hover_item:
+            rect = self.visualItemRect(hover_item)
+            hover_row = self.row(hover_item)
+            if target_pos.y() < rect.y() + rect.height() // 2:
+                L = hover_row
+            else:
+                L = hover_row + 1
+        else:
+            L = N
+            
+        src_row = self.drag_src_row
+        
+        # 이동 처리 연산 (원래 제자리/근접 영역 drop 시 소실되는 Qt 내장 버그 우회 방지)
+        if src_row >= 0:
+            if L == src_row or L == src_row + 1:
+                # 제자리로 드롭한 경우 단순 리프레시만 수행하여 아이템 유실 복구
+                self.parent_dialog.refresh_list()
+            elif L < src_row:
+                self.parent_dialog.move_idiom(src_row, L)
+            else: # L > src_row + 1
+                self.parent_dialog.move_idiom(src_row, L - 1)
+            
+        event.accept()
+
 
 # 관용구 설정 다이얼로그
 # =======================================================
@@ -3290,34 +3518,39 @@ class IdiomSettingsDialog(QDialog):
         
         layout.addLayout(header_layout)
 
-        # 2. [수정] 입력 영역 (박스 제거 및 높이 축소)
+        # 2. [수정] 입력 영역 (단축키 필드 제거)
         input_layout = QHBoxLayout()
         input_layout.setContentsMargins(0, 5, 0, 5)
         input_layout.setSpacing(8)
 
         self.input_text = QLineEdit()
+        self.input_text.setObjectName("IdiomInputText")
         self.input_text.setPlaceholderText("예: (속)") 
-        self.input_text.setFixedHeight(36) 
-        
-        self.input_key = QLineEdit()
-        self.input_key.setPlaceholderText("단축키(숫자/영문)")
-        self.input_key.setFixedWidth(140) 
-        self.input_key.setFixedHeight(36) 
-        self.input_key.setMaxLength(1) 
-        self.input_key.setAlignment(Qt.AlignLeft | Qt.AlignVCenter) # 다시 왼쪽 정렬로 변경
+        self.input_text.setFixedHeight(33) 
+        self.input_text.setStyleSheet("""
+            QLineEdit#IdiomInputText {
+                min-height: 33px;
+                max-height: 33px;
+                height: 33px;
+                border-radius: 6px;
+            }
+        """)
         
         btn_add = QPushButton("추가")
-        btn_add.setFixedSize(70, 36) 
+        btn_add.setFixedSize(70, 33) 
         btn_add.setCursor(Qt.PointingHandCursor)
         btn_add.setStyleSheet("""
             QPushButton {
                 background-color: #FF5722;
                 color: white;
                 border: none;
-                border-radius: 4px;
+                border-radius: 3px;
                 font-weight: bold;
-                padding: 0px; /* 패딩 제거하여 시스템 기본 중앙 정렬 유도 */
+                padding: 0px;
                 text-align: center;
+                min-height: 33px;
+                max-height: 33px;
+                height: 33px;
             }
             QPushButton:hover {
                 background-color: #E64A19;
@@ -3326,7 +3559,6 @@ class IdiomSettingsDialog(QDialog):
         btn_add.clicked.connect(self.add_idiom)
 
         input_layout.addWidget(self.input_text, 1)
-        input_layout.addWidget(self.input_key)
         input_layout.addWidget(btn_add)
         layout.addLayout(input_layout)
 
@@ -3339,14 +3571,14 @@ class IdiomSettingsDialog(QDialog):
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(0)
 
-        # [최종 해결] 헤더를 컨테이너 내부 최상단에 배치하여 너비 동기화
+        # 헤더를 컨테이너 내부 최상단에 배치하여 너비 동기화
         self.header_widget = QWidget()
         self.header_widget.setFixedHeight(35)
         self.header_widget.setStyleSheet("""
             QWidget { background-color: #f3f4f6; border: none; border-bottom: 1px solid #e5e7eb; border-top-left-radius: 7px; border-top-right-radius: 7px; }
         """)
         self.header_layout = QHBoxLayout(self.header_widget)
-        self.header_layout.setContentsMargins(10, 0, 10, 0) # 리스트 여백(10)과 일치
+        self.header_layout.setContentsMargins(10, 0, 10, 0)
         self.header_layout.setSpacing(8)
         
         def create_header_box(text, width=None):
@@ -3361,22 +3593,38 @@ class IdiomSettingsDialog(QDialog):
             if width: box.setFixedWidth(width)
             return box
 
+        self.header_layout.addWidget(create_header_box("이동", width=30))
         self.header_layout.addWidget(create_header_box("지문 내용"), 1)
-        self.header_layout.addWidget(create_header_box("단축키", width=100))
+        self.header_layout.addWidget(create_header_box("단축키", width=80))
         self.header_layout.addWidget(create_header_box("삭제", width=40))
         
-        # [정렬 핵심] 스크롤바(12px) 공간만큼 헤더 우측에도 고정 여백 추가
+        # 스크롤바(12px) 공간만큼 헤더 우측에도 고정 여백 추가
         self.header_layout.addSpacing(12)
-        
         container_layout.addWidget(self.header_widget)
 
-        # 4. 스크롤 영역
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setFrameShape(QFrame.NoFrame)
-        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn) # 항상 표시하여 정렬 고정
-        self.scroll_area.setStyleSheet("""
-            QScrollArea { background-color: transparent; border: none; }
+        # 4. 리스트 위젯 (DragDropListWidget)
+        self.list_widget = DragDropListWidget(self)
+        self.list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.list_widget.setStyleSheet("""
+            QListWidget {
+                background-color: transparent;
+                border: none;
+                outline: none;
+                padding: 0px;
+                margin: 0px;
+            }
+            QListWidget::item {
+                background-color: transparent;
+                border: none;
+                padding: 0px;
+            }
+            QListWidget::item:selected {
+                background-color: transparent;
+            }
+            QListWidget::drop-indicator {
+                background-color: #FF5722;
+                height: 3px;
+            }
             QScrollBar:vertical { 
                 border: none; background: transparent; width: 12px; margin: 0;
             }
@@ -3386,31 +3634,53 @@ class IdiomSettingsDialog(QDialog):
             QScrollBar::handle:vertical:hover { background: #9ca3af; }
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
         """)
-        
-        self.list_widget = QWidget()
-        self.list_widget.setStyleSheet("background-color: transparent;")
-        self.list_layout = QVBoxLayout(self.list_widget)
-        self.list_layout.setContentsMargins(10, 10, 10, 10)
-        self.list_layout.setSpacing(8)
-        self.list_layout.addStretch()
-        
-        self.scroll_area.setWidget(self.list_widget)
-        container_layout.addWidget(self.scroll_area)
+        container_layout.addWidget(self.list_widget)
         layout.addWidget(self.scroll_container)
 
-        # 4. 하단 버튼
+        # 5. 하단 버튼
         bottom_layout = QHBoxLayout()
         bottom_layout.addStretch()
         
         btn_save = QPushButton("설정 저장")
-        btn_save.setObjectName("PrimaryBtn")
-        btn_save.setFixedSize(110, 38)
+        btn_save.setFixedSize(110, 28)
         btn_save.setCursor(Qt.PointingHandCursor)
+        btn_save.setStyleSheet("""
+            QPushButton {
+                background-color: #FF5722;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+                min-height: 28px;
+                max-height: 28px;
+                height: 28px;
+            }
+            QPushButton:hover {
+                background-color: #E64A19;
+            }
+        """)
         btn_save.clicked.connect(self.save_and_close)
         
         btn_close = QPushButton("닫기")
-        btn_close.setFixedSize(80, 38)
+        btn_close.setFixedSize(80, 28)
         btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.setStyleSheet("""
+            QPushButton {
+                background-color: #ffffff;
+                color: #4b5563;
+                border: 1px solid #d1d5db;
+                border-radius: 4px;
+                font-weight: bold;
+                min-height: 28px;
+                max-height: 28px;
+                height: 28px;
+            }
+            QPushButton:hover {
+                border-color: #FF5722;
+                color: #FF5722;
+                background-color: #fff9f7;
+            }
+        """)
         btn_close.clicked.connect(self.reject)
         
         bottom_layout.addWidget(btn_save)
@@ -3418,17 +3688,14 @@ class IdiomSettingsDialog(QDialog):
         layout.addLayout(bottom_layout)
 
     def refresh_list(self):
-        # 기존 위젯들 제거 (Stretch 제외)
-        while self.list_layout.count() > 1:
-            item = self.list_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        self.list_widget.clear()
         
-        # 카드 추가
-        for idiom in self.local_idioms:
-            card = IdiomCard(idiom)
+        for i, idiom in enumerate(self.local_idioms):
+            item = QListWidgetItem(self.list_widget)
+            item.setSizeHint(QSize(0, 45))
+            card = IdiomCard(idiom, i, self)
             card.delete_signal.connect(self.delete_idiom_by_data)
-            self.list_layout.insertWidget(self.list_layout.count() - 1, card)
+            self.list_widget.setItemWidget(item, card)
 
     def delete_idiom_by_data(self, data):
         if data in self.local_idioms:
@@ -3437,33 +3704,30 @@ class IdiomSettingsDialog(QDialog):
 
     def add_idiom(self):
         text = self.input_text.text().strip()
-        key = self.input_key.text().strip().upper() # 대문자로 통일
 
-        if not text or not key:
-            QMessageBox.warning(self, "알림", "내용과 단축키를 모두 입력해주세요.")
+        if not text:
+            QMessageBox.warning(self, "알림", "내용을 입력해주세요.")
             return
 
-        # [수정] 영문자 또는 숫자만 허용
-        if not key.isalnum():
-            QMessageBox.warning(self, "알림", "단축키는 숫자 또는 영문자 1글자만 가능합니다.")
-            return
-
-        # 중복 체크 (대소문자 구분 없이)
-        if any(item["key"].upper() == key for item in self.local_idioms):
-            QMessageBox.warning(self, "알림", f"단축키 '{key}'는 이미 사용 중입니다.")
-            return
-
-        self.local_idioms.append({"text": text, "key": key})
+        self.local_idioms.append({"text": text, "key": ""})
         self.input_text.clear()
-        self.input_key.clear()
         self.refresh_list()
 
-    def delete_idiom(self):
-        # 개별 카드에서 삭제 버튼을 누르므로 이 함수는 더 이상 사용되지 않거나
-        # 다른 용도로 변경될 수 있습니다. 현재는 delete_idiom_by_data가 담당합니다.
-        pass
+    def move_idiom(self, src, dst):
+        if src >= 0 and dst >= 0 and src < len(self.local_idioms) and dst < len(self.local_idioms):
+            item = self.local_idioms.pop(src)
+            self.local_idioms.insert(dst, item)
+            self.refresh_list()
 
     def save_and_close(self):
+        # 저장하기 전에 각 아이템의 "key" 값을 현재 순서에 맞게 동기화
+        for index, item in enumerate(self.local_idioms):
+            if index < 9:
+                item["key"] = str(index + 1)
+            elif index == 9:
+                item["key"] = "0"
+            else:
+                item["key"] = ""
         config.IDIOMS = self.local_idioms
         config.save_settings(config.API_PRESETS, config.ACTIVE_PRESET_NAME)
         self.accept()
@@ -3558,25 +3822,26 @@ class FloatingIdiomViewer(QDialog):
             lbl_text = QLabel(item['text'])
             lbl_text.setStyleSheet("font-size: 14px; font-weight: 500; color: #1F2937; border: none; background: transparent;")
             
-            # 우측: 단축키 뱃지
-            key_text = f"{config.MODIFIER_NAME} + {item['key']}"
-            lbl_key = QLabel(key_text)
-            lbl_key.setAlignment(Qt.AlignCenter)
-            lbl_key.setStyleSheet("""
-                QLabel {
-                    background-color: #F3F4F6;
-                    color: #6B7280;
-                    border: 1px solid #E5E7EB;
-                    border-radius: 4px;
-                    padding: 2px 6px;
-                    font-size: 11px;
-                    font-weight: bold;
-                    font-family: 'SF Pro Text', 'Pretendard';
-                }
-            """)
-            
+            # 우측: 단축키 뱃지 (단축키가 있는 경우에만 표시)
             item_layout.addWidget(lbl_text, 1) # 텍스트가 공간을 차지함
-            item_layout.addWidget(lbl_key)
+            
+            if item.get('key'):
+                key_text = f"{config.MODIFIER_NAME} + {item['key']}"
+                lbl_key = QLabel(key_text)
+                lbl_key.setAlignment(Qt.AlignCenter)
+                lbl_key.setStyleSheet("""
+                    QLabel {
+                        background-color: #F3F4F6;
+                        color: #6B7280;
+                        border: 1px solid #E5E7EB;
+                        border-radius: 4px;
+                        padding: 2px 6px;
+                        font-size: 11px;
+                        font-weight: bold;
+                        font-family: 'SF Pro Text', 'Pretendard';
+                    }
+                """)
+                item_layout.addWidget(lbl_key)
             
             # 데이터를 아이템 객체에 저장 (검색 및 선택용)
             list_item.setData(Qt.UserRole, item['text'])
@@ -3766,48 +4031,6 @@ class FloatingCharacterViewer(QDialog):
         self.search_bar.textChanged.connect(self.filter_list)
         search_layout.addWidget(self.search_bar)
         
-        # 리프레시 버튼
-        self.btn_refresh = QPushButton()
-        self.btn_refresh.setToolTip("목록 새로고침")
-        self.btn_refresh.setFixedSize(32, 32)
-        self.btn_refresh.setStyleSheet("""
-            QPushButton {
-                background-color: #FFFFFF;
-                border: 1px solid #D1D5DB;
-                border-radius: 6px;
-            }
-            QPushButton:hover {
-                border-color: #FF4B4B;
-                background-color: #FFF5F5;
-            }
-        """)
-        self.btn_refresh.clicked.connect(self.load_data)
-        
-        # SVG 아이콘 렌더링
-        try:
-            from PySide6.QtSvg import QSvgRenderer
-            from PySide6.QtGui import QPixmap, QPainter, QIcon
-            from PySide6.QtCore import QByteArray, QSize
-            svg_code = """
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                <path d="M3 3v5h5"/>
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-                <path d="M16 16h5v5"/>
-            </svg>
-            """
-            renderer = QSvgRenderer(QByteArray(svg_code.encode('utf-8')))
-            pix = QPixmap(20, 20)
-            pix.fill(Qt.transparent)
-            painter = QPainter(pix)
-            renderer.render(painter)
-            painter.end()
-            self.btn_refresh.setIcon(QIcon(pix))
-            self.btn_refresh.setIconSize(QSize(20, 20))
-        except Exception:
-            pass
-            
-        search_layout.addWidget(self.btn_refresh)
         all_layout.addLayout(search_layout)
         
         self.list_widget = DraggableCharacterListWidget(self)
@@ -4614,7 +4837,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         
         self.lbl_avatar = QLabel()
         self.lbl_avatar.setFixedSize(110, 110) # 1:1 완벽 정사각형 프로필 비율로 전격 업그레이드! (110x110)
-        self.lbl_avatar.setAlignment(Qt.AlignCenter) # 픽셀 한 조각의 오차도 없이 정중앙에 정렬!
+        self.lbl_avatar.setAlignment(Qt.AlignCenter) # 픽셀 한 조각 of 오차도 없이 정중앙에 정렬!
         self.lbl_avatar.setStyleSheet("""
             QLabel {
                 background-color: #F9FAFB;
@@ -4623,22 +4846,24 @@ class GlobalCharacterSettingsDialog(QDialog):
                 padding: 0px; /* 미세 쏠림 방지 */
             }
         """)
+        self.lbl_avatar.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.lbl_avatar.customContextMenuRequested.connect(self.show_avatar_context_menu)
         avatar_layout.addWidget(self.lbl_avatar)
         
-        # 아바타 조작 버튼들
-        avatar_btn_layout = QHBoxLayout()
-        avatar_btn_layout.setSpacing(4)
-        avatar_btn_layout.setContentsMargins(0, 0, 0, 0)
+        # 아바타 조작 버튼들 (조절 버튼은 이미지 우클릭 메뉴로 대체하고, 등록/변경/삭제 버튼만 배치)
+        self.avatar_btn_layout = QHBoxLayout()
+        self.avatar_btn_layout.setSpacing(4)
+        self.avatar_btn_layout.setContentsMargins(0, 0, 0, 0)
         
         self.btn_change_avatar = QPushButton("등록")
         self.btn_change_avatar.setCursor(Qt.PointingHandCursor)
-        self.btn_change_avatar.setFixedSize(53, 22) # 가로 53px로 확장하여 좌우 균등 대칭 칼정렬!
+        self.btn_change_avatar.setFixedSize(53, 22)
         self.btn_change_avatar.setStyleSheet("""
             QPushButton {
                 background-color: #FFFFFF;
                 border: 1px solid #D1D5DB;
                 border-radius: 4px;
-                font-size: 11px;
+                font-size: 12px;
                 color: #374151;
                 font-weight: bold;
                 padding: 0px;
@@ -4652,13 +4877,13 @@ class GlobalCharacterSettingsDialog(QDialog):
         
         self.btn_delete_avatar = QPushButton("삭제")
         self.btn_delete_avatar.setCursor(Qt.PointingHandCursor)
-        self.btn_delete_avatar.setFixedSize(53, 22) # 가로 53px로 확장하여 좌우 균등 대칭 칼정렬!
+        self.btn_delete_avatar.setFixedSize(53, 22)
         self.btn_delete_avatar.setStyleSheet("""
             QPushButton {
                 background-color: #FFFFFF;
                 border: 1px solid #D1D5DB;
                 border-radius: 4px;
-                font-size: 11px;
+                font-size: 12px;
                 color: #EF4444;
                 font-weight: bold;
                 padding: 0px;
@@ -4670,9 +4895,9 @@ class GlobalCharacterSettingsDialog(QDialog):
         """)
         self.btn_delete_avatar.clicked.connect(self.delete_profile_image)
         
-        avatar_btn_layout.addWidget(self.btn_change_avatar)
-        avatar_btn_layout.addWidget(self.btn_delete_avatar)
-        avatar_layout.addLayout(avatar_btn_layout)
+        self.avatar_btn_layout.addWidget(self.btn_change_avatar)
+        self.avatar_btn_layout.addWidget(self.btn_delete_avatar)
+        avatar_layout.addLayout(self.avatar_btn_layout)
         
         # [우측] 입력 그리드 레이아웃
         grid_layout = QGridLayout()
@@ -4757,7 +4982,10 @@ class GlobalCharacterSettingsDialog(QDialog):
         
         # 아바타 임시 상태 변수 초기 등록
         self.temp_image_path = None
+        self.temp_orig_image_path = None
+        self.temp_crop_rect = None
         self.set_avatar_pixmap(None)
+        self.update_avatar_buttons()
         
         # 추가 / 취소 버튼
         btn_form_layout = QHBoxLayout()
@@ -4895,7 +5123,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         search_layout = QHBoxLayout()
         search_layout.setContentsMargins(0, 0, 0, 0)
         self.search_input = QLineEdit()
-        self.search_input.setFixedHeight(24)
+        self.search_input.setFixedHeight(27)
         self.search_input.setPlaceholderText("🔍 캐릭터 이름, 역할 또는 메모 검색...")
         self.search_input.setClearButtonEnabled(True)
         self.search_input.setStyleSheet("""
@@ -4906,8 +5134,8 @@ class GlobalCharacterSettingsDialog(QDialog):
                 padding: 2px 10px;
                 font-size: 13px;
                 color: #111827;
-                min-height: 24px;
-                max-height: 24px;
+                min-height: 27px;
+                max-height: 27px;
             }
             QLineEdit:focus {
                 border-color: #3B82F6;
@@ -5084,13 +5312,120 @@ class GlobalCharacterSettingsDialog(QDialog):
                     
                     cropped_pixmap.save(temp_crop_path, "PNG")
                     
+                    self.temp_image_path = temp_crop_path
+                    self.temp_orig_image_path = file_path
+                    self.temp_crop_rect = crop_dlg.crop_rect_coords
+                    
                     # 3:4 비율로 완벽 성형된 임시 이미지를 아바타로 장착!
                     self.set_avatar_pixmap(temp_crop_path)
+                    self.update_avatar_buttons()
+
+    def adjust_profile_image(self):
+        """현재 프로필 이미지의 크롭 영역을 다시 조절합니다."""
+        if not self.temp_orig_image_path or not os.path.exists(self.temp_orig_image_path):
+            QMessageBox.warning(self, "경고", "원본 이미지를 찾을 수 없어 조절할 수 없습니다.")
+            return
+            
+        crop_dlg = ImageCropDialog(self.temp_orig_image_path, self, initial_crop_rect=self.temp_crop_rect)
+        if crop_dlg.exec() == QDialog.Accepted:
+            cropped_pixmap = crop_dlg.cropped_pixmap
+            if cropped_pixmap and not cropped_pixmap.isNull():
+                import tempfile
+                import uuid
+                temp_dir = tempfile.gettempdir()
+                temp_crop_path = os.path.join(temp_dir, f"crop_{uuid.uuid4().hex[:8]}.png")
+                
+                cropped_pixmap.save(temp_crop_path, "PNG")
+                
+                self.temp_image_path = temp_crop_path
+                self.temp_crop_rect = crop_dlg.crop_rect_coords
+                
+                self.set_avatar_pixmap(temp_crop_path)
+                self.update_avatar_buttons()
 
     def delete_profile_image(self):
         """현재 폼의 프로필 이미지를 초기화(삭제)합니다."""
         self.set_avatar_pixmap(None)
         self.temp_image_path = "DELETE"
+        self.temp_orig_image_path = "DELETE"
+        self.temp_crop_rect = None
+        self.update_avatar_buttons()
+
+    def update_avatar_buttons(self):
+        """아바타 이미지 상태에 맞춰 등록/변경, 삭제 버튼의 가시성과 크기를 동적으로 업데이트합니다."""
+        has_image = self.temp_orig_image_path is not None and self.temp_orig_image_path != "DELETE"
+        
+        # 레이아웃에서 기존 위젯 연결 일시 제거
+        self.avatar_btn_layout.removeWidget(self.btn_change_avatar)
+        self.avatar_btn_layout.removeWidget(self.btn_delete_avatar)
+        
+        if not has_image:
+            self.btn_change_avatar.setText("등록")
+            self.btn_change_avatar.setFixedSize(110, 22)
+            self.btn_change_avatar.setVisible(True)
+            self.avatar_btn_layout.addWidget(self.btn_change_avatar)
+            
+            self.btn_delete_avatar.setVisible(False)
+            self.lbl_avatar.setToolTip("")
+        else:
+            self.btn_change_avatar.setText("변경")
+            self.btn_change_avatar.setFixedSize(53, 22)
+            self.btn_change_avatar.setVisible(True)
+            
+            self.btn_delete_avatar.setFixedSize(53, 22)
+            self.btn_delete_avatar.setVisible(True)
+            
+            self.avatar_btn_layout.addWidget(self.btn_change_avatar)
+            self.avatar_btn_layout.addWidget(self.btn_delete_avatar)
+            self.lbl_avatar.setToolTip("우클릭: 이미지 조정")
+
+    def show_avatar_context_menu(self, pos):
+        """아바타 이미지 우클릭 시 이미지 조정을 수행할 수 있는 컨텍스트 메뉴를 띄웁니다."""
+        has_image = self.temp_orig_image_path is not None and self.temp_orig_image_path != "DELETE"
+        if not has_image:
+            return
+            
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 6px;
+                padding: 4px 0px;
+            }
+            QMenu::item {
+                padding: 6px 20px;
+                font-size: 14px;
+                color: #374151;
+            }
+            QMenu::item:selected {
+                background-color: #F3F4F6;
+                color: #111827;
+            }
+        """)
+        
+        # 사용자 제공 크롭 아이콘 SVG를 QIcon으로 변환 (메뉴 텍스트 색상 #374151에 맞춰 렌더링)
+        svg_str = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-crop-icon lucide-crop"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>"""
+        colored_svg = svg_str.replace('currentColor', '#374151')
+        
+        icon = QIcon()
+        try:
+            renderer = QSvgRenderer(QByteArray(colored_svg.encode('utf-8')))
+            pixmap = QPixmap(16, 16)
+            pixmap.fill(Qt.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            renderer.render(painter)
+            painter.end()
+            icon = QIcon(pixmap)
+        except Exception as e:
+            print(f"SVG icon render failed: {e}")
+            
+        action_adjust = QAction(icon, "이미지 조정", self)
+        action_adjust.triggered.connect(self.adjust_profile_image)
+        menu.addAction(action_adjust)
+        
+        menu.exec(self.lbl_avatar.mapToGlobal(pos))
 
     def cancel_editing(self):
         self.editing_name = None
@@ -5100,12 +5435,16 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.btn_submit.setText("캐릭터 등록")
         self.btn_cancel_edit.setVisible(False)
         self.selected_color = "#3B82F6"
+        self.temp_image_path = None
+        self.temp_orig_image_path = None
+        self.temp_crop_rect = None
         self.set_avatar_pixmap(None) # 아바타 리셋
+        self.update_avatar_buttons()
         
     def edit_character(self, char_info):
         self.editing_name = char_info.get("name", "")
         self.input_name.setText(self.editing_name)
-        self.input_name.setEnabled(False) # 이름은 고유키 역할이므로 수정 시 수정 불가
+        self.input_name.setEnabled(True) # 수정 시에도 이름 변경이 가능하도록 수정
         
         self.combo_role.setCurrentText(char_info.get("role", "단역"))
         self.combo_age.setCurrentText(char_info.get("age", "미상"))
@@ -5116,15 +5455,37 @@ class GlobalCharacterSettingsDialog(QDialog):
         
         # 프로필 이미지 로드
         img_path = char_info.get("image_path", "")
+        orig_img_path = char_info.get("image_path_orig", "")
+        crop_rect = char_info.get("crop_rect", None)
+        
+        import config
+        if orig_img_path:
+            full_orig_path = os.path.join(config.PROJECTS_DIR, self.project_name, orig_img_path)
+        else:
+            full_orig_path = ""
+            
         if img_path:
-            import config
-            full_path = os.path.join(config.PROJECTS_DIR, self.project_name, img_path)
-            self.set_avatar_pixmap(full_path)
+            full_img_path = os.path.join(config.PROJECTS_DIR, self.project_name, img_path)
+            self.set_avatar_pixmap(full_img_path)
+            
+            # 원본 이미지가 존재하면 원본 이미지 경로와 크롭 영역 설정, 없으면 기존 이미지를 원본으로 간주
+            if full_orig_path and os.path.exists(full_orig_path):
+                self.temp_image_path = full_img_path
+                self.temp_orig_image_path = full_orig_path
+                self.temp_crop_rect = crop_rect
+            else:
+                self.temp_image_path = full_img_path
+                self.temp_orig_image_path = full_img_path
+                self.temp_crop_rect = None
         else:
             self.set_avatar_pixmap(None)
+            self.temp_image_path = None
+            self.temp_orig_image_path = None
+            self.temp_crop_rect = None
         
         self.btn_submit.setText("캐릭터 정보 수정")
         self.btn_cancel_edit.setVisible(True)
+        self.update_avatar_buttons()
         
     def submit_character(self):
         name = self.input_name.text().strip()
@@ -5135,6 +5496,17 @@ class GlobalCharacterSettingsDialog(QDialog):
         import config
         chars = config.load_global_characters(self.project_name)
         
+        # 1) 중복 체크 (수정 모드일 때 이름이 변경된 경우 및 신규 등록인 경우)
+        if self.editing_name:
+            if self.editing_name != name:
+                if any(c.get("name", "").strip() == name for c in chars):
+                    QMessageBox.warning(self, "중복 오류", f"'{name}' 캐릭터는 이미 등록되어 있습니다.")
+                    return
+        else:
+            if any(c.get("name", "").strip() == name for c in chars):
+                QMessageBox.warning(self, "중복 오류", f"'{name}' 캐릭터는 이미 등록되어 있습니다.")
+                return
+                
         # 프로필 이미지 디렉토리 빌드
         img_dir = os.path.join(config.PROJECTS_DIR, self.project_name, "character_images")
         os.makedirs(img_dir, exist_ok=True)
@@ -5143,25 +5515,67 @@ class GlobalCharacterSettingsDialog(QDialog):
         target_img_relative = f"character_images/{target_img_name}"
         target_img_absolute = os.path.join(config.PROJECTS_DIR, self.project_name, target_img_relative)
         
-        image_field_val = ""
+        target_orig_name = f"{name}_orig.png"
+        target_orig_relative = f"character_images/{target_orig_name}"
+        target_orig_absolute = os.path.join(config.PROJECTS_DIR, self.project_name, target_orig_relative)
         
-        # 1) 삭제 플래그일 때의 디렉토리 청소 및 필드값 초기화
+        # 2) [이름 변경 대응] 기존 파일 이름 수정 및 불필요 파일 제거
+        if self.editing_name and self.editing_name != name:
+            existing = next((c for c in chars if c.get("name", "") == self.editing_name), None)
+            if existing:
+                old_img_rel = existing.get("image_path", "")
+                old_orig_rel = existing.get("image_path_orig", "")
+                
+                old_img_abs = os.path.join(config.PROJECTS_DIR, self.project_name, old_img_rel) if old_img_rel else ""
+                old_orig_abs = os.path.join(config.PROJECTS_DIR, self.project_name, old_orig_rel) if old_orig_rel else ""
+                
+                # 이미지를 변경하지 않고 이름만 변경한 경우: 디스크 파일명을 새로 매칭하여 rename
+                if self.temp_image_path and old_img_abs and os.path.abspath(self.temp_image_path) == os.path.abspath(old_img_abs):
+                    if os.path.exists(old_img_abs):
+                        try:
+                            os.rename(old_img_abs, target_img_absolute)
+                            self.temp_image_path = target_img_absolute
+                        except Exception as e:
+                            print(f"이미지 파일명 변경 실패: {e}")
+                    if old_orig_abs and os.path.exists(old_orig_abs):
+                        try:
+                            os.rename(old_orig_abs, target_orig_absolute)
+                            self.temp_orig_image_path = target_orig_absolute
+                        except Exception as e:
+                            print(f"원본 이미지 파일명 변경 실패: {e}")
+                else:
+                    # 새로운 이미지로 대체하거나 삭제한 경우: 기존 파일들을 삭제하여 가비지 방지
+                    if old_img_abs and os.path.exists(old_img_abs):
+                        try: os.remove(old_img_abs)
+                        except Exception as e: print(f"이전 이미지 삭제 실패: {e}")
+                    if old_orig_abs and os.path.exists(old_orig_abs):
+                        try: os.remove(old_orig_abs)
+                        except Exception as e: print(f"이전 원본 이미지 삭제 실패: {e}")
+
+        image_field_val = ""
+        orig_image_field_val = ""
+        saved_crop_rect = None
+        
+        # 3) 삭제 플래그일 때의 디렉토리 청소 및 필드값 초기화
         if self.temp_image_path == "DELETE":
             if os.path.exists(target_img_absolute):
-                try:
-                    os.remove(target_img_absolute)
-                except Exception as e:
-                    print(f"이미지 삭제 실패: {e}")
+                try: os.remove(target_img_absolute)
+                except Exception as e: print(f"이미지 삭제 실패: {e}")
+            if os.path.exists(target_orig_absolute):
+                try: os.remove(target_orig_absolute)
+                except Exception as e: print(f"원본 이미지 삭제 실패: {e}")
             image_field_val = ""
+            orig_image_field_val = ""
+            saved_crop_rect = None
             
-        # 2) 신규 등록 혹은 변경된 새로운 외부 경로인 경우 (1:1 비율 정사각형 축소 및 복사 저장)
+        # 4) 신규 등록 혹은 변경된 새로운 외부 경로인 경우 (1:1 비율 정사각형 축소 및 복사 저장)
         elif self.temp_image_path and os.path.exists(self.temp_image_path):
+            # 크롭 캐시 저장 (둥근 마스킹 처리 없이 깨끗한 150x150 정사각형으로 저장)
             if os.path.abspath(self.temp_image_path) != os.path.abspath(target_img_absolute):
                 try:
-                    # 150x150px 둥근 모서리 정사각형(1:1 비율) 축소 처리 (radius 12px)
                     pix = QPixmap(self.temp_image_path)
                     if not pix.isNull():
-                        scaled_pix = get_round_rect_pixmap(pix, 150, 150, 12)
+                        scaled_pix = pix.scaled(150, 150, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
                         scaled_pix.save(target_img_absolute, "PNG")
                         image_field_val = target_img_relative
                     else:
@@ -5171,24 +5585,55 @@ class GlobalCharacterSettingsDialog(QDialog):
                     image_field_val = ""
             else:
                 image_field_val = target_img_relative
+                
+            # 원본 백업본 저장 (최대 1000px 스마트 다운스케일링 적용)
+            if self.temp_orig_image_path and os.path.exists(self.temp_orig_image_path):
+                if os.path.abspath(self.temp_orig_image_path) != os.path.abspath(target_orig_absolute):
+                    try:
+                        orig_pix = QPixmap(self.temp_orig_image_path)
+                        if not orig_pix.isNull():
+                            max_dimension = 1000
+                            if orig_pix.width() > max_dimension or orig_pix.height() > max_dimension:
+                                orig_pix = orig_pix.scaled(
+                                    max_dimension, max_dimension,
+                                    Qt.KeepAspectRatio, Qt.SmoothTransformation
+                                )
+                            orig_pix.save(target_orig_absolute, "PNG")
+                            orig_image_field_val = target_orig_relative
+                            saved_crop_rect = self.temp_crop_rect
+                        else:
+                            orig_image_field_val = ""
+                            saved_crop_rect = None
+                    except Exception as e:
+                        print(f"원본 이미지 저장 실패: {e}")
+                        orig_image_field_val = ""
+                        saved_crop_rect = None
+                else:
+                    orig_image_field_val = target_orig_relative
+                    saved_crop_rect = self.temp_crop_rect
+            else:
+                orig_image_field_val = ""
+                saved_crop_rect = None
         else:
             # 아바타가 변경되지 않았거나 수정 모드 진입 시 기존 값이 유지되는 경우
             if self.editing_name:
                 existing = next((c for c in chars if c.get("name", "") == self.editing_name), None)
                 if existing:
-                    image_field_val = existing.get("image_path", "")
+                    # 이름 변경이 완료된 상태면 image_path 등도 새 경로로 재설정해야 함
+                    image_field_val = target_img_relative if existing.get("image_path", "") else ""
+                    orig_image_field_val = target_orig_relative if existing.get("image_path_orig", "") else ""
+                    saved_crop_rect = existing.get("crop_rect", None)
                     if self.temp_image_path == "DELETE":
                         image_field_val = ""
+                        orig_image_field_val = ""
+                        saved_crop_rect = None
             else:
                 image_field_val = ""
+                orig_image_field_val = ""
+                saved_crop_rect = None
         
-        # 신규 모드
+        # 5) 신규 모드
         if self.editing_name is None:
-            # 중복 체크
-            if any(c.get("name", "").strip() == name for c in chars):
-                QMessageBox.warning(self, "중복 오류", f"'{name}' 캐릭터는 이미 등록되어 있습니다.")
-                return
-                
             new_char = {
                 "name": name,
                 "role": self.combo_role.currentText(),
@@ -5196,20 +5641,25 @@ class GlobalCharacterSettingsDialog(QDialog):
                 "gender": self.combo_gender.currentText(),
                 "color": self.selected_color,
                 "memo": self.input_memo.text().strip(),
-                "image_path": image_field_val
+                "image_path": image_field_val,
+                "image_path_orig": orig_image_field_val,
+                "crop_rect": saved_crop_rect
             }
             chars.append(new_char)
             
-        # 수정 모드
+        # 6) 수정 모드
         else:
             for c in chars:
                 if c.get("name", "") == self.editing_name:
+                    c["name"] = name  # 이름을 새 이름으로 변경
                     c["role"] = self.combo_role.currentText()
                     c["age"] = self.combo_age.currentText()
                     c["gender"] = self.combo_gender.currentText()
                     c["color"] = self.selected_color
                     c["memo"] = self.input_memo.text().strip()
                     c["image_path"] = image_field_val
+                    c["image_path_orig"] = orig_image_field_val
+                    c["crop_rect"] = saved_crop_rect
                     break
                     
         config.save_global_characters(self.project_name, chars)
@@ -5235,13 +5685,17 @@ class GlobalCharacterSettingsDialog(QDialog):
             
             # 프로필 이미지 파일도 함께 디스크에서 자동 영구 소멸 (가비지 컬렉션)
             existing = next((c for c in chars if c.get("name", "") == name), None)
-            if existing and existing.get("image_path", ""):
-                img_abs = os.path.join(config.PROJECTS_DIR, self.project_name, existing["image_path"])
-                if os.path.exists(img_abs):
-                    try:
-                        os.remove(img_abs)
-                    except Exception as e:
-                        print(f"캐릭터 삭제 중 이미지 파일 삭제 오류: {e}")
+            if existing:
+                if existing.get("image_path", ""):
+                    img_abs = os.path.join(config.PROJECTS_DIR, self.project_name, existing["image_path"])
+                    if os.path.exists(img_abs):
+                        try: os.remove(img_abs)
+                        except Exception as e: print(f"캐릭터 삭제 중 이미지 파일 삭제 오류: {e}")
+                if existing.get("image_path_orig", ""):
+                    orig_abs = os.path.join(config.PROJECTS_DIR, self.project_name, existing["image_path_orig"])
+                    if os.path.exists(orig_abs):
+                        try: os.remove(orig_abs)
+                        except Exception as e: print(f"캐릭터 삭제 중 원본 이미지 파일 삭제 오류: {e}")
             
             chars = [c for c in chars if c.get("name", "") != name]
             config.save_global_characters(self.project_name, chars)
@@ -5524,7 +5978,7 @@ class GlobalCharacterSettingsDialog(QDialog):
 # =================================================================
 class CropWidget(QWidget):
     """원본 이미지를 축소 핏하여 뿌리고, 그 위에 1:1 비율 고정 크롭 박스를 마우스로 제어하는 명품 정사각형 위젯"""
-    def __init__(self, pixmap, parent=None):
+    def __init__(self, pixmap, parent=None, initial_crop_rect=None):
         super().__init__(parent)
         self.original_pixmap = pixmap
         self.scaled_pixmap = QPixmap()
@@ -5539,10 +5993,10 @@ class CropWidget(QWidget):
         self.crop_start_rect = QRect()
         
         self.setMouseTracking(True)
-        self.init_scale()
+        self.init_scale(initial_crop_rect)
 
-    def init_scale(self):
-        """이미지를 가로 400픽셀 규격으로 고정 비율 스케일링하고 초기 1:1 크롭 영역을 정중앙 배치합니다."""
+    def init_scale(self, initial_crop_rect=None):
+        """이미지를 가로 400픽셀 규격으로 고정 비율 스케일링하고 초기 1:1 크롭 영역을 정중앙 또는 이전 지정 영역으로 배치합니다."""
         if self.original_pixmap.isNull():
             return
             
@@ -5562,13 +6016,25 @@ class CropWidget(QWidget):
         )
         self.setFixedSize(new_w, new_h)
         
-        # 초기 크롭 영역 지정 (이미지 중앙에 1:1 비율로 매칭)
-        crop_size = int(min(new_w, new_h) * 0.75)
-        crop_size = max(crop_size, 80) # 최소 크기 한계
-        
-        cx = (new_w - crop_size) // 2
-        cy = (new_h - crop_size) // 2
-        self.crop_rect = QRect(cx, cy, crop_size, crop_size)
+        if initial_crop_rect:
+            # initial_crop_rect는 [rx, ry, rw, rh] (원본 해상도 기준)
+            rx, ry, rw, rh = initial_crop_rect
+            cx = int(rx * ratio)
+            cy = int(ry * ratio)
+            cw = int(rw * ratio)
+            ch = int(rh * ratio)
+            # 유효 범위 제한 (부정한 범위 방지)
+            cx = max(0, min(cx, new_w - cw))
+            cy = max(0, min(cy, new_h - ch))
+            self.crop_rect = QRect(cx, cy, cw, ch)
+        else:
+            # 초기 크롭 영역 지정 (이미지 중앙에 1:1 비율로 매칭)
+            crop_size = int(min(new_w, new_h) * 0.75)
+            crop_size = max(crop_size, 80) # 최소 크기 한계
+            
+            cx = (new_w - crop_size) // 2
+            cy = (new_h - crop_size) // 2
+            self.crop_rect = QRect(cx, cy, crop_size, crop_size)
 
     def paintEvent(self, event):
         if self.scaled_pixmap.isNull():
@@ -5815,10 +6281,28 @@ class CropWidget(QWidget):
         cropped = self.original_pixmap.copy(rx, ry, rw, rh)
         return cropped.scaled(150, 150, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
 
+    def get_crop_rect_coords(self):
+        """현재 크롭 영역을 원본 이미지 해상도 기준 [x, y, w, h] 리스트로 환산하여 반환합니다."""
+        if self.original_pixmap.isNull():
+            return None
+            
+        inv_scale = 1.0 / self.scale_factor
+        
+        rx = int(self.crop_rect.x() * inv_scale)
+        ry = int(self.crop_rect.y() * inv_scale)
+        rw = int(self.crop_rect.width() * inv_scale)
+        rh = int(self.crop_rect.height() * inv_scale)
+        
+        rx = max(0, rx)
+        ry = max(0, ry)
+        rw = min(rw, self.original_pixmap.width() - rx)
+        rh = min(rh, self.original_pixmap.height() - ry)
+        return [rx, ry, rw, rh]
+
 
 class ImageCropDialog(QDialog):
     """인물 사진 등록 시, 얼굴 영역만 1:1 정사각형 비율로 정밀 드래그 절단하는 모던 크롭 다이얼로그"""
-    def __init__(self, file_path, parent=None):
+    def __init__(self, file_path, parent=None, initial_crop_rect=None):
         super().__init__(parent)
         self.setWindowTitle("✂️ 프로필 아이콘 정밀 크롭 (1:1)")
         self.setWindowFlags(Qt.Window | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
@@ -5826,6 +6310,8 @@ class ImageCropDialog(QDialog):
         
         self.original_pixmap = QPixmap(file_path)
         self.cropped_pixmap = QPixmap()
+        self.crop_rect_coords = None
+        self.initial_crop_rect = initial_crop_rect
         
         self.init_ui()
 
@@ -5851,7 +6337,7 @@ class ImageCropDialog(QDialog):
         self.crop_container = QHBoxLayout()
         self.crop_container.addStretch()
         
-        self.crop_widget = CropWidget(self.original_pixmap, self)
+        self.crop_widget = CropWidget(self.original_pixmap, self, self.initial_crop_rect)
         self.crop_container.addWidget(self.crop_widget)
         
         self.crop_container.addStretch()
@@ -5905,9 +6391,10 @@ class ImageCropDialog(QDialog):
         dialog_w = 540
         dialog_h = max(400, img_h + 190)
         self.resize(dialog_w, dialog_h)
-
+ 
     def on_apply(self):
         # 최종 정밀 크롭 완성본 낚아채기
         self.cropped_pixmap = self.crop_widget.get_cropped_pixmap()
+        self.crop_rect_coords = self.crop_widget.get_crop_rect_coords()
         self.accept()
 

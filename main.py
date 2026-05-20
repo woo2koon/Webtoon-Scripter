@@ -48,6 +48,67 @@ restore_template()
 
 from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer
 
+class GlobalContextMenuFilter(QObject):
+    def eventFilter(self, obj, event):
+        if not isinstance(obj, QObject):
+            return False
+        try:
+            # 1. Ctrl + Shift + Z 입력 시 다시 실행(Redo) 작동 처리
+            if event.type() == QEvent.KeyPress:
+                if event.modifiers() == (Qt.ControlModifier | Qt.ShiftModifier) and event.key() == Qt.Key_Z:
+                    if hasattr(obj, 'redo') and hasattr(obj, 'isReadOnly') and not obj.isReadOnly():
+                        obj.redo()
+                        return True
+
+            # 2. 텍스트 입력 위젯(QLineEdit, QTextEdit, QPlainTextEdit, SmartTextEdit 등)에서 우클릭이 발생했을 때
+            elif event.type() == QEvent.ContextMenu and obj.metaObject().className() in ["QLineEdit", "QTextEdit", "QPlainTextEdit", "SmartTextEdit"]:
+                # 위젯 자체의 표준 컨텍스트 메뉴 생성
+                menu = obj.createStandardContextMenu()
+                
+                # 영문/한글 메뉴 항목들을 친근한 한국어로 동적 맵핑 및 단축키 조정
+                actions = menu.actions()
+                for action in actions:
+                    text = action.text()
+                    clean_text = text.replace("&", "")
+                    clean_text_lower = clean_text.lower()
+                    
+                    # Undo 매칭
+                    if "undo" in clean_text_lower or "되돌리기" in clean_text_lower or "실행 취소" in clean_text_lower or "실행취소" in clean_text_lower:
+                        action.setText("되돌리기 (&U)")
+                        action.setShortcut(QKeySequence("Ctrl+Z"))
+                    # Redo 매칭
+                    elif "redo" in clean_text_lower or "다시 실행" in clean_text_lower or "다시실행" in clean_text_lower:
+                        redo_action = QAction("다시 실행 (&R)", obj)
+                        redo_action.setIcon(action.icon())
+                        redo_action.setShortcut(QKeySequence("Ctrl+Shift+Z"))
+                        redo_action.setEnabled(action.isEnabled())
+                        redo_action.triggered.connect(obj.redo)
+                        
+                        menu.insertAction(action, redo_action)
+                        menu.removeAction(action)
+                    elif "cut" in clean_text_lower or "잘라내기" in clean_text_lower:
+                        action.setText("잘라내기 (&T)")
+                        action.setShortcut(QKeySequence("Ctrl+X"))
+                    elif "copy" in clean_text_lower or "복사" in clean_text_lower:
+                        action.setText("복사 (&C)")
+                        action.setShortcut(QKeySequence("Ctrl+C"))
+                    elif "paste" in clean_text_lower or "붙여넣기" in clean_text_lower:
+                        action.setText("붙여넣기 (&P)")
+                        action.setShortcut(QKeySequence("Ctrl+V"))
+                    elif "delete" in clean_text_lower or "삭제" in clean_text_lower:
+                        action.setText("삭제 (&D)")
+                    elif "select all" in clean_text_lower or "모두 선택" in clean_text_lower or "모두선택" in clean_text_lower:
+                        action.setText("모두 선택 (&A)")
+                        action.setShortcut(QKeySequence("Ctrl+A"))
+                
+                menu.exec(event.globalPos())
+                return True
+        except Exception as e:
+            print(f"GlobalContextMenuFilter error: {e}")
+            
+        return super().eventFilter(obj, event)
+
+
 class GlobalToolTipFilter(QObject):
     def __init__(self):
         super().__init__()
@@ -1688,7 +1749,6 @@ class WebtoonManager(QMainWindow):
 
         # API 키 설정을 아래로
         action_settings = QAction("API 키 설정", self)
-        action_settings.setShortcut("Ctrl+,")
         action_settings.triggered.connect(self.open_settings_dialog)
         settings_menu.addAction(action_settings)
 
@@ -1907,11 +1967,12 @@ class WebtoonManager(QMainWindow):
 
         # 신규 단축키 등록
         for item in config.IDIOMS:
-            key_seq = f"Alt+{item['key']}"
-            shortcut = QShortcut(QKeySequence(key_seq), self)
-            # lambda 캡처 문제를 피하기 위해 default value 사용
-            shortcut.activated.connect(lambda t=item['text']: self.handle_idiom_trigger(t))
-            self.idiom_shortcuts.append(shortcut)
+            if item.get('key'):
+                key_seq = f"Alt+{item['key']}"
+                shortcut = QShortcut(QKeySequence(key_seq), self)
+                # lambda 캡처 문제를 피하기 위해 default value 사용
+                shortcut.activated.connect(lambda t=item['text']: self.handle_idiom_trigger(t))
+                self.idiom_shortcuts.append(shortcut)
 
     def handle_idiom_trigger(self, text):
         """단축키가 눌렸을 때의 동작: 포커스된 에디터가 있으면 삽입, 없으면 클립보드 복사"""
@@ -3464,6 +3525,10 @@ if __name__ == "__main__":
     # [추가] 전역 툴팁 위치 보정 필터 설치 (커서 바로 아래에 깔끔하게 배치)
     app.tooltip_filter = GlobalToolTipFilter()
     app.installEventFilter(app.tooltip_filter)
+    
+    # [추가] 전역 텍스트 입력창 컨텍스트 메뉴 필터 설치 (우클릭 한글 메뉴 및 단축키 바인딩 일괄 적용)
+    app.context_menu_filter = GlobalContextMenuFilter()
+    app.installEventFilter(app.context_menu_filter)
     
     app.setFont(QFont("Pretendard", 10))
     
