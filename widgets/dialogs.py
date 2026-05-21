@@ -948,12 +948,14 @@ class FloatingIdiomViewer(QDialog):
         if text is None:
             text = self.search_bar.text()
             
-        query = text.lower().strip()
+        import unicodedata
+        query = unicodedata.normalize('NFC', text.lower().strip())
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
             data = item.data(Qt.UserRole)
             search_target = str(data).lower() if data else ""
-            item.setHidden(query != "" and query not in search_target)
+            search_target_norm = unicodedata.normalize('NFC', search_target)
+            item.setHidden(query != "" and query not in search_target_norm)
 
     def on_item_clicked(self, item):
         text = item.data(Qt.UserRole)
@@ -1713,9 +1715,12 @@ class ProjectManagementDialog(QDialog):
         layout.addWidget(right_panel, 3)
 
     def filter_projects(self, text):
+        import unicodedata
+        query = unicodedata.normalize('NFC', text.lower())
         for i in range(self.list_titles.count()):
             item = self.list_titles.item(i)
-            item.setHidden(text.lower() not in item.text().lower())
+            item_text = unicodedata.normalize('NFC', item.text().lower())
+            item.setHidden(query not in item_text)
 
     def on_episode_selection_changed(self):
         for i in range(self.list_episodes.count()):

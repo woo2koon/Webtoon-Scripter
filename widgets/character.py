@@ -1190,12 +1190,14 @@ class FloatingCharacterViewer(QDialog):
         self.load_data()
         
     def filter_list(self):
-        query = self.search_bar.text().lower().strip()
+        import unicodedata
+        query = unicodedata.normalize('NFC', self.search_bar.text().lower().strip())
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
             char_info = item.data(Qt.UserRole)
             name = char_info.get("name", "").lower() if char_info else ""
-            item.setHidden(query != "" and query not in name)
+            name_norm = unicodedata.normalize('NFC', name)
+            item.setHidden(query != "" and query not in name_norm)
             
     def on_item_double_clicked(self, item):
         char_info = item.data(Qt.UserRole)
@@ -1645,7 +1647,8 @@ class GlobalCharacterSettingsDialog(QDialog):
         
         query = ""
         if hasattr(self, 'search_input'):
-            query = self.search_input.text().strip().lower()
+            import unicodedata
+            query = unicodedata.normalize('NFC', self.search_input.text().strip().lower())
             
         visible_count = 0
         for char in chars:
@@ -1653,7 +1656,12 @@ class GlobalCharacterSettingsDialog(QDialog):
             role = char.get("role", "단역")
             memo = char.get("memo", "")
             
-            if query and not (query in name.lower() or query in role.lower() or query in memo.lower()):
+            import unicodedata
+            name_norm = unicodedata.normalize('NFC', name.lower())
+            role_norm = unicodedata.normalize('NFC', role.lower())
+            memo_norm = unicodedata.normalize('NFC', memo.lower())
+            
+            if query and not (query in name_norm or query in role_norm or query in memo_norm):
                 continue
                 
             if visible_count > 0:
