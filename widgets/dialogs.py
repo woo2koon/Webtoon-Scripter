@@ -21,7 +21,7 @@ from PySide6.QtGui import (
 import config
 from config import PROJECTS_DIR
 from utils import get_icon, get_colored_icon, open_path
-from .common import PopupItemDelegate
+from .common import PopupItemDelegate, SingleClickLineEdit
 from .character import GlobalCharacterSettingsDialog
 
 # =================================================================
@@ -853,10 +853,11 @@ class FloatingIdiomViewer(QDialog):
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(10)
 
-        self.search_bar = QLineEdit()
+        self.search_bar = SingleClickLineEdit()
         self.search_bar.setPlaceholderText("🔍 관용구 검색...")
         self.search_bar.setFixedHeight(36)
         self.search_bar.setClearButtonEnabled(True)
+
         self.search_bar.setStyleSheet("""
             QLineEdit {
                 border: 1px solid #D1D5DB;
@@ -1560,17 +1561,18 @@ class ProjectManagementDialog(QDialog):
         title_list_layout.addStretch()
         left_layout.addWidget(title_list_header)
 
-        self.search_bar = QLineEdit()
+        self.search_bar = SingleClickLineEdit()
         self.search_bar.setFont(QFont("Pretendard", 13))
         self.search_bar.setPlaceholderText("🔍 작품 검색...")
         self.search_bar.setFixedHeight(34)
         self.search_bar.setClearButtonEnabled(True)
+
         self.search_bar.setStyleSheet("""
             QLineEdit {
                 border: 1px solid #D1D5DB;
                 border-radius: 6px;
                 padding-left: 10px;
-                padding-right: 5px;
+                padding-right: 30px;
                 background-color: #F9FAFB;
                 font-size: 13px;
                 font-family: 'Pretendard';

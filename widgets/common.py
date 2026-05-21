@@ -708,3 +708,43 @@ def get_round_rect_pixmap(pixmap, w, h, radius=8):
     painter.end()
     
     return target
+
+# =================================================================
+# macOS 싱글클릭 지원 QLineEdit (포커스가 없어도 X버튼 클릭 시 즉시 지워지도록 처리)
+# =================================================================
+class SingleClickLineEdit(QLineEdit):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._install_filter_on_children()
+        
+    def childEvent(self, event):
+        super().childEvent(event)
+        if event.type() == QEvent.ChildAdded:
+            # 0ms timer ensures children are fully initialized and bound
+            QTimer.singleShot(0, self._install_filter_on_children)
+
+    def _install_filter_on_children(self):
+        from PySide6.QtWidgets import QToolButton
+        for child in self.findChildren(QToolButton):
+            child.removeEventFilter(self)
+            child.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        from PySide6.QtWidgets import QToolButton
+        if isinstance(obj, QToolButton) or obj.inherits("QToolButton"):
+            if event.type() == QEvent.MouseButtonPress:
+                if event.button() == Qt.LeftButton:
+                    self.clear()
+                    event.accept()
+                    return True
+        return super().eventFilter(obj, event)
+
+    def mousePressEvent(self, event):
+        from PySide6.QtWidgets import QToolButton
+        btn = self.findChild(QToolButton)
+        if btn and btn.isVisible() and btn.geometry().contains(event.pos()):
+            self.clear()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+

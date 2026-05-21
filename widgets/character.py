@@ -26,7 +26,7 @@ from PySide6.QtSvg import QSvgRenderer
 import config
 from config import ROLE_OPTIONS, AGE_OPTIONS, GENDER_OPTIONS
 from utils import get_icon, get_colored_pixmap
-from .common import ClickableComboBox, get_round_rect_pixmap, HoverIconButton
+from .common import ClickableComboBox, get_round_rect_pixmap, HoverIconButton, SingleClickLineEdit
 
 # =================================================================
 # 캐릭터 목록 드래그 컨테이너 및 핸들
@@ -932,7 +932,7 @@ class FloatingCharacterViewer(QDialog):
         search_layout.setContentsMargins(0, 0, 0, 0)
         search_layout.setSpacing(6)
         
-        self.search_bar = QLineEdit()
+        self.search_bar = SingleClickLineEdit()
         self.search_bar.setPlaceholderText("🔍 캐릭터 이름 검색...")
         self.search_bar.setClearButtonEnabled(True)
         self.search_bar.setStyleSheet("""
@@ -950,6 +950,7 @@ class FloatingCharacterViewer(QDialog):
                 background-color: #FFFFFF;
             }
         """ + "\n" + config.MODERN_MENU_STYLE)
+        
         self.search_bar.textChanged.connect(self.filter_list)
         search_layout.addWidget(self.search_bar)
         
@@ -1566,16 +1567,17 @@ class GlobalCharacterSettingsDialog(QDialog):
         
         search_layout = QHBoxLayout()
         search_layout.setContentsMargins(0, 0, 0, 0)
-        self.search_input = QLineEdit()
+        self.search_input = SingleClickLineEdit()
         self.search_input.setFixedHeight(27)
         self.search_input.setPlaceholderText("🔍 캐릭터 이름, 역할 또는 메모 검색...")
         self.search_input.setClearButtonEnabled(True)
+
         self.search_input.setStyleSheet("""
             QLineEdit {
                 background-color: white;
                 border: 1px solid #D1D5DB;
                 border-radius: 6px;
-                padding: 2px 10px;
+                padding: 2px 30px 2px 10px;
                 font-size: 13px;
                 color: #111827;
                 min-height: 27px;
