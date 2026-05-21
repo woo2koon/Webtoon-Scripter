@@ -404,12 +404,21 @@ class WebtoonManager(QMainWindow):
         dialog = ProjectManagementDialog(self)
         dialog.exec()
 
+        # 다이얼로그 실행 후, 실제로 삭제되어 사라졌을 수 있으므로 존재하는지 확인합니다.
+        project_list = self.get_project_list()
+        if current_title not in project_list:
+            current_title = ""
+            current_episode = ""
+        else:
+            episode_list = self.get_episode_list()
+            if current_episode not in episode_list:
+                current_episode = ""
+
         self.combo_project.blockSignals(True)
         self.combo_episode.blockSignals(True)
 
         # 2. 목록을 싹 비우고 새로 가져옵니다.
         self.combo_project.clear()
-        project_list = self.get_project_list()
         self.combo_project.addItems(project_list)
 
         # 3. [핵심] 원래 아무것도 선택되지 않은 상태였다면 (-1)로 강제 초기화
@@ -417,6 +426,9 @@ class WebtoonManager(QMainWindow):
             self.combo_project.setCurrentIndex(-1)
             self.combo_episode.clear()
             self.combo_episode.setCurrentIndex(-1)
+            self.current_title = ""
+            self.current_episode = ""
+            self.clear_workspace()
         else:
             # 이전에 선택한 게 있었다면 그 값으로 복구
             self.combo_project.setCurrentText(current_title)
@@ -425,11 +437,73 @@ class WebtoonManager(QMainWindow):
             
             if current_episode:
                 self.combo_episode.setCurrentText(current_episode)
+                self.current_title = current_title
+                self.current_episode = current_episode
             else:
                 self.combo_episode.setCurrentIndex(-1)
+                self.current_title = current_title
+                self.current_episode = ""
+                self.clear_workspace()
 
         self.combo_project.blockSignals(False)
         self.combo_episode.blockSignals(False)
+
+    def handle_deleted_project(self, project_name):
+        """작품 및 회차 관리 다이얼로그에서 작품이 삭제되었을 때 호출되는 콜백"""
+        # 만약 현재 선택된 작품이 삭제된 작품이라면
+        if self.current_title == project_name:
+            self.combo_project.blockSignals(True)
+            self.combo_episode.blockSignals(True)
+            
+            # combo_project에서 해당 작품 제거
+            for idx in range(self.combo_project.count()):
+                if self.combo_project.itemText(idx) == project_name:
+                    self.combo_project.removeItem(idx)
+                    break
+            self.combo_project.setCurrentIndex(-1)
+            self.combo_episode.clear()
+            self.combo_episode.setCurrentIndex(-1)
+            
+            self.current_title = ""
+            self.current_episode = ""
+            
+            self.combo_project.blockSignals(False)
+            self.combo_episode.blockSignals(False)
+            
+            self.clear_workspace()
+            
+            # 캐릭터 뷰어 닫거나 비우기
+            if hasattr(self, 'character_viewer') and self.character_viewer and self.character_viewer.isVisible():
+                self.character_viewer.close()
+        else:
+            # 다른 작품이 삭제된 경우, combo_project 목록에서만 제거
+            self.combo_project.blockSignals(True)
+            for idx in range(self.combo_project.count()):
+                if self.combo_project.itemText(idx) == project_name:
+                    self.combo_project.removeItem(idx)
+                    break
+            self.combo_project.blockSignals(False)
+
+    def handle_deleted_episodes(self, project_name, episode_names):
+        """작품 및 회차 관리 다이얼로그에서 회차가 삭제되었을 때 호출되는 콜백"""
+        # 만약 현재 선택된 작품이 해당 작품인 경우
+        if self.current_title == project_name:
+            self.combo_episode.blockSignals(True)
+            
+            # combo_episode에서 삭제된 회차들 제거
+            for epi_name in episode_names:
+                for idx in range(self.combo_episode.count()):
+                    if self.combo_episode.itemText(idx) == epi_name:
+                        self.combo_episode.removeItem(idx)
+                        break
+            
+            # 만약 현재 선택된 회차가 삭제된 회차 목록에 포함되어 있다면
+            if self.current_episode in episode_names:
+                self.combo_episode.setCurrentIndex(-1)
+                self.current_episode = ""
+                self.clear_workspace()
+                
+            self.combo_episode.blockSignals(False)
     
     # [main.py 에 추가]
     def get_project_list(self):

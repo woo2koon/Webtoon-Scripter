@@ -1798,6 +1798,11 @@ class ProjectManagementDialog(QDialog):
                     import shutil
                     shutil.rmtree(project_path)
                 self.refresh_projects()
+                
+                # 메인 창에 작품 삭제 알림
+                mw = self.parent()
+                if mw and hasattr(mw, 'handle_deleted_project'):
+                    mw.handle_deleted_project(title)
             except Exception as e:
                 QMessageBox.critical(self, "삭제 오류", f"삭제 중 오류 발생:\n{e}")
 
@@ -1938,6 +1943,7 @@ class ProjectManagementDialog(QDialog):
         if msg_box.clickedButton() == btn_yes:
             import shutil
             success_count = 0
+            deleted_episodes = []
             for item in selected_items:
                 epi_name = item.data(Qt.UserRole)
                 epi_path = os.path.join(PROJECTS_DIR, title, epi_name)
@@ -1945,10 +1951,18 @@ class ProjectManagementDialog(QDialog):
                     if os.path.exists(epi_path):
                         shutil.rmtree(epi_path)
                     success_count += 1
+                    deleted_episodes.append(epi_name)
                 except Exception as e:
                     print(f"Delete failed for {epi_name}: {e}")
 
             self.load_episodes(title)
+            
+            # 메인 창에 회차 삭제 알림
+            if deleted_episodes:
+                mw = self.parent()
+                if mw and hasattr(mw, 'handle_deleted_episodes'):
+                    mw.handle_deleted_episodes(title, deleted_episodes)
+
             if success_count < count:
                 QMessageBox.warning(self, "삭제 완료", f"{count}개 중 {success_count}개 삭제 완료 (일부 실패)")
 
