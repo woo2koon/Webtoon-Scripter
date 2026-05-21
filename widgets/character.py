@@ -14,11 +14,12 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
     QPushButton, QFrame, QListWidget, QListWidgetItem, QApplication,
     QDialog, QMenu, QFileDialog, QMessageBox, QTabWidget, QGridLayout,
-    QScrollArea
+    QScrollArea, QSlider, QToolTip
 )
-from PySide6.QtCore import Qt, Signal, QMimeData, QPoint, QSize, QRect, QRectF, QByteArray
+from PySide6.QtCore import Qt, Signal, QMimeData, QPoint, QSize, QRect, QRectF, QByteArray, QEvent
 from PySide6.QtGui import (
-    QPixmap, QDrag, QPainter, QColor, QPen, QFont, QIcon, QRegion, QAction, QBrush
+    QPixmap, QDrag, QPainter, QColor, QPen, QFont, QIcon, QRegion, QAction, QBrush,
+    QCursor, QGuiApplication
 )
 from PySide6.QtSvg import QSvgRenderer
 
@@ -689,6 +690,103 @@ class GlobalCharacterCard(QWidget):
         layout.addLayout(btn_layout)
 
 # =================================================================
+# 👤 캐릭터 도우미 리스트 아이템 위젯 (CharacterListItemWidget)
+# =================================================================
+class CharacterListItemWidget(QWidget):
+    def __init__(self, char, project_name, avatar_size=44, parent=None):
+        super().__init__(parent)
+        self.char = char
+        self.project_name = project_name
+        self.avatar_size = avatar_size
+        self.init_ui()
+        
+    def init_ui(self):
+        self.setStyleSheet("background: transparent; border: none;")
+        self.item_layout = QHBoxLayout(self)
+        self.item_layout.setContentsMargins(12, 6, 12, 6)
+        self.item_layout.setSpacing(12)
+        
+        self.lbl_item_avatar = QLabel()
+        self.lbl_item_avatar.setStyleSheet("border: none; background: transparent;")
+        self.item_layout.addWidget(self.lbl_item_avatar, 0, Qt.AlignVCenter)
+        
+        self.lbl_name = QLabel(self.char.get("name", ""))
+        self.lbl_name.setStyleSheet("font-size: 14px; font-weight: bold; color: #1F2937; background: transparent;")
+        self.item_layout.addWidget(self.lbl_name, 1, Qt.AlignVCenter)
+        
+        role = self.char.get("role", "단역")
+        self.lbl_role = QLabel(role)
+        self.lbl_role.setAlignment(Qt.AlignCenter)
+        
+        role_colors = {
+            "주연": {"bg": "#FEE2E2", "text": "#EF4444", "border": "#FCA5A5"},
+            "조연": {"bg": "#FEF3C7", "text": "#D97706", "border": "#FCD34D"},
+            "단역": {"bg": "#F3F4F6", "text": "#4B5563", "border": "#E5E7EB"}
+        }
+        colors = role_colors.get(role, role_colors["단역"])
+        
+        self.lbl_role.setStyleSheet(f"""
+            QLabel {{
+                background-color: {colors['bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 4px;
+                padding: 2px 6px;
+                font-size: 11px;
+                font-weight: bold;
+            }}
+        """)
+        self.item_layout.addWidget(self.lbl_role, 0, Qt.AlignVCenter)
+        
+        self.update_avatar(self.avatar_size)
+        
+    def update_avatar(self, size):
+        self.avatar_size = size
+        self.lbl_item_avatar.setFixedSize(size, size)
+        
+        img_path = self.char.get("image_path", "")
+        full_img_path = ""
+        if img_path:
+            full_img_path = os.path.join(config.PROJECTS_DIR, self.project_name, img_path)
+            
+        if full_img_path and os.path.exists(full_img_path):
+            pix = QPixmap(full_img_path)
+            if not pix.isNull():
+                radius = max(4, size // 5)
+                self.lbl_item_avatar.setPixmap(get_round_rect_pixmap(pix, size, size, radius))
+            else:
+                full_img_path = ""
+                
+        if not full_img_path:
+            default_pix = QPixmap(size, size)
+            default_pix.fill(Qt.transparent)
+            
+            painter = QPainter(default_pix)
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.setPen(QPen(QColor("#E5E7EB"), 1))
+            painter.setBrush(QColor("#F3F4F6"))
+            radius = max(4, size // 5)
+            painter.drawRoundedRect(0, 0, size, size, radius, radius)
+            
+            font_size = max(10, int(size * 0.45))
+            font = QFont("Pretendard", font_size, QFont.Bold)
+            painter.setFont(font)
+            painter.setPen(QColor("#9CA3AF"))
+            painter.drawText(QRect(0, 0, size, size), Qt.AlignCenter, "👤")
+            painter.end()
+            self.lbl_item_avatar.setPixmap(default_pix)
+
+# =================================================================
+# 더블클릭이 가능한 QLabel 서브클래스
+# =================================================================
+class DoubleClickableLabel(QLabel):
+    doubleClicked = Signal()
+    
+    def mouseDoubleClickEvent(self, event):
+        self.doubleClicked.emit()
+        super().mouseDoubleClickEvent(event)
+
+# =================================================================
 # 👤 캐릭터 도우미 플로팅 위젯 (FloatingCharacterViewer)
 # =================================================================
 class FloatingCharacterViewer(QDialog):
@@ -698,6 +796,8 @@ class FloatingCharacterViewer(QDialog):
     def __init__(self, parent=None, project_name=""):
         super().__init__(parent)
         self.project_name = project_name
+        self.avatar_size_all = config.AVATAR_SIZE_ALL
+        self.avatar_size_current = config.AVATAR_SIZE_CURRENT
         self.setWindowTitle("👤 캐릭터 도우미")
         self.setWindowFlags(Qt.Tool | Qt.WindowCloseButtonHint)
         self.resize(340, 520)
@@ -711,6 +811,71 @@ class FloatingCharacterViewer(QDialog):
         layout.setSpacing(8)
         
         self.tabs = QTabWidget()
+        
+        # 탭바 우측 코너에 배치할 줌 컨트롤러 위젯
+        zoom_widget = QWidget()
+        zoom_widget.setStyleSheet("background: transparent; border: none;")
+        zoom_layout = QHBoxLayout(zoom_widget)
+        zoom_layout.setContentsMargins(0, 0, 6, 2)
+        zoom_layout.setSpacing(3)
+        
+        btn_style = """
+            QPushButton {
+                background-color: #F3F4F6;
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                color: #374151;
+                font-weight: bold;
+                font-size: 14px;
+                min-width: 24px;
+                max-width: 24px;
+                min-height: 24px;
+                max-height: 24px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: #E5E7EB;
+                border-color: #9CA3AF;
+            }
+            QPushButton:pressed {
+                background-color: #D1D5DB;
+            }
+            QPushButton:disabled {
+                background-color: #F9FAFB;
+                color: #D1D5DB;
+                border-color: #E5E7EB;
+            }
+        """
+        
+        # 크기 표시 라벨 (왼쪽 배치) - 더블클릭 시 45px 초기화 지원
+        self.lbl_size_display = DoubleClickableLabel(f"{self.avatar_size_all}px")
+        self.lbl_size_display.setCursor(Qt.PointingHandCursor)
+        self.lbl_size_display.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.lbl_size_display.setFixedWidth(36)
+        self.lbl_size_display.setFixedHeight(24)
+        self.lbl_size_display.setStyleSheet("font-size: 11px; font-weight: bold; color: #4B5563; border: none; background: transparent; padding-right: 4px;")
+        self.lbl_size_display.setToolTip("현재 프로필 이미지 크기\n(더블클릭 시 45px로 초기화)")
+        self.lbl_size_display.doubleClicked.connect(self.reset_zoom)
+        zoom_layout.addWidget(self.lbl_size_display)
+        
+        # 마이너스 버튼
+        self.btn_zoom_out = QPushButton("−")
+        self.btn_zoom_out.setCursor(Qt.PointingHandCursor)
+        self.btn_zoom_out.setStyleSheet(btn_style)
+        self.btn_zoom_out.setToolTip("프로필 이미지 축소")
+        self.btn_zoom_out.clicked.connect(self.zoom_out)
+        zoom_layout.addWidget(self.btn_zoom_out)
+        
+        # 플러스 버튼
+        self.btn_zoom_in = QPushButton("+")
+        self.btn_zoom_in.setCursor(Qt.PointingHandCursor)
+        self.btn_zoom_in.setStyleSheet(btn_style)
+        self.btn_zoom_in.setToolTip("프로필 이미지 확대")
+        self.btn_zoom_in.clicked.connect(self.zoom_in)
+        zoom_layout.addWidget(self.btn_zoom_in)
+        
+        self.tabs.setCornerWidget(zoom_widget, Qt.TopRightCorner)
+        
         self.tabs.setStyleSheet("""
             QTabBar {
                 qproperty-drawBase: 0;
@@ -728,8 +893,8 @@ class FloatingCharacterViewer(QDialog):
                 border: 1px solid #E5E7EB;
                 border-top-left-radius: 6px;
                 border-top-right-radius: 6px;
-                padding: 8px 16px;
-                font-size: 13px;
+                padding: 6px 8px;
+                font-size: 12px;
                 font-weight: 500;
                 color: #4B5563;
                 margin-right: 2px;
@@ -764,6 +929,9 @@ class FloatingCharacterViewer(QDialog):
         all_layout.addWidget(info_label)
         
         search_layout = QHBoxLayout()
+        search_layout.setContentsMargins(0, 0, 0, 0)
+        search_layout.setSpacing(6)
+        
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("🔍 캐릭터 이름 검색...")
         self.search_bar.setClearButtonEnabled(True)
@@ -774,7 +942,8 @@ class FloatingCharacterViewer(QDialog):
                 padding: 4px 30px 4px 10px;
                 font-size: 13px;
                 background-color: #F9FAFB;
-                min-height: 22px;
+                min-height: 28px;
+                max-height: 28px;
             }
             QLineEdit:focus {
                 border-color: #FF4B4B;
@@ -785,6 +954,8 @@ class FloatingCharacterViewer(QDialog):
         search_layout.addWidget(self.search_bar)
         
         all_layout.addLayout(search_layout)
+        
+        self.update_zoom_buttons_state()
         
         self.list_widget = DraggableCharacterListWidget(self)
         self.list_widget.setStyleSheet(self._list_stylesheet())
@@ -811,6 +982,7 @@ class FloatingCharacterViewer(QDialog):
         current_layout.addWidget(self.list_widget_current)
         
         self.tabs.addTab(self.tab_current, "현재 회차 등장인물")
+        self.tabs.currentChanged.connect(self.on_tab_changed)
         
         layout.addWidget(self.tabs)
         
@@ -854,79 +1026,6 @@ class FloatingCharacterViewer(QDialog):
             }
         """
 
-    def _create_character_card_widget(self, char):
-        name = char.get("name", "")
-        container = QWidget()
-        container.setStyleSheet("background: transparent; border: none;")
-        item_layout = QHBoxLayout(container)
-        item_layout.setContentsMargins(12, 6, 12, 6)
-        item_layout.setSpacing(12)
-        
-        lbl_item_avatar = QLabel()
-        lbl_item_avatar.setFixedSize(44, 44)
-        lbl_item_avatar.setStyleSheet("border: none; background: transparent;")
-        
-        img_path = char.get("image_path", "")
-        full_img_path = ""
-        if img_path:
-            full_img_path = os.path.join(config.PROJECTS_DIR, self.project_name, img_path)
-            
-        if full_img_path and os.path.exists(full_img_path):
-            pix = QPixmap(full_img_path)
-            if not pix.isNull():
-                lbl_item_avatar.setPixmap(get_round_rect_pixmap(pix, 44, 44, 8))
-            else:
-                full_img_path = ""
-                
-        if not full_img_path:
-            default_pix = QPixmap(44, 44)
-            default_pix.fill(Qt.transparent)
-            
-            painter = QPainter(default_pix)
-            painter.setRenderHint(QPainter.Antialiasing, True)
-            painter.setPen(QPen(QColor("#E5E7EB"), 1))
-            painter.setBrush(QColor("#F3F4F6"))
-            painter.drawRoundedRect(0, 0, 44, 44, 8, 8)
-            
-            font = QFont("Pretendard", 20, QFont.Bold)
-            painter.setFont(font)
-            painter.setPen(QColor("#9CA3AF"))
-            painter.drawText(QRect(0, 0, 44, 44), Qt.AlignCenter, "👤")
-            painter.end()
-            lbl_item_avatar.setPixmap(default_pix)
-            
-        item_layout.addWidget(lbl_item_avatar, 0, Qt.AlignVCenter)
-        
-        lbl_name = QLabel(name)
-        lbl_name.setStyleSheet("font-size: 14px; font-weight: bold; color: #1F2937; background: transparent;")
-        item_layout.addWidget(lbl_name, 1, Qt.AlignVCenter)
-        
-        role = char.get("role", "단역")
-        lbl_role = QLabel(role)
-        lbl_role.setAlignment(Qt.AlignCenter)
-        
-        role_colors = {
-            "주연": {"bg": "#FEE2E2", "text": "#EF4444", "border": "#FCA5A5"},
-            "조연": {"bg": "#FEF3C7", "text": "#D97706", "border": "#FCD34D"},
-            "단역": {"bg": "#F3F4F6", "text": "#4B5563", "border": "#E5E7EB"}
-        }
-        colors = role_colors.get(role, role_colors["단역"])
-        
-        lbl_role.setStyleSheet(f"""
-            QLabel {{
-                background-color: {colors['bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                border-radius: 4px;
-                padding: 2px 6px;
-                font-size: 11px;
-                font-weight: bold;
-            }}
-        """)
-        item_layout.addWidget(lbl_role, 0, Qt.AlignVCenter)
-        
-        return container
-
     def load_data(self):
         self.list_widget.clear()
         
@@ -940,9 +1039,9 @@ class FloatingCharacterViewer(QDialog):
                 continue
                 
             list_item = QListWidgetItem()
-            list_item.setSizeHint(QSize(0, 60))
+            list_item.setSizeHint(QSize(0, self.avatar_size_all + 16))
             
-            container = self._create_character_card_widget(char)
+            container = CharacterListItemWidget(char, self.project_name, self.avatar_size_all, self)
             list_item.setData(Qt.UserRole, char)
             
             self.list_widget.addItem(list_item)
@@ -1012,13 +1111,78 @@ class FloatingCharacterViewer(QDialog):
                 }
                 
             list_item = QListWidgetItem()
-            list_item.setSizeHint(QSize(0, 60))
+            list_item.setSizeHint(QSize(0, self.avatar_size_current + 16))
             
-            container = self._create_character_card_widget(char)
+            container = CharacterListItemWidget(char, self.project_name, self.avatar_size_current, self)
             list_item.setData(Qt.UserRole, char)
             
             self.list_widget_current.addItem(list_item)
             self.list_widget_current.setItemWidget(list_item, container)
+
+    def get_current_tab_avatar_size(self):
+        if self.tabs.currentIndex() == 0:
+            return self.avatar_size_all
+        else:
+            return self.avatar_size_current
+
+    def set_current_tab_avatar_size(self, value):
+        if self.tabs.currentIndex() == 0:
+            self.avatar_size_all = value
+            config.AVATAR_SIZE_ALL = value
+        else:
+            self.avatar_size_current = value
+            config.AVATAR_SIZE_CURRENT = value
+        config.save_settings()
+
+    def on_tab_changed(self, index):
+        current_size = self.get_current_tab_avatar_size()
+        self.lbl_size_display.setText(f"{current_size}px")
+        self.update_zoom_buttons_state()
+
+    def on_avatar_size_changed(self, value):
+        self.set_current_tab_avatar_size(value)
+        self.lbl_size_display.setText(f"{value}px")
+        
+        if self.tabs.currentIndex() == 0:
+            for i in range(self.list_widget.count()):
+                item = self.list_widget.item(i)
+                widget = self.list_widget.itemWidget(item)
+                if isinstance(widget, CharacterListItemWidget):
+                    widget.update_avatar(value)
+                    item.setSizeHint(QSize(0, value + 16))
+            self.list_widget.doItemsLayout()
+        else:
+            for i in range(self.list_widget_current.count()):
+                item = self.list_widget_current.item(i)
+                widget = self.list_widget_current.itemWidget(item)
+                if isinstance(widget, CharacterListItemWidget):
+                    widget.update_avatar(value)
+                    item.setSizeHint(QSize(0, value + 16))
+            self.list_widget_current.doItemsLayout()
+                
+        self.update_zoom_buttons_state()
+
+    def zoom_in(self):
+        current_size = self.get_current_tab_avatar_size()
+        new_size = min(80, current_size + 5)
+        if new_size != current_size:
+            self.on_avatar_size_changed(new_size)
+
+    def zoom_out(self):
+        current_size = self.get_current_tab_avatar_size()
+        new_size = max(30, current_size - 5)
+        if new_size != current_size:
+            self.on_avatar_size_changed(new_size)
+
+    def reset_zoom(self):
+        current_size = self.get_current_tab_avatar_size()
+        if current_size != 45:
+            self.on_avatar_size_changed(45)
+
+    def update_zoom_buttons_state(self):
+        current_size = self.get_current_tab_avatar_size()
+        self.btn_zoom_out.setEnabled(current_size > 30)
+        self.btn_zoom_in.setEnabled(current_size < 80)
 
     def set_project_name(self, project_name):
         self.project_name = project_name
@@ -1050,6 +1214,8 @@ class FloatingCharacterViewer(QDialog):
                     gender=char_info.get("gender", ""),
                     role=char_info.get("role", "")
                 )
+
+
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:

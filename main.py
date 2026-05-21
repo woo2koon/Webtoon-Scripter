@@ -28,7 +28,7 @@ from PySide6.QtCore import (Qt, QTimer, QSize, QPropertyAnimation, QEasingCurve,
                             QAbstractAnimation, QEvent, QPoint, QMimeData, QObject, QRect)
 from PySide6.QtGui import (QCursor, QFontDatabase, QFont, QTextCursor, QAction, 
                            QDragEnterEvent, QDropEvent, QIcon, QShortcut, QKeySequence,
-                           QPainter, QPixmap, QColor, QPen, QPalette)
+                           QPainter, QPixmap, QColor, QPen, QPalette, QGuiApplication)
 import config
 
 from config import BASE_DIR, ASSETS_DIR, CACHE_DIR, PROJECTS_DIR, TEMPLATE_PATH, MODERN_STYLE
@@ -189,9 +189,26 @@ class GlobalToolTipFilter(QObject):
                     self.tooltip_label.setText(obj.toolTip())
                     self.tooltip_widget.adjustSize()
                     
-                    # 마우스 커서 아래쪽에 기분 좋게 위치시킴 (X: +10, Y: +18)
+                    # 마우스 커서 아래쪽에 기분 좋게 위치시키되, 화면 경계 검사를 수행하여 잘림을 방지함
                     pos = QCursor.pos()
-                    self.tooltip_widget.move(pos.x() + 10, pos.y() + 18)
+                    x = pos.x() + 10
+                    y = pos.y() + 18
+                    
+                    screen = QGuiApplication.screenAt(pos)
+                    if screen:
+                        screen_geom = screen.geometry()
+                        w = self.tooltip_widget.width()
+                        h = self.tooltip_widget.height()
+                        
+                        # 오른쪽 화면 경계를 벗어나면 마우스의 왼쪽 편으로 툴팁을 밀어넣음
+                        if x + w > screen_geom.right():
+                            x = pos.x() - w - 10
+                            
+                        # 아래쪽 화면 경계를 벗어나면 마우스의 위쪽 편으로 툴팁을 밀어넣음
+                        if y + h > screen_geom.bottom():
+                            y = pos.y() - h - 10
+                    
+                    self.tooltip_widget.move(x, y)
                     self.tooltip_widget.show()
                     
                     self.active_widget = obj
