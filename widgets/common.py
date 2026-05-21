@@ -100,9 +100,10 @@ class ClickableComboBox(QComboBox):
         self.refresh_callback = func
 
     def eventFilter(self, obj, event):
-        # [핵심] 콤보박스 본체나 내부 입력창 어디서든 Ctrl+Z 감지
+        # [핵심] 콤보박스 본체나 내부 입력창 어디서든 Ctrl+Z 및 방향키 감지
         if obj in (self, self.lineEdit()):
             if event.type() == QEvent.KeyPress:
+                # 1. Ctrl+Z / Ctrl+Shift+Z 실행 취소/다시 실행 처리
                 if event.modifiers() & Qt.ControlModifier:
                     # 부모 위젯들을 거슬러 올라가서 SpreadsheetTable 찾기
                     target_table = None
@@ -120,6 +121,21 @@ class ClickableComboBox(QComboBox):
                         elif event.key() == Qt.Key_Z:
                             target_table.undo()
                             return True
+                
+                # 2. 방향키 상하좌우 처리 (팝업이 닫혀 있을 때 부모 테이블로 키 이벤트 바이패스)
+                elif event.key() in (Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right) and not (event.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier)):
+                    if not self.view().isVisible():
+                        target_table = None
+                        p = self.parent()
+                        while p:
+                            if isinstance(p, QTableWidget):
+                                target_table = p
+                                break
+                            p = p.parent()
+                        if target_table:
+                            # 테이블로 키 이벤트를 토스하여 셀 상하좌우 이동을 수행하게 함
+                            QApplication.sendEvent(target_table, event)
+                            return True # 콤보박스 자체의 기본 키 동작 차단
 
         if obj == self.lineEdit():
             if event.type() == QEvent.MouseButtonPress:

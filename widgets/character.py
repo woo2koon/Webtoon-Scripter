@@ -530,7 +530,7 @@ class GlobalCharacterCard(QWidget):
         
     def init_ui(self):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 5, 12, 5)
+        layout.setContentsMargins(12, 6, 12, 6)
         layout.setSpacing(12)
         
         self.setStyleSheet("""
@@ -541,15 +541,8 @@ class GlobalCharacterCard(QWidget):
             }
         """)
         
-        info_layout = QVBoxLayout()
-        info_layout.setSpacing(4)
-        
-        title_layout = QHBoxLayout()
-        title_layout.setSpacing(8)
-        title_layout.setContentsMargins(0, 0, 0, 0)
-        
         lbl_card_avatar = QLabel()
-        lbl_card_avatar.setFixedSize(36, 36)
+        lbl_card_avatar.setFixedSize(70, 70)
         lbl_card_avatar.setStyleSheet("border: none; background: transparent;")
         
         img_path = self.char_info.get("image_path", "")
@@ -560,38 +553,63 @@ class GlobalCharacterCard(QWidget):
         if full_img_path and os.path.exists(full_img_path):
             pix = QPixmap(full_img_path)
             if not pix.isNull():
-                lbl_card_avatar.setPixmap(get_round_rect_pixmap(pix, 36, 36, 6))
+                lbl_card_avatar.setPixmap(get_round_rect_pixmap(pix, 70, 70, 10))
             else:
                 full_img_path = ""
                 
         if not full_img_path:
-            default_pix = QPixmap(36, 36)
+            default_pix = QPixmap(70, 70)
             default_pix.fill(Qt.transparent)
             
             painter = QPainter(default_pix)
             painter.setRenderHint(QPainter.Antialiasing, True)
             painter.setPen(QPen(QColor("#E5E7EB"), 1))
             painter.setBrush(QColor("#F3F4F6"))
-            painter.drawRoundedRect(0, 0, 36, 36, 6, 6)
+            painter.drawRoundedRect(0.5, 0.5, 69, 69, 10, 10)
             
-            font = QFont("Pretendard", 18, QFont.Bold)
-            painter.setFont(font)
-            painter.setPen(QColor("#9CA3AF"))
-            painter.drawText(QRect(0, 0, 36, 36), Qt.AlignCenter, "👤")
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor("#9CA3AF"))
+            
+            # Head
+            painter.drawEllipse(25, 17, 20, 20)
+            
+            # Neck
+            painter.drawRect(32, 34, 6, 8)
+            
+            # Shoulders
+            from PySide6.QtGui import QPainterPath
+            body_path = QPainterPath()
+            body_path.moveTo(16, 56)
+            body_path.quadTo(16, 42, 30, 42)
+            body_path.lineTo(40, 42)
+            body_path.quadTo(54, 42, 54, 56)
+            body_path.closeSubpath()
+            painter.drawPath(body_path)
+            
             painter.end()
             lbl_card_avatar.setPixmap(default_pix)
             
-        title_layout.addWidget(lbl_card_avatar)
+        layout.addWidget(lbl_card_avatar)
+        
+        info_layout = QVBoxLayout()
+        info_layout.setSpacing(4)
+        info_layout.setContentsMargins(0, 0, 0, 0)
+        
+        info_layout.addStretch()
         
         name_lbl = QLabel(self.char_info.get('name', ''))
         name_lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #111827; border: none; background: transparent;")
-        title_layout.addWidget(name_lbl)
-        title_layout.addStretch()
+        info_layout.addWidget(name_lbl)
         
-        info_layout.addLayout(title_layout)
-        
+        memo = self.char_info.get('memo', '').strip()
+        if memo:
+            lbl_memo = QLabel(memo)
+            lbl_memo.setStyleSheet("font-size: 12px; font-weight: bold; color: #EF4444; border: none; background: transparent;")
+            info_layout.addWidget(lbl_memo)
+            
         tags_layout = QHBoxLayout()
         tags_layout.setSpacing(6)
+        tags_layout.setContentsMargins(0, 0, 0, 0)
         
         role = self.char_info.get('role', '단역')
         age = self.char_info.get('age', '미상')
@@ -617,18 +635,16 @@ class GlobalCharacterCard(QWidget):
         lbl_gender.setStyleSheet(tag_style + "background-color: #F3E8FF; color: #7E22CE; border-color: #E9D5FF;")
         tags_layout.addWidget(lbl_gender)
         
-        memo = self.char_info.get('memo', '').strip()
-        if memo:
-            lbl_memo = QLabel(f"📝 {memo}")
-            lbl_memo.setStyleSheet("font-size: 12px; color: #6B7280; border: none; margin-top: 2px; background: transparent;")
-            info_layout.addWidget(lbl_memo)
-            
         tags_layout.addStretch()
         info_layout.addLayout(tags_layout)
+        
+        info_layout.addStretch()
+        
         layout.addLayout(info_layout, 1)
         
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(6)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
         
         btn_edit = QPushButton("수정")
         btn_edit.setFixedSize(52, 28)
@@ -2523,10 +2539,10 @@ class CropWidget(QWidget):
 # ✂️ 이미지 크롭 다이얼로그 (ImageCropDialog)
 # =================================================================
 class ImageCropDialog(QDialog):
-    """인물 사진 등록 시, 얼굴 영역만 1:1 정사각형 비율로 정밀 드래그 절단하는 모던 크롭 다이얼로그"""
+    """인물 사진 등록 시, 얼굴 영역만 1:1 정사각형 비율로 정밀 드래그 지정하는 모던 크롭/선택 다이얼로그"""
     def __init__(self, file_path, parent=None, initial_crop_rect=None):
         super().__init__(parent)
-        self.setWindowTitle("✂️ 프로필 아이콘 정밀 크롭 (1:1)")
+        self.setWindowTitle("👤 프로필 이미지 표시 영역 지정 (1:1)")
         self.setWindowFlags(Qt.Window | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
         self.setStyleSheet("background-color: #FFFFFF;")
         
@@ -2539,20 +2555,19 @@ class ImageCropDialog(QDialog):
 
     def init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
+        layout.setContentsMargins(20, 15, 20, 20)
+        layout.setSpacing(10)
         
-        title_layout = QVBoxLayout()
-        title_layout.setSpacing(4)
-        
-        title_lbl = QLabel("✂️ 아이콘용 프로필 영역 자르기")
-        title_lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #111827;")
-        desc_lbl = QLabel("상자 안을 마우스로 드래그해 이동하고, 모서리나 사방의 변을 끌어\n얼굴이 중앙에 오는 최상의 구도로 조절해 주세요 (1:1 비율 고정).")
-        desc_lbl.setStyleSheet("font-size: 11px; color: #6B7280; line-height: 14px;")
-        
-        title_layout.addWidget(title_lbl)
-        title_layout.addWidget(desc_lbl)
-        layout.addLayout(title_layout)
+        title_lbl = QLabel(
+            "<div style='line-height: 140%;'>"
+            "<span style='font-size: 15px; font-weight: bold; color: #111827;'>👤 프로필용 이미지 영역 지정하기</span><br>"
+            "<span style='font-size: 11px; color: #6B7280; font-weight: normal;'>"
+            "상자 안을 마우스로 드래그해 이동하고, 모서리나 사방의 변을 끌어<br>"
+            "얼굴이 중앙에 오는 최상의 구도로 조절해 주세요 (1:1 비율 고정).</span>"
+            "</div>"
+        )
+        title_lbl.setStyleSheet("margin: 0px; padding: 0px; border: none; background: transparent;")
+        layout.addWidget(title_lbl)
         
         self.crop_container = QHBoxLayout()
         self.crop_container.addStretch()
@@ -2561,7 +2576,7 @@ class ImageCropDialog(QDialog):
         self.crop_container.addWidget(self.crop_widget)
         
         self.crop_container.addStretch()
-        layout.addLayout(self.crop_container, 1)
+        layout.addLayout(self.crop_container)
         
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
@@ -2607,7 +2622,7 @@ class ImageCropDialog(QDialog):
         
         img_h = self.crop_widget.height() if self.crop_widget else 300
         dialog_w = 540
-        dialog_h = max(400, img_h + 190)
+        dialog_h = max(350, img_h + 135)
         self.resize(dialog_w, dialog_h)
  
     def on_apply(self):
