@@ -478,7 +478,28 @@ class DraggableCharacterListWidget(QListWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setDragEnabled(True)
+        self.setVerticalScrollMode(QListWidget.ScrollPerItem)
+        self._wheel_accumulator = 0
         
+    def wheelEvent(self, event):
+        delta = event.angleDelta().y()
+        scrollbar = self.verticalScrollBar()
+        if scrollbar and scrollbar.isVisible():
+            self._wheel_accumulator += delta
+            steps = 0
+            while abs(self._wheel_accumulator) >= 120:
+                if self._wheel_accumulator > 0:
+                    steps += 1
+                    self._wheel_accumulator -= 120
+                else:
+                    steps -= 1
+                    self._wheel_accumulator += 120
+            if steps != 0:
+                scrollbar.setValue(scrollbar.value() - steps)
+            event.accept()
+        else:
+            super().wheelEvent(event)
+
     def startDrag(self, supportedActions):
         item = self.currentItem()
         if not item:
