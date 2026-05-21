@@ -48,6 +48,42 @@ restore_template()
 
 from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer
 
+class GlobalScrollShortcutFilter(QObject):
+    def __init__(self, main_window):
+        super().__init__()
+        self.main_window = main_window
+
+    def eventFilter(self, obj, event):
+        try:
+            if event.type() == QEvent.KeyPress:
+                mods = event.modifiers()
+                key = event.key()
+                
+                # Shift, AltModifier가 눌리지 않은 상태에서 Ctrl(Windows) 또는 Cmd(Mac)가 눌렸는지 판별
+                # (Qt.ControlModifier와 Qt.MetaModifier 모두 대응)
+                if not (mods & (Qt.ShiftModifier | Qt.AltModifier)):
+                    if (mods & Qt.ControlModifier) or (mods & Qt.MetaModifier):
+                        if key in (Qt.Key_Up, Qt.Key_Down):
+                            focus_widget = QApplication.focusWidget()
+                            if focus_widget:
+                                try:
+                                    # C++ 객체가 만약 가비지 컬렉션되었거나 삭제된 경우 RuntimeError가 발생할 수 있음
+                                    class_name = focus_widget.metaObject().className()
+                                    if class_name in ["QLineEdit", "QTextEdit", "QPlainTextEdit", "SmartTextEdit"]:
+                                        return False
+                                except Exception:
+                                    pass
+                            
+                            if key == Qt.Key_Up:
+                                self.main_window.scroll_to_top()
+                            else:
+                                self.main_window.scroll_to_bottom()
+                            return True
+        except Exception as e:
+            # 이벤트 필터 내에서의 예외가 앱 전체를 죽이지 않도록 차단
+            print(f"Error in GlobalScrollShortcutFilter: {e}")
+        return False
+
 class GlobalContextMenuFilter(QObject):
     def eventFilter(self, obj, event):
         if not isinstance(obj, QObject):
@@ -227,6 +263,10 @@ class WebtoonManager(QMainWindow):
         self.shortcut_idiom_viewer.activated.connect(self.toggle_idiom_viewer)
         self.shortcut_character_viewer = QShortcut(QKeySequence("Ctrl+K"), self)
         self.shortcut_character_viewer.activated.connect(self.toggle_character_viewer)
+
+        # 뷰어 맨 위/아래 이동 단축키 (TKL 대응: Cmd+Up/Down on Mac, Ctrl+Up/Down on Win)
+        self.scroll_shortcut_filter = GlobalScrollShortcutFilter(self)
+        QApplication.instance().installEventFilter(self.scroll_shortcut_filter)
 
         self.update_button_pos()
         
@@ -1857,6 +1897,16 @@ class WebtoonManager(QMainWindow):
                 self.idiom_viewer.raise_()
                 self.idiom_viewer.activateWindow()
 
+    def scroll_to_top(self):
+        """웹툰 뷰어를 최상단으로 스크롤 (에디터 포커스가 없을 때만)"""
+        if not self.text_editor.hasFocus():
+            self.scroll_area.verticalScrollBar().setValue(0)
+
+    def scroll_to_bottom(self):
+        """웹툰 뷰어를 최하단으로 스크롤 (에디터 포커스가 없을 때만)"""
+        if not self.text_editor.hasFocus():
+            self.scroll_area.verticalScrollBar().setValue(self.scroll_area.verticalScrollBar().maximum())
+
     def toggle_character_viewer(self):
         """작품 캐릭터 도우미 플로팅 뷰어를 토글합니다."""
         if getattr(self, 'is_simple_mode', False):
@@ -2393,19 +2443,8 @@ class WebtoonManager(QMainWindow):
         super().closeEvent(event)
 
     def keyPressEvent(self, event):
-        """단축키 처리 (Home/End, Ctrl+Up/Down)"""
-        # 1. Ctrl(또는 Cmd) 조합키 체크
-        if event.modifiers() & Qt.ControlModifier:
-            if event.key() == Qt.Key_Up:
-                self.scroll_area.verticalScrollBar().setValue(0)
-                event.accept()
-                return
-            elif event.key() == Qt.Key_Down:
-                self.scroll_area.verticalScrollBar().setValue(self.scroll_area.verticalScrollBar().maximum())
-                event.accept()
-                return
-
-        # 2. Home / End 키 (에디터 포커스가 없을 때만)
+        """단축키 처리 (Home/End)"""
+        # 1. Home / End 키 (에디터 포커스가 없을 때만)
         if not self.text_editor.hasFocus():
             if event.key() == Qt.Key_Home:
                 self.scroll_area.verticalScrollBar().setValue(0)
