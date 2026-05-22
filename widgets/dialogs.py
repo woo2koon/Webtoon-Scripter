@@ -843,7 +843,11 @@ class FloatingIdiomViewer(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("관용구 도우미")
-        self.setWindowFlags(Qt.Tool | Qt.WindowCloseButtonHint)
+        import sys
+        if sys.platform == "darwin":
+            self.setWindowFlags(Qt.Tool | Qt.WindowCloseButtonHint)
+        else:
+            self.setWindowFlags(Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
         self.setMinimumSize(300, 450)
         self.init_ui()
         self.refresh_list()

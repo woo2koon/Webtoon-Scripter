@@ -626,6 +626,7 @@ class ToastMessage(QWidget):
         
         self.lbl_text.setText(text)
         self.lbl_text.adjustSize()
+        self.bg_frame.adjustSize()
         self.adjustSize()
         
         if self.parent():
@@ -635,11 +636,14 @@ class ToastMessage(QWidget):
             self.move(x, y)
         
         self.show()
-        self.opacity_effect.setOpacity(0.0) 
-        self.anim.setDuration(fade_speed)
-        self.anim.setStartValue(0.0)
-        self.anim.setEndValue(1.0)
-        self.anim.start()
+        if fade_speed > 0:
+            self.opacity_effect.setOpacity(0.0) 
+            self.anim.setDuration(fade_speed)
+            self.anim.setStartValue(0.0)
+            self.anim.setEndValue(1.0)
+            self.anim.start()
+        else:
+            self.opacity_effect.setOpacity(1.0)
         
         self.timer.start(duration)
 

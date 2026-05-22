@@ -23,7 +23,7 @@ MY_DEFAULT_AI_KEY = ""   # <-- 여기에 직접 입력하지 마세요!
 
 # 1. 앱 이름 (이 이름으로 사용자의 컴퓨터에 폴더가 생깁니다)
 APP_NAME = "Webtoon_Script_Manager"
-APP_VERSION = "2.5.4"
+APP_VERSION = "2.5.5"
 
 if getattr(sys, 'frozen', False):
     # [읽기전용] EXE 내부에 압축된 아이콘 등 (임시 폴더)
@@ -81,6 +81,7 @@ ICON_IDIOM = ICON_LIBRARY # 관용구 아이콘 별칭 추가
 ICON_USER = os.path.join(ASSETS_DIR, "user.svg") # 사람 모양 캐릭터 아이콘 추가
 ICON_SETTINGS_COG = os.path.join(ASSETS_DIR, "settings.svg") # 톱니바퀴 설정 아이콘 추가
 ICON_AVATAR_UPLOAD = os.path.join(ASSETS_DIR, "avatar-upload.svg") # 아바타 전용 업로드 아이콘
+ICON_SPLIT = os.path.join(ASSETS_DIR, "separator-horizontal.svg") # 셀 나누기 아이콘 추가
 # =================================================================
 
 OCR_API_KEY = ""

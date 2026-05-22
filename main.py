@@ -97,11 +97,14 @@ class GlobalContextMenuFilter(QObject):
                         return True
 
             # 2. 텍스트 입력 위젯(QLineEdit, QTextEdit, QPlainTextEdit, SmartTextEdit 등)에서 우클릭이 발생했을 때
-            elif event.type() == QEvent.ContextMenu and obj.metaObject().className() in ["QLineEdit", "QTextEdit", "QPlainTextEdit", "SmartTextEdit"]:
+            elif event.type() == QEvent.ContextMenu and obj.metaObject().className() in ["QLineEdit", "QTextEdit", "QPlainTextEdit", "SmartTextEdit", "SheetCellLineEdit"]:
                 # 위젯 자체의 표준 컨텍스트 메뉴 생성
                 menu = obj.createStandardContextMenu()
                 
                 # 영문/한글 메뉴 항목들을 친근한 한국어로 동적 맵핑 및 단축키 조정
+                undo_action = None
+                redo_action_found = False
+                
                 actions = menu.actions()
                 for action in actions:
                     text = action.text()
@@ -112,6 +115,7 @@ class GlobalContextMenuFilter(QObject):
                     if "undo" in clean_text_lower or "되돌리기" in clean_text_lower or "실행 취소" in clean_text_lower or "실행취소" in clean_text_lower:
                         action.setText("되돌리기 (&U)")
                         action.setShortcut(QKeySequence("Ctrl+Z"))
+                        undo_action = action
                     # Redo 매칭
                     elif "redo" in clean_text_lower or "다시 실행" in clean_text_lower or "다시실행" in clean_text_lower:
                         redo_action = QAction("다시 실행 (&R)", obj)
@@ -122,6 +126,7 @@ class GlobalContextMenuFilter(QObject):
                         
                         menu.insertAction(action, redo_action)
                         menu.removeAction(action)
+                        redo_action_found = True
                     elif "cut" in clean_text_lower or "잘라내기" in clean_text_lower:
                         action.setText("잘라내기 (&T)")
                         action.setShortcut(QKeySequence("Ctrl+X"))
@@ -136,6 +141,71 @@ class GlobalContextMenuFilter(QObject):
                     elif "select all" in clean_text_lower or "모두 선택" in clean_text_lower or "모두선택" in clean_text_lower:
                         action.setText("모두 선택 (&A)")
                         action.setShortcut(QKeySequence("Ctrl+A"))
+                
+                # QLineEdit 등에서 Redo 액션이 기본 메뉴에 없을 경우 추가
+                if not redo_action_found and undo_action and hasattr(obj, 'redo'):
+                    redo_action = QAction("다시 실행 (&R)", obj)
+                    redo_action.setShortcut(QKeySequence("Ctrl+Shift+Z"))
+                    is_enabled = obj.isRedoAvailable() if hasattr(obj, 'isRedoAvailable') else True
+                    redo_action.setEnabled(is_enabled)
+                    redo_action.triggered.connect(obj.redo)
+                    
+                    current_acts = menu.actions()
+                    try:
+                        undo_idx = current_acts.index(undo_action)
+                        if undo_idx + 1 < len(current_acts):
+                            menu.insertAction(current_acts[undo_idx + 1], redo_action)
+                        else:
+                            menu.addAction(redo_action)
+                    except ValueError:
+                        menu.addAction(redo_action)
+                
+                # 3. 만약 대본 시트의 에디터라면 '내용분리 (셀 나누기)' 추가
+                if obj.property("is_sheet_editor") == True:
+                    from utils import get_colored_icon
+                    split_action = QAction(get_colored_icon(config.ICON_SPLIT, "#333333"), "내용분리 (셀 나누기) (&S)", menu)
+                    split_action.setShortcut(QKeySequence("Shift+Enter"))
+                    
+                    def trigger_split():
+                        cursor_pos = obj.cursorPosition()
+                        full_text = obj.text()
+                        left_text = full_text[:cursor_pos]
+                        right_text = full_text[cursor_pos:]
+                        
+                        obj.setText(full_text)
+                        delegate = obj.property("delegate")
+                        if delegate:
+                            from PySide6.QtWidgets import QStyledItemDelegate
+                            delegate.commitData.emit(obj)
+                            delegate.closeEditor.emit(obj, QStyledItemDelegate.NoHint)
+                            
+                        row = obj.property("cell_row")
+                        main_win = obj.window()
+                        if main_win and hasattr(main_win, 'split_script_row'):
+                            # 에디터가 완전히 닫히고 정리된 후 실행되도록 지연 호출
+                            QTimer.singleShot(50, lambda: main_win.split_script_row(row, left_text, right_text))
+                            
+                    split_action.triggered.connect(trigger_split)
+                    
+                    # '다시 실행' 액션을 찾아서 바로 다음(보통 구분선 앞)에 삽입합니다.
+                    redo_act = None
+                    current_actions = menu.actions()
+                    for act in current_actions:
+                        if "다시 실행" in act.text():
+                            redo_act = act
+                            break
+                            
+                    if redo_act:
+                        idx = current_actions.index(redo_act)
+                        if idx + 1 < len(current_actions):
+                            menu.insertSeparator(current_actions[idx + 1])
+                            menu.insertAction(current_actions[idx + 1], split_action)
+                        else:
+                            menu.addSeparator()
+                            menu.addAction(split_action)
+                    else:
+                        menu.addSeparator()
+                        menu.addAction(split_action)
                 
                 menu.exec(event.globalPos())
                 return True
@@ -1524,7 +1594,7 @@ class WebtoonManager(QMainWindow):
         btn_add_char.setFixedHeight(32)
         btn_add_char.setFixedWidth(108)
         btn_add_char.setCursor(Qt.PointingHandCursor)
-        btn_add_char.clicked.connect(lambda: self.add_character_card())
+        btn_add_char.clicked.connect(lambda: self.add_character_card(set_focus=True))
         top_bar_step2.addWidget(btn_add_char)
         tab2_layout.addLayout(top_bar_step2)
 
@@ -1573,9 +1643,9 @@ class WebtoonManager(QMainWindow):
         header_layout.addWidget(lbl_empty)
         tab2_layout.addWidget(header_frame)
 
-        scroll_area_char = QScrollArea()
-        scroll_area_char.setWidgetResizable(True)
-        scroll_area_char.setStyleSheet("background-color: #f8f9fa; border: none;") 
+        self.scroll_area_char = QScrollArea()
+        self.scroll_area_char.setWidgetResizable(True)
+        self.scroll_area_char.setStyleSheet("background-color: #f8f9fa; border: none;") 
         self.char_container = CharacterListContainer()
         self.char_container.order_changed_signal.connect(self.save_char_data)
         
@@ -1584,8 +1654,8 @@ class WebtoonManager(QMainWindow):
         self.char_container.customContextMenuRequested.connect(self.show_character_context_menu)
         
         self.char_layout = self.char_container.layout()
-        scroll_area_char.setWidget(self.char_container)
-        tab2_layout.addWidget(scroll_area_char)
+        self.scroll_area_char.setWidget(self.char_container)
+        tab2_layout.addWidget(self.scroll_area_char)
         self.tabs.addTab(tab2_widget, "Step 2. 캐릭터")
         
         self.table_script = SpreadsheetTable()
@@ -2415,12 +2485,32 @@ class WebtoonManager(QMainWindow):
         self.save_viewer_state()
             
         self.current_episode = text
+
+        # 이미지 파일 존재 여부 사전 체크
+        has_images = False
+        _, i_path, _ = self.get_paths()
+        if i_path and os.path.exists(i_path):
+            files = [f for f in os.listdir(i_path) 
+                     if f.lower().endswith(('png','jpg','jpeg')) and not f.startswith('.')]
+            if files:
+                has_images = True
+        
+        if has_images:
+            # 회차 로딩 중 토스트 표시 및 UI 즉시 업데이트
+            self.toast.show_message("⏳ 회차 데이터를 불러오는 중...", 10000, fade_speed=0)
+            from PySide6.QtWidgets import QApplication
+            QApplication.processEvents()
+        
         self.load_images()
         self.load_data()
         
         # [추가] 새 회차의 스크롤 위치 복구 및 API 호출수 불러오기
         self.load_viewer_state()
         self.load_api_count()
+
+        if has_images:
+            # 완료 토스트 메시지 표시
+            self.toast.show_message("✅ 회차가 로드되었습니다.", 1500)
 
     def save_viewer_state(self):
         """현재 웹툰 뷰어의 스크롤 위치(비율)를 파일로 저장합니다."""
@@ -2874,7 +2964,7 @@ class WebtoonManager(QMainWindow):
                 combo.blockSignals(False)
         self.table_script.blockSignals(False)
 
-    def add_character_card_at(self, index, name="", age="", gender="", role=""):
+    def add_character_card_at(self, index, name="", age="", gender="", role="", set_focus=False):
         # 중복 등록 방지: 이름이 입력된 경우에만 중복 검사 진행
         if name.strip():
             for i in range(self.char_layout.count()):
@@ -2892,9 +2982,13 @@ class WebtoonManager(QMainWindow):
         card.combo_gender.currentTextChanged.connect(self.save_char_data)
         self.char_layout.insertWidget(index, card)
         self.save_char_data()
+        if set_focus:
+            card.input_name.setFocus()
+            if hasattr(self, 'scroll_area_char'):
+                QTimer.singleShot(50, lambda: self.scroll_area_char.ensureWidgetVisible(card))
 
-    def add_character_card(self, name="", age="", gender="", role=""):
-        self.add_character_card_at(self.char_layout.count(), name, age, gender, role)
+    def add_character_card(self, name="", age="", gender="", role="", set_focus=False):
+        self.add_character_card_at(self.char_layout.count(), name, age, gender, role, set_focus=set_focus)
 
     def remove_character_card(self, card_widget):
         deleted_name = card_widget.input_name.text().strip()
@@ -2961,7 +3055,7 @@ class WebtoonManager(QMainWindow):
         # 1. 캐릭터 추가 액션
         action_add = QAction("캐릭터 추가", self)
         action_add.setIcon(get_icon(config.ICON_USER))
-        action_add.triggered.connect(lambda: self.add_character_card())
+        action_add.triggered.connect(lambda: self.add_character_card(set_focus=True))
         menu.addAction(action_add)
         
         menu.addSeparator()
@@ -3050,7 +3144,7 @@ class WebtoonManager(QMainWindow):
         import config
         from widgets import get_round_rect_pixmap
         from PySide6.QtGui import QPixmap
-        from PySide6.QtWidgets import QMessageBox, QInputDialog
+        from PySide6.QtWidgets import QMessageBox, QInputDialog, QApplication
 
         migration_dir = "migration"
         os.makedirs(migration_dir, exist_ok=True)
@@ -3083,6 +3177,10 @@ class WebtoonManager(QMainWindow):
             selected_html = item
 
         html_path = os.path.join(migration_dir, selected_html)
+        
+        # 로딩 토스트 메시지 표시 및 UI 업데이트 강제 실행
+        self.toast.show_message("⏳ 캐릭터 및 이미지를 가져오는 중...", 10000, fade_speed=0)
+        QApplication.processEvents()
         
         try:
             with open(html_path, "r", encoding="utf-8") as f:
@@ -3117,9 +3215,14 @@ class WebtoonManager(QMainWindow):
             "CHARACTER_AGE_UNKNOWN": "미상"
         }
 
-        # 작품별 기존 캐릭터 목록 로드
+        # 작품별 기존 캐릭터 목록 로드 및 이름을 NFC로 정규화하여 사전 생성 (중복 방지)
         global_chars = config.load_global_characters(self.current_title)
-        global_dict = {char["name"]: char for char in global_chars if "name" in char}
+        global_dict = {}
+        for char in global_chars:
+            if "name" in char:
+                normalized_name = unicodedata.normalize('NFC', char["name"])
+                char["name"] = normalized_name
+                global_dict[normalized_name] = char
         
         PASTEL_COLORS = [
             "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", 
@@ -3140,6 +3243,7 @@ class WebtoonManager(QMainWindow):
             if not name_match:
                 continue
             name = name_match.group(1).strip()
+            name = unicodedata.normalize('NFC', name)
             if not name or name == "NA":
                 continue
 
@@ -3157,11 +3261,28 @@ class WebtoonManager(QMainWindow):
             image_field_val = ""
             if img_src:
                 img_src_decoded = urllib.parse.unquote(img_src)
-                src_img_path = os.path.abspath(os.path.join(migration_dir, img_src_decoded))
+                # NFC와 NFD 형식 모두 지원하도록 경로 탐색
+                img_src_nfc = unicodedata.normalize('NFC', img_src_decoded)
+                src_img_path = os.path.abspath(os.path.join(migration_dir, img_src_nfc))
                 
+                if not os.path.exists(src_img_path):
+                    img_src_nfd = unicodedata.normalize('NFD', img_src_decoded)
+                    src_img_path_nfd = os.path.abspath(os.path.join(migration_dir, img_src_nfd))
+                    if os.path.exists(src_img_path_nfd):
+                        src_img_path = src_img_path_nfd
+
                 if os.path.exists(src_img_path):
                     target_img_relative = f"character_images/{name}.png"
                     target_img_absolute = os.path.join(config.PROJECTS_DIR, self.current_title, target_img_relative)
+                    
+                    # 기존 NFD 형식 파일이 디스크에 남아있다면, 중복을 막기 위해 제거
+                    target_img_absolute_nfd = os.path.join(config.PROJECTS_DIR, self.current_title, f"character_images/{unicodedata.normalize('NFD', name)}.png")
+                    if os.path.exists(target_img_absolute_nfd) and target_img_absolute_nfd != target_img_absolute:
+                        try:
+                            os.remove(target_img_absolute_nfd)
+                        except Exception as del_err:
+                            print(f"기존 NFD 파일 삭제 실패: {del_err}")
+
                     try:
                         pix = QPixmap(src_img_path)
                         if not pix.isNull():
@@ -3206,7 +3327,7 @@ class WebtoonManager(QMainWindow):
                     updated_count += 1
 
         # 저장
-        if imported_count > 0 or updated_count > 0:
+        if imported_count > 0 or updated_count > 0 or img_copied_count > 0:
             config.save_global_characters(self.current_title, list(global_dict.values()))
             
             # 현재 열려 있는 스텝2 캐릭터 카드가 있다면 새로고침
@@ -3246,6 +3367,48 @@ class WebtoonManager(QMainWindow):
         # [추가] 행 추가 직후 즉시 저장은 충돌 위험이 있으므로 아주 짧게 지연 호출
         QTimer.singleShot(10, self.save_script_data)
 
+    def split_script_row(self, row, left_text, right_text):
+        if row < 0 or row >= self.table_script.rowCount():
+            return
+            
+        # 1. 실행 취소 스택 백업
+        self.table_script.save_state_for_undo()
+        
+        # 2. 현재 행의 캐릭터 복사
+        combo_widget = self.table_script.cellWidget(row, 0)
+        char_name = ""
+        if combo_widget and isinstance(combo_widget, QComboBox):
+            char_name = combo_widget.currentText()
+            
+        # 3. 현재 셀 텍스트를 왼쪽 내용으로 설정 (더 확실하게 모델과 동기화)
+        item = self.table_script.item(row, 1)
+        if item:
+            item.setText(left_text)
+        else:
+            item = QTableWidgetItem(left_text)
+            self.table_script.setItem(row, 1, item)
+            
+        # 4. 새 행 삽입
+        new_row = row + 1
+        self.table_script.insertRow(new_row)
+        
+        # 5. 캐릭터 콤보박스 및 오른쪽 텍스트 배치
+        char_list = self.get_character_list()
+        new_combo = self.create_table_combo(char_list, char_name)
+        new_combo.set_refresh_callback(self.get_character_list)
+        new_combo.currentTextChanged.connect(lambda text: self.save_script_data())
+        self.table_script.setCellWidget(new_row, 0, new_combo)
+        
+        new_item = QTableWidgetItem(right_text)
+        self.table_script.setItem(new_row, 1, new_item)
+        
+        # 6. 데이터 저장
+        self.save_script_data()
+        
+        # 7. 새 셀로 이동 후 즉시 편집모드 돌입 (UX 향상)
+        self.table_script.setCurrentCell(new_row, 1)
+        QTimer.singleShot(50, lambda: self.table_script.editItem(new_item))
+
     def get_character_list(self):
         chars = []
         for i in range(self.char_layout.count()):
@@ -3258,8 +3421,9 @@ class WebtoonManager(QMainWindow):
     def show_script_context_menu(self, pos):
         menu = QMenu()
         # [추가] 최상단에 실행취소 / 다시실행 추가 (아이콘 적용)
-        undo_action = menu.addAction(get_icon(config.ICON_UNDO), "실행취소 (Ctrl+Z)")
-        redo_action = menu.addAction(get_icon(config.ICON_REDO), "다시실행 (Ctrl+Shift+Z)")
+        cmd_key = "Cmd" if sys.platform == "darwin" else "Ctrl"
+        undo_action = menu.addAction(get_icon(config.ICON_UNDO), f"실행취소 ({cmd_key}+Z)")
+        redo_action = menu.addAction(get_icon(config.ICON_REDO), f"다시실행 ({cmd_key}+Shift+Z)")
         menu.addSeparator()
 
         action_insert_above = menu.addAction(get_icon(config.ICON_ARROW_UP), "위에 행 추가")

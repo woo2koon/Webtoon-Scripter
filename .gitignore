@@ -11,3 +11,7 @@ ocr_cache/
 projects/
 settings.json
 .gemini/
+
+# Agent plans
+implementation_plan.md
+character_management_plan.md

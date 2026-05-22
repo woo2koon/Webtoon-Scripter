@@ -29,6 +29,63 @@ from utils import get_icon, get_colored_pixmap
 from .common import ClickableComboBox, get_round_rect_pixmap, HoverIconButton, SingleClickLineEdit
 
 # =================================================================
+# 👤 SVG 기반 기본 아바타 플레이스홀더 생성 헬퍼
+# =================================================================
+def get_default_avatar_pixmap(w, h, radius=None, icon_color="#9CA3AF", bg_color="#F3F4F6", border_color="#E5E7EB"):
+    """
+    SVG 코드 기반의 기본 아바타 플레이스홀더 QPixmap을 동적으로 생성
+    """
+    if radius is None:
+        radius = max(4, min(w, h) // 5)
+        
+    pix = QPixmap(w, h)
+    pix.fill(Qt.transparent)
+    
+    painter = QPainter(pix)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    
+    # 배경 및 테두리 그리기
+    painter.setPen(QPen(QColor(border_color), 1))
+    painter.setBrush(QColor(bg_color))
+    painter.drawRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), radius, radius)
+    
+    # SVG User 아이콘 렌더링
+    svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="{icon_color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>"""
+    
+    # 아이콘 크기는 아바타 크기의 약 55%
+    icon_size = max(16, int(min(w, h) * 0.55))
+    x = (w - icon_size) / 2.0
+    y = (h - icon_size) / 2.0
+    
+    try:
+        renderer = QSvgRenderer(QByteArray(svg_content.encode('utf-8')))
+        renderer.render(painter, QRectF(x, y, icon_size, icon_size))
+    except Exception as e:
+        print(f"Failed to render default avatar SVG: {e}")
+        # 예외 발생 시 간단한 머리/어깨 silhouette 폴백 그리기
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(icon_color))
+        # Head
+        hw = int(min(w, h) * 0.3)
+        painter.drawEllipse(QRectF((w - hw) / 2.0, (h - hw) / 2.0 - hw * 0.5, hw, hw))
+        # Shoulders
+        from PySide6.QtGui import QPainterPath
+        body_path = QPainterPath()
+        sw = int(min(w, h) * 0.6)
+        sh = int(min(w, h) * 0.3)
+        bx = (w - sw) / 2.0
+        by = (h + hw) / 2.0 - hw * 0.3
+        body_path.moveTo(bx, by + sh)
+        body_path.quadTo(bx, by, bx + sw * 0.2, by)
+        body_path.lineTo(bx + sw * 0.8, by)
+        body_path.quadTo(bx + sw, by, bx + sw, by + sh)
+        body_path.closeSubpath()
+        painter.drawPath(body_path)
+        
+    painter.end()
+    return pix
+
+# =================================================================
 # 캐릭터 목록 드래그 컨테이너 및 핸들
 # =================================================================
 class CharacterListContainer(QWidget):
@@ -580,36 +637,7 @@ class GlobalCharacterCard(QWidget):
                 full_img_path = ""
                 
         if not full_img_path:
-            default_pix = QPixmap(70, 70)
-            default_pix.fill(Qt.transparent)
-            
-            painter = QPainter(default_pix)
-            painter.setRenderHint(QPainter.Antialiasing, True)
-            painter.setPen(QPen(QColor("#E5E7EB"), 1))
-            painter.setBrush(QColor("#F3F4F6"))
-            painter.drawRoundedRect(0.5, 0.5, 69, 69, 10, 10)
-            
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor("#9CA3AF"))
-            
-            # Head
-            painter.drawEllipse(25, 17, 20, 20)
-            
-            # Neck
-            painter.drawRect(32, 34, 6, 8)
-            
-            # Shoulders
-            from PySide6.QtGui import QPainterPath
-            body_path = QPainterPath()
-            body_path.moveTo(16, 56)
-            body_path.quadTo(16, 42, 30, 42)
-            body_path.lineTo(40, 42)
-            body_path.quadTo(54, 42, 54, 56)
-            body_path.closeSubpath()
-            painter.drawPath(body_path)
-            
-            painter.end()
-            lbl_card_avatar.setPixmap(default_pix)
+            lbl_card_avatar.setPixmap(get_default_avatar_pixmap(70, 70, 10))
             
         layout.addWidget(lbl_card_avatar)
         
@@ -779,23 +807,8 @@ class CharacterListItemWidget(QWidget):
                 full_img_path = ""
                 
         if not full_img_path:
-            default_pix = QPixmap(size, size)
-            default_pix.fill(Qt.transparent)
-            
-            painter = QPainter(default_pix)
-            painter.setRenderHint(QPainter.Antialiasing, True)
-            painter.setPen(QPen(QColor("#E5E7EB"), 1))
-            painter.setBrush(QColor("#F3F4F6"))
             radius = max(4, size // 5)
-            painter.drawRoundedRect(0, 0, size, size, radius, radius)
-            
-            font_size = max(10, int(size * 0.45))
-            font = QFont("Pretendard", font_size, QFont.Bold)
-            painter.setFont(font)
-            painter.setPen(QColor("#9CA3AF"))
-            painter.drawText(QRect(0, 0, size, size), Qt.AlignCenter, "👤")
-            painter.end()
-            self.lbl_item_avatar.setPixmap(default_pix)
+            self.lbl_item_avatar.setPixmap(get_default_avatar_pixmap(size, size, radius))
 
 # =================================================================
 # 더블클릭이 가능한 QLabel 서브클래스
@@ -820,7 +833,11 @@ class FloatingCharacterViewer(QDialog):
         self.avatar_size_all = config.AVATAR_SIZE_ALL
         self.avatar_size_current = config.AVATAR_SIZE_CURRENT
         self.setWindowTitle("👤 캐릭터 도우미")
-        self.setWindowFlags(Qt.Tool | Qt.WindowCloseButtonHint)
+        import sys
+        if sys.platform == "darwin":
+            self.setWindowFlags(Qt.Tool | Qt.WindowCloseButtonHint)
+        else:
+            self.setWindowFlags(Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
         self.resize(340, 520)
         
         self.init_ui()
@@ -1654,11 +1671,10 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.load_characters()
 
     def load_characters(self):
-        for i in range(self.list_layout.count()):
-            item = self.list_layout.itemAt(i)
-            if item:
-                w = item.widget()
-                if w: w.deleteLater()
+        while self.list_layout.count():
+            child = self.list_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
             
         chars = config.load_global_characters(self.project_name)
         self.lbl_count.setText(f"(총 {len(chars)}명)")
@@ -1695,6 +1711,8 @@ class GlobalCharacterSettingsDialog(QDialog):
             card.edit_clicked.connect(self.edit_character)
             self.list_layout.addWidget(card)
             visible_count += 1
+            
+        self.list_layout.addStretch(1)
             
         if query:
             self.lbl_count.setText(f"(검색 결과 {visible_count}명 / 총 {len(chars)}명)")
@@ -2212,6 +2230,18 @@ class GlobalCharacterSettingsDialog(QDialog):
         )
         if not html_path:
             return
+            
+        # 토스트 메시지 표시 및 UI 업데이트 강제 실행
+        from PySide6.QtWidgets import QApplication
+        mw = self.parent()
+        if not mw or not hasattr(mw, 'toast'):
+            for widget in QApplication.topLevelWidgets():
+                if widget.__class__.__name__ == 'MainWindow':
+                    mw = widget
+                    break
+        if mw and hasattr(mw, 'toast') and mw.toast is not None:
+            mw.toast.show_message("⏳ 캐릭터 및 이미지를 가져오는 중...", 10000, fade_speed=0)
+            QApplication.processEvents()
             
         html_content = ""
         image_parts = {}
@@ -2826,3 +2856,212 @@ class ImageCropDialog(QDialog):
         self.cropped_pixmap = self.crop_widget.get_cropped_pixmap()
         self.crop_rect_coords = self.crop_widget.get_crop_rect_coords()
         self.accept()
+
+
+# =================================================================
+# 🖼️ 캐릭터 프로필 이미지 중복 교체 확인 다이얼로그 (ProfileImageOverwriteDialog)
+# =================================================================
+class ProfileImageOverwriteDialog(QDialog):
+    """글로벌 캐릭터 마이그레이션 중 기존 이미지가 존재할 때 교체할지 묻는 다이얼로그"""
+    def __init__(self, parent=None, char_name="", current_img_path="", new_pixmap=None):
+        super().__init__(parent)
+        self.char_name = char_name
+        self.current_img_path = current_img_path
+        self.new_pixmap = new_pixmap
+        
+        self.setWindowTitle("프로필 이미지 교체 확인")
+        self.setModal(True)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        
+        self.init_ui()
+        
+    def init_ui(self):
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #FFFFFF;
+            }
+            QLabel {
+                font-family: 'Pretendard', '-apple-system', 'Helvetica Neue', 'Segoe UI', sans-serif;
+            }
+        """)
+        
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(24, 24, 24, 24)
+        main_layout.setSpacing(20)
+        
+        # 상단 헤더 / 설명
+        header_layout = QVBoxLayout()
+        header_layout.setSpacing(6)
+        
+        title_lbl = QLabel(f"<span style='font-size: 16px; font-weight: bold; color: #1F2937;'>'{self.char_name}' 캐릭터의 프로필 이미지 교체</span>")
+        desc_lbl = QLabel("<span style='font-size: 13px; color: #4B5563; line-height: 140%;'>이미 기존에 직접 추가된 프로필 이미지가 존재합니다.<br>마이그레이션되는 새 이미지로 교체하시겠습니까?</span>")
+        desc_lbl.setWordWrap(True)
+        
+        header_layout.addWidget(title_lbl)
+        header_layout.addWidget(desc_lbl)
+        main_layout.addLayout(header_layout)
+        
+        # 이미지 가로 레이아웃
+        images_layout = QHBoxLayout()
+        images_layout.setSpacing(20)
+        images_layout.setAlignment(Qt.AlignCenter)
+        
+        # 1. 기존 이미지 컨테이너
+        current_container = QVBoxLayout()
+        current_container.setSpacing(8)
+        current_container.setAlignment(Qt.AlignCenter)
+        
+        lbl_current_title = QLabel("<span style='font-size: 11px; font-weight: bold; color: #6B7280;'>현재 프로필 이미지</span>")
+        lbl_current_title.setAlignment(Qt.AlignCenter)
+        
+        lbl_current_img = QLabel()
+        lbl_current_img.setFixedSize(150, 150)
+        lbl_current_img.setStyleSheet("border: none; background: transparent;")
+        
+        pix_current = None
+        if self.current_img_path and os.path.exists(self.current_img_path):
+            pix_current = QPixmap(self.current_img_path)
+            
+        if pix_current and not pix_current.isNull():
+            lbl_current_img.setPixmap(get_round_rect_pixmap(pix_current, 150, 150, 12))
+        else:
+            lbl_current_img.setPixmap(self.get_avatar_placeholder())
+            
+        current_container.addWidget(lbl_current_title)
+        current_container.addWidget(lbl_current_img)
+        
+        # 2. 화살표
+        arrow_lbl = QLabel("<span style='font-size: 24px; color: #9CA3AF;'>➔</span>")
+        arrow_lbl.setAlignment(Qt.AlignCenter)
+        
+        # 3. 새 이미지 컨테이너
+        new_container = QVBoxLayout()
+        new_container.setSpacing(8)
+        new_container.setAlignment(Qt.AlignCenter)
+        
+        lbl_new_title = QLabel("<span style='font-size: 11px; font-weight: bold; color: #3B82F6;'>적용되는 새 이미지</span>")
+        lbl_new_title.setAlignment(Qt.AlignCenter)
+        
+        lbl_new_img = QLabel()
+        lbl_new_img.setFixedSize(150, 150)
+        lbl_new_img.setStyleSheet("border: none; background: transparent;")
+        
+        if self.new_pixmap and not self.new_pixmap.isNull():
+            lbl_new_img.setPixmap(get_round_rect_pixmap(self.new_pixmap, 150, 150, 12))
+        else:
+            lbl_new_img.setPixmap(self.get_avatar_placeholder())
+            
+        new_container.addWidget(lbl_new_title)
+        new_container.addWidget(lbl_new_img)
+        
+        images_layout.addLayout(current_container)
+        images_layout.addWidget(arrow_lbl)
+        images_layout.addLayout(new_container)
+        
+        main_layout.addLayout(images_layout)
+        
+        # 구분선
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFrameShadow(QFrame.Sunken)
+        sep.setStyleSheet("color: #F3F4F6;")
+        main_layout.addWidget(sep)
+        
+        # 하단 버튼부
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+        
+        # 왼쪽 버튼 그룹: 유지 관련
+        btn_keep_all = QPushButton("모두 유지")
+        btn_keep_all.setCursor(Qt.PointingHandCursor)
+        btn_keep_all.setStyleSheet("""
+            QPushButton {
+                background-color: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                padding: 8px 14px;
+                font-weight: bold;
+                color: #6B7280;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #F9FAFB;
+                border-color: #9CA3AF;
+                color: #374151;
+            }
+        """)
+        btn_keep_all.clicked.connect(lambda: self.done(13))
+        
+        btn_keep = QPushButton("유지")
+        btn_keep.setCursor(Qt.PointingHandCursor)
+        btn_keep.setStyleSheet("""
+            QPushButton {
+                background-color: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                padding: 8px 18px;
+                font-weight: bold;
+                color: #374151;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #F9FAFB;
+                border-color: #9CA3AF;
+            }
+        """)
+        btn_keep.clicked.connect(lambda: self.done(11))
+        
+        btn_layout.addWidget(btn_keep_all)
+        btn_layout.addWidget(btn_keep)
+        
+        btn_layout.addStretch()
+        
+        # 오른쪽 버튼 그룹: 교체 관련
+        btn_replace = QPushButton("교체")
+        btn_replace.setCursor(Qt.PointingHandCursor)
+        btn_replace.setStyleSheet("""
+            QPushButton {
+                background-color: #3B82F6;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 18px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #2563EB;
+            }
+        """)
+        btn_replace.clicked.connect(lambda: self.done(10))
+        
+        btn_replace_all = QPushButton("모두 교체")
+        btn_replace_all.setCursor(Qt.PointingHandCursor)
+        btn_replace_all.setStyleSheet("""
+            QPushButton {
+                background-color: #E0E7FF;
+                color: #4338CA;
+                border: 1px solid #C7D2FE;
+                border-radius: 6px;
+                padding: 8px 14px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #C7D2FE;
+                color: #3730A3;
+            }
+        """)
+        btn_replace_all.clicked.connect(lambda: self.done(12))
+        
+        btn_layout.addWidget(btn_replace)
+        btn_layout.addWidget(btn_replace_all)
+        
+        main_layout.addLayout(btn_layout)
+        
+        self.adjustSize()
+        
+    def get_avatar_placeholder(self, w=150, h=150, radius=12):
+        """150x150 크기의 부드럽고 보기 좋은 기본 아바타 플레이스홀더를 동적으로 생성"""
+        return get_default_avatar_pixmap(w, h, radius)
+

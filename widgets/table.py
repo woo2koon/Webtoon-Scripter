@@ -10,12 +10,47 @@ from PySide6.QtGui import QPainter, QColor, QPen, QKeySequence
 
 import config
 
+class SheetCellLineEdit(QLineEdit):
+    def __init__(self, parent=None, delegate=None, index=None):
+        super().__init__(parent)
+        self.delegate = delegate
+        self.index = index
+
+    def keyPressEvent(self, event):
+        # Shift + Enter 감지 시 내용분리 (셀 나누기) 기능 수행
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter) and (event.modifiers() & Qt.ShiftModifier):
+            main_win = self.window()
+            if main_win and hasattr(main_win, 'split_script_row'):
+                cursor_pos = self.cursorPosition()
+                full_text = self.text()
+                left_text = full_text[:cursor_pos]
+                right_text = full_text[cursor_pos:]
+                
+                # 에디터의 전체 텍스트를 먼저 확정하여 실행 취소(Undo) 스택에 전체 내용이 보존되도록 함
+                self.setText(full_text)
+                if self.delegate:
+                    self.delegate.commitData.emit(self)
+                    self.delegate.closeEditor.emit(self, QStyledItemDelegate.NoHint)
+                
+                # 메인 윈도우의 내용분리 기능 호출 (에디터가 완전히 닫히고 정리된 후 실행되도록 지연 호출)
+                row_idx = self.index.row()
+                QTimer.singleShot(50, lambda: main_win.split_script_row(row_idx, left_text, right_text))
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
 class ExcelTextDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
 
     def createEditor(self, parent, option, index):
-        editor = QLineEdit(parent)
+        editor = SheetCellLineEdit(parent, delegate=self, index=index)
+        
+        # 글로벌 컨텍스트 메뉴에서 셀 에디터를 식별하고 분할 명령을 실행하기 위한 프로퍼티 설정
+        editor.setProperty("is_sheet_editor", True)
+        editor.setProperty("cell_row", index.row())
+        editor.setProperty("delegate", self)
+
         editor.setStyleSheet("""
             QLineEdit { 
                 border: 2px solid #FF5722; 

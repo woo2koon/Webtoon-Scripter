@@ -5,7 +5,8 @@ from .common import (
     get_round_rect_pixmap
 )
 from .character import (
-    CharacterRow, CharacterListContainer, FloatingCharacterViewer, GlobalCharacterSettingsDialog
+    CharacterRow, CharacterListContainer, FloatingCharacterViewer, GlobalCharacterSettingsDialog,
+    ProfileImageOverwriteDialog
 )
 from .table import (
     SpreadsheetTable, ExcelTextDelegate
