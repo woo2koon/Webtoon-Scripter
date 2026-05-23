@@ -10,9 +10,10 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QComboBox, QFrame, QListWidget, QListWidgetItem, QWidget, QListView,
     QInputDialog, QMessageBox, QAbstractItemView, QApplication, QStackedWidget,
-    QFileDialog, QCheckBox, QMenu, QScrollArea, QGraphicsOpacityEffect, QTextEdit
+    QFileDialog, QCheckBox, QMenu, QScrollArea, QGraphicsOpacityEffect, QTextEdit,
+    QProgressBar, QGraphicsDropShadowEffect
 )
-from PySide6.QtCore import Qt, Signal, QPoint, QSize, QMimeData, QByteArray, QTimer, QEvent
+from PySide6.QtCore import Qt, Signal, QPoint, QSize, QMimeData, QByteArray, QTimer, QEvent, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import (
     QPixmap, QIcon, QDrag, QPainter, QColor, QPen, QFont, QAction, QKeySequence,
     QTextCharFormat, QTextFormat, QTextCursor
@@ -2208,3 +2209,398 @@ class ProjectManagementDialog(QDialog):
                     self.parent().toast.show_message(f"📊 {success_count}개의 엑셀 파일 저장 완료")
             else:
                 QMessageBox.warning(self, "저장 완료 (일부 실패)", f"{count}개 중 {success_count}개 저장 성공\n(일부 파일 저장에 실패했습니다.)")
+
+
+# =================================================================
+# 업데이트 안내 다이얼로그 (UpdateDialog)
+# =================================================================
+class UpdateDialog(QDialog):
+    def __init__(self, parent=None, version_tag="", release_notes=""):
+        super().__init__(parent)
+        self.setWindowTitle("업데이트 알림")
+        self.setFixedSize(480, 420)
+        self.setWindowFlags(Qt.Dialog | Qt.MSWindowsFixedSizeDialogHint | Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # 1. 상단 안내
+        self.lbl_title = QLabel("새로운 업데이트가 있습니다!")
+        self.lbl_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #111827; font-family: 'Pretendard';")
+        layout.addWidget(self.lbl_title)
+        
+        self.lbl_info = QLabel(f"최신 버전: {version_tag} (현재 버전: {config.APP_VERSION})")
+        self.lbl_info.setStyleSheet("font-size: 13px; color: #4B5563; font-family: 'Pretendard';")
+        layout.addWidget(self.lbl_info)
+        
+        # 2. 업데이트 변경점 내용 표시
+        self.lbl_notes_title = QLabel("업데이트 내용:")
+        self.lbl_notes_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #374151; font-family: 'Pretendard';")
+        layout.addWidget(self.lbl_notes_title)
+        
+        self.txt_notes = QTextEdit()
+        self.txt_notes.setReadOnly(True)
+        self.txt_notes.setPlainText(release_notes if release_notes else "제공된 업데이트 정보가 없습니다.")
+        self.txt_notes.setStyleSheet("""
+            QTextEdit {
+                border: 1px solid #D1D5DB;
+                border-radius: 8px;
+                background-color: #F9FAFB;
+                padding: 10px;
+                color: #374151;
+                font-family: 'Pretendard';
+                font-size: 13px;
+                line-height: 140%;
+            }
+        """)
+        layout.addWidget(self.txt_notes)
+        
+        # 3. 다운로드 진행 바 및 상태 레이블 (처음에는 숨김)
+        self.progress_container = QWidget()
+        self.progress_layout = QVBoxLayout(self.progress_container)
+        self.progress_layout.setContentsMargins(0, 0, 0, 0)
+        self.progress_layout.setSpacing(8)
+        
+        self.lbl_status = QLabel("다운로드 대기 중...")
+        self.lbl_status.setStyleSheet("font-size: 12px; color: #2563EB; font-weight: bold; font-family: 'Pretendard';")
+        self.progress_layout.addWidget(self.lbl_status)
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(8)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #E5E7EB;
+                border-radius: 4px;
+            }
+            QProgressBar::chunk {
+                background-color: #FF5722;
+                border-radius: 4px;
+            }
+        """)
+        self.progress_layout.addWidget(self.progress_bar)
+        self.progress_container.setVisible(False)
+        layout.addWidget(self.progress_container)
+        
+        # 4. 하단 버튼 바
+        self.button_layout = QHBoxLayout()
+        self.button_layout.addStretch()
+        
+        self.btn_later = QPushButton("나중에")
+        self.btn_later.setFixedSize(100, 36)
+        self.btn_later.setCursor(Qt.PointingHandCursor)
+        self.btn_later.setStyleSheet("""
+            QPushButton {
+                background-color: white;
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                font-weight: bold;
+                color: #4B5563;
+                font-family: 'Pretendard';
+            }
+            QPushButton:hover {
+                background-color: #F9FAFB;
+                border-color: #9CA3AF;
+            }
+        """)
+        self.btn_later.clicked.connect(self.reject)
+        self.button_layout.addWidget(self.btn_later)
+        
+        self.btn_update = QPushButton("업데이트 시작")
+        self.btn_update.setFixedSize(130, 36)
+        self.btn_update.setCursor(Qt.PointingHandCursor)
+        self.btn_update.setStyleSheet("""
+            QPushButton {
+                background-color: #FF5722;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                color: white;
+                font-family: 'Pretendard';
+            }
+            QPushButton:hover {
+                background-color: #E04E1D;
+            }
+        """)
+        self.button_layout.addWidget(self.btn_update)
+        
+        layout.addLayout(self.button_layout)
+        
+        self.is_downloading = False
+
+    def set_downloading_mode(self, active=True):
+        self.is_downloading = active
+        self.btn_later.setVisible(not active)
+        self.btn_update.setVisible(not active)
+        self.progress_container.setVisible(active)
+        if active:
+            self.setWindowFlags(self.windowFlags() & ~Qt.WindowCloseButtonHint)
+            self.show()
+
+    def set_progress(self, percent, text):
+        self.progress_bar.setValue(percent)
+        self.lbl_status.setText(text)
+
+    def show_error(self, err_msg):
+        self.set_downloading_mode(False)
+        QMessageBox.critical(self, "업데이트 오류", f"업데이트 파일 다운로드 중 오류가 발생했습니다:\n{err_msg}")
+
+
+# =================================================================
+# 업데이트 알림 배너 (UpdateNotificationBanner) - 좌측 하단 슬라이드 업 팝업
+# =================================================================
+class UpdateNotificationBanner(QFrame):
+    SVG_UPDATE_ICON = b"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FF5722" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 17V3"/>
+        <path d="m6 11 6 6 6-6"/>
+        <path d="M19 21H5"/>
+    </svg>"""
+
+    def __init__(self, parent, current_version, version_tag, release_notes, on_show_dialog):
+        super().__init__(parent)
+        self.current_version = current_version
+        self.version_tag = version_tag
+        self.release_notes = release_notes
+        self.on_show_dialog = on_show_dialog  # Callback takes auto_start (bool)
+        
+        self.setObjectName("UpdateNotificationBanner")
+        self.setFixedSize(420, 115)
+        self.setStyleSheet("""
+            QFrame#UpdateNotificationBanner {
+                background-color: #FFFFFF;
+                border: 1px solid #FFE5D9;
+                border-radius: 12px;
+            }
+        """)
+        
+        # 그림자 효과 적용 (Premium UI)
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(15)
+        shadow.setColor(QColor(0, 0, 0, 30))
+        shadow.setOffset(0, 4)
+        self.setGraphicsEffect(shadow)
+        
+        # 메인 레이아웃 (수직)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(16, 12, 16, 12)
+        main_layout.setSpacing(10)
+        
+        # [상단 영역] 아이콘 + 텍스트 정보 (가로 배치)
+        top_layout = QHBoxLayout()
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(12)
+        
+        # 1. SVG 아이콘 라벨
+        self.lbl_icon = QLabel()
+        self.lbl_icon.setPixmap(self.get_svg_pixmap(self.SVG_UPDATE_ICON, 24, 24))
+        self.lbl_icon.setFixedSize(24, 24)
+        self.lbl_icon.setAlignment(Qt.AlignCenter)
+        top_layout.addWidget(self.lbl_icon)
+        
+        # 2. 텍스트 정보 영역 (수직 배치)
+        text_layout = QVBoxLayout()
+        text_layout.setSpacing(4)
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 타이틀: 새로운 업데이트가 있습니다! (현재버전 → 업뎃버전)
+        self.lbl_title = QLabel(f"새로운 업데이트가 있습니다! (v{current_version} → {version_tag})")
+        self.lbl_title.setStyleSheet("""
+            QLabel {
+                font-family: 'Pretendard';
+                font-size: 13px;
+                font-weight: bold;
+                color: #111827;
+            }
+        """)
+        text_layout.addWidget(self.lbl_title)
+        
+        # 본문 요약: 1~2줄
+        summary_text = self.clean_release_notes(release_notes)
+        self.lbl_summary = QLabel(summary_text)
+        self.lbl_summary.setStyleSheet("""
+            QLabel {
+                font-family: 'Pretendard';
+                font-size: 11px;
+                color: #4B5563;
+                line-height: 135%;
+            }
+        """)
+        self.lbl_summary.setWordWrap(True)
+        text_layout.addWidget(self.lbl_summary)
+        
+        top_layout.addLayout(text_layout)
+        main_layout.addLayout(top_layout)
+        
+        # [하단 영역] 버튼 배치 (오른쪽 정렬)
+        bottom_layout = QHBoxLayout()
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_layout.addStretch()
+        
+        # 자세히 보기 버튼
+        self.btn_details = QPushButton("자세히 보기")
+        self.btn_details.setFixedSize(95, 31)
+        self.btn_details.setCursor(Qt.PointingHandCursor)
+        self.btn_details.setStyleSheet("""
+            QPushButton {
+                background-color: white;
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                color: #4B5563;
+                font-family: 'Pretendard';
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #F9FAFB;
+                border-color: #9CA3AF;
+            }
+        """)
+        self.btn_details.clicked.connect(self.details_clicked)
+        bottom_layout.addWidget(self.btn_details)
+        
+        # 바로 업데이트 버튼
+        self.btn_update = QPushButton("업데이트")
+        self.btn_update.setFixedSize(95, 31)
+        self.btn_update.setCursor(Qt.PointingHandCursor)
+        self.btn_update.setStyleSheet("""
+            QPushButton {
+                background-color: #FF5722;
+                border: none;
+                border-radius: 6px;
+                color: white;
+                font-family: 'Pretendard';
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #E04E1D;
+            }
+        """)
+        self.btn_update.clicked.connect(self.update_clicked)
+        bottom_layout.addWidget(self.btn_update)
+        
+        main_layout.addLayout(bottom_layout)
+
+        # 닫기 버튼 (우측 상단 절대 좌표 배치 - 모서리 쪽으로 더 밀어 밀착시킴)
+        self.btn_close = QPushButton(self)
+        self.btn_close.setCursor(Qt.PointingHandCursor)
+        self.btn_close.setFixedSize(20, 20)
+        
+        # 에셋 폴더 내의 close.svg 아이콘 설정
+        close_icon = QIcon(os.path.join(config.ASSETS_DIR, "close.svg"))
+        self.btn_close.setIcon(close_icon)
+        self.btn_close.setIconSize(QSize(10, 10))
+        
+        self.btn_close.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #F3F4F6;
+                border-radius: 4px;
+            }
+        """)
+        self.btn_close.clicked.connect(self.hide_banner)
+        self.btn_close.setGeometry(394, 6, 20, 20)
+        self.btn_close.raise_()
+        
+        self.target_y = 0
+        self.anim = None
+
+    def get_svg_pixmap(self, svg_data, width, height):
+        pixmap = QPixmap(width, height)
+        pixmap.fill(Qt.transparent)
+        pixmap.loadFromData(svg_data)
+        return pixmap
+
+    def clean_release_notes(self, notes):
+        if not notes:
+            return "새로운 업데이트 버전이 준비되었습니다."
+        lines = []
+        for line in notes.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            # 마크다운 헤더 마크 제거
+            line = re.sub(r'^#+\s*', '', line)
+            # 마크다운 굵게/기울임/취소선/코드 포맷팅 제거
+            line = re.sub(r'\*\*|__|\*|_|`|~~', '', line)
+            # 리스트 아이템 마커 표준화
+            line = re.sub(r'^[-\*\+]\s*', '• ', line)
+            
+            # 너무 긴 라인은 말줄임표 처리 (가로폭 352px 기준이므로 50자로 단축)
+            if len(line) > 50:
+                line = line[:48] + "..."
+                
+            lines.append(line)
+            if len(lines) >= 2:
+                break
+        return "\n".join(lines) if lines else "새로운 업데이트 버전이 준비되었습니다."
+
+    def update_clicked(self):
+        self.hide_banner()
+        self.on_show_dialog(True)
+
+    def details_clicked(self):
+        self.hide_banner()
+        self.on_show_dialog(False)
+
+    def show_banner(self):
+        if not self.parent():
+            return
+        
+        self.show()
+        self.raise_()
+        
+        parent_rect = self.parent().rect()
+        width = self.width()
+        height = self.height()
+        
+        x = 20
+        self.target_y = parent_rect.height() - height - 20
+        
+        # 시작 위치 (부모 창 하단 바깥쪽에서 대기)
+        self.setGeometry(x, parent_rect.height(), width, height)
+        
+        # 슬라이드 업 애니메이션
+        self.anim = QPropertyAnimation(self, b"pos")
+        self.anim.setDuration(400)
+        self.anim.setStartValue(QPoint(x, parent_rect.height()))
+        self.anim.setEndValue(QPoint(x, self.target_y))
+        self.anim.setEasingCurve(QEasingCurve.OutCubic)
+        self.anim.start()
+
+    def hide_banner(self):
+        if not self.parent():
+            self.close()
+            return
+            
+        parent_rect = self.parent().rect()
+        x = self.x()
+        
+        # 슬라이드 다운 애니메이션
+        self.anim = QPropertyAnimation(self, b"pos")
+        self.anim.setDuration(300)
+        self.anim.setStartValue(self.pos())
+        self.anim.setEndValue(QPoint(x, parent_rect.height()))
+        self.anim.setEasingCurve(QEasingCurve.InCubic)
+        self.anim.finished.connect(self.close)
+        self.anim.start()
+
+    def update_position(self):
+        if not self.parent() or not self.isVisible():
+            return
+        parent_rect = self.parent().rect()
+        width = self.width()
+        height = self.height()
+        x = 20
+        self.target_y = parent_rect.height() - height - 20
+        
+        # 애니메이션 동작 중인 경우 대상을 변경하고, 그렇지 않으면 즉시 지오메트리 조정
+        if self.anim and self.anim.state() == QPropertyAnimation.Running:
+            self.anim.setEndValue(QPoint(x, self.target_y))
+        else:
+            self.setGeometry(x, self.target_y, width, height)

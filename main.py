@@ -46,7 +46,8 @@ restore_template()
 
 
 
-from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer
+from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner
+from update_worker import UpdateCheckWorker, UpdateDownloadWorker
 
 class GlobalScrollShortcutFilter(QObject):
     def __init__(self, main_window):
@@ -364,6 +365,9 @@ class WebtoonManager(QMainWindow):
         # 2단계: 모드 체크 및 기존 작업 확인 (지연 호출)
         QTimer.singleShot(0, lambda: self.check_existing_work(is_startup=True))
 
+        # 2초 뒤 자동 업데이트 확인 실행 (백그라운드)
+        QTimer.singleShot(2000, lambda: self.check_for_updates(manual=False))
+
     def update_button_pos(self):
         """사이드바의 현재 너비에 맞춰 버튼 위치를 실시간으로 이동시킵니다."""
         if hasattr(self, 'btn_toggle') and hasattr(self, 'sidebar'):
@@ -430,6 +434,8 @@ class WebtoonManager(QMainWindow):
         if hasattr(self, 'overlay'):
             self.overlay.setGeometry(self.rect()) 
             self.overlay.raise_()
+        if hasattr(self, 'update_banner') and self.update_banner and self.update_banner.isVisible():
+            self.update_banner.update_position()
 
     def clear_simple_mode_cache(self):
         simple_dir = os.path.join(CACHE_DIR, "simple_mode")
@@ -1952,6 +1958,12 @@ class WebtoonManager(QMainWindow):
         action_settings = QAction("API 키 설정", self)
         action_settings.triggered.connect(self.open_settings_dialog)
         settings_menu.addAction(action_settings)
+
+        # 도움말 메뉴 추가
+        help_menu = menubar.addMenu("도움말(&H)")
+        action_update_check = QAction("업데이트 확인", self)
+        action_update_check.triggered.connect(lambda: self.check_for_updates(manual=True))
+        help_menu.addAction(action_update_check)
 
     def open_settings_dialog(self):
         dlg = SettingsDialog(self)
@@ -3810,6 +3822,164 @@ class WebtoonManager(QMainWindow):
             self.sidebar_body.show()
             
         self.sidebar_anim.start()
+
+    # =================================================================
+    # [신설] 자동 업데이트 관련 기능
+    # =================================================================
+    def check_for_updates(self, manual=False):
+        if manual:
+            self.toast.show_message("🔄 업데이트 확인 중...", 2000)
+        self.update_check_worker = UpdateCheckWorker(config.APP_VERSION)
+        self.update_check_worker.finished_check.connect(lambda data: self.on_update_check_finished(data, manual))
+        self.update_check_worker.start()
+
+    def on_update_check_finished(self, release_data, manual=False):
+        if not release_data:
+            if manual:
+                msg_box = QMessageBox(self)
+                msg_box.setWindowTitle("업데이트 정보")
+                msg_box.setText(f"현재 최신 버전을 사용 중입니다.\n(버전: v{config.APP_VERSION})")
+                msg_box.setIcon(QMessageBox.Information)
+                msg_box.exec()
+            return
+            
+        version_tag = release_data.get("tag_name", "")
+        changelog = release_data.get("body", "")
+        
+        assets = release_data.get("assets", [])
+        download_url = None
+        
+        current_os = platform.system()
+        if current_os == "Darwin":
+            for asset in assets:
+                name = asset.get("name", "").lower()
+                if name.endswith(".zip") and ("mac" in name or "darwin" in name or "apple" in name):
+                    download_url = asset.get("browser_download_url")
+                    break
+            if not download_url:
+                for asset in assets:
+                    if asset.get("name", "").lower().endswith(".zip"):
+                        download_url = asset.get("browser_download_url")
+                        break
+        else:
+            for asset in assets:
+                name = asset.get("name", "").lower()
+                if name.endswith("setup.exe") or ("setup" in name and name.endswith(".exe")):
+                    download_url = asset.get("browser_download_url")
+                    break
+            if not download_url:
+                for asset in assets:
+                    if asset.get("name", "").lower().endswith(".exe"):
+                        download_url = asset.get("browser_download_url")
+                        break
+
+        if not download_url:
+            if manual:
+                QMessageBox.warning(self, "업데이트 정보", "현재 운영체제에 맞는 설치 파일이 존재하지 않습니다.")
+            return
+
+        if manual:
+            self.show_update_dialog(version_tag, changelog, download_url)
+        else:
+            self.show_update_banner(version_tag, changelog, download_url)
+
+    def show_update_dialog(self, version_tag, changelog, download_url, auto_start=False):
+        dlg = UpdateDialog(self, version_tag=version_tag, release_notes=changelog)
+        dlg.btn_update.clicked.connect(lambda: self.start_update_download(dlg, download_url, version_tag))
+        if auto_start:
+            QTimer.singleShot(50, lambda: self.start_update_download(dlg, download_url, version_tag))
+        dlg.exec()
+
+    def show_update_banner(self, version_tag, changelog, download_url):
+        if hasattr(self, 'update_banner') and self.update_banner:
+            try:
+                self.update_banner.close()
+            except:
+                pass
+        
+        self.update_banner = UpdateNotificationBanner(
+            self, 
+            current_version=config.APP_VERSION,
+            version_tag=version_tag, 
+            release_notes=changelog,
+            on_show_dialog=lambda auto_start: self.show_update_dialog(version_tag, changelog, download_url, auto_start)
+        )
+        self.update_banner.show_banner()
+
+    def start_update_download(self, dlg, download_url, version_tag):
+        dlg.set_downloading_mode(True)
+        dlg.set_progress(0, "업데이트 파일 다운로드 중... 0%")
+        
+        current_os = platform.system()
+        ext = ".zip" if current_os == "Darwin" else ".exe"
+        temp_dir = os.path.join(config.CACHE_DIR, "temp_update")
+        os.makedirs(temp_dir, exist_ok=True)
+        dest_path = os.path.join(temp_dir, f"update_{version_tag}{ext}")
+        
+        self.download_worker = UpdateDownloadWorker(download_url, dest_path)
+        self.download_worker.progress.connect(lambda val: dlg.set_progress(val, f"업데이트 파일 다운로드 중... {val}%"))
+        self.download_worker.finished_download.connect(lambda path: self.on_update_download_finished(dlg, path))
+        self.download_worker.error.connect(lambda err: dlg.show_error(err))
+        self.download_worker.start()
+
+    def on_update_download_finished(self, dlg, file_path):
+        dlg.set_progress(100, "다운로드 완료! 업데이트를 적용하는 중...")
+        
+        # 업데이트 전에 작성 중이던 모든 문서 강제 자동 저장
+        try:
+            self.save_text_content()
+            self.save_script_data()
+            self.save_char_data()
+        except Exception as e:
+            print(f"Pre-update autosave failed: {e}")
+
+        current_os = platform.system()
+        try:
+            if current_os == "Windows":
+                import subprocess
+                args = [file_path, "/SILENT", "/SUPPRESSMSGBOXES", "/NOCANCEL"]
+                subprocess.Popen(args)
+                sys.exit(0)
+            elif current_os == "Darwin":
+                import zipfile
+                import subprocess
+                import shutil
+                
+                extracted_dir = os.path.join(os.path.dirname(file_path), "extracted")
+                if os.path.exists(extracted_dir):
+                    shutil.rmtree(extracted_dir)
+                os.makedirs(extracted_dir, exist_ok=True)
+                
+                with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                    zip_ref.extractall(extracted_dir)
+                
+                app_folder = None
+                for root, dirs, files in os.walk(extracted_dir):
+                    for d in dirs:
+                        if d.endswith(".app"):
+                            app_folder = os.path.join(root, d)
+                            break
+                    if app_folder:
+                        break
+                        
+                if not app_folder:
+                    raise Exception("압축 파일 내에서 .app 폴더를 찾을 수 없습니다.")
+
+                script = f"""(
+                    sleep 1 && \
+                    rm -rf "/Applications/Webtoon_Script_Manager.app" && \
+                    cp -R "{app_folder}" "/Applications/Webtoon_Script_Manager.app" && \
+                    xattr -d com.apple.quarantine "/Applications/Webtoon_Script_Manager.app" && \
+                    open "/Applications/Webtoon_Script_Manager.app"
+                ) &"""
+                
+                subprocess.Popen(script, shell=True)
+                sys.exit(0)
+            else:
+                QMessageBox.warning(dlg, "오류", "지원되지 않는 운영체제입니다.")
+                dlg.set_downloading_mode(False)
+        except Exception as e:
+            dlg.show_error(str(e))
 
 
 if __name__ == "__main__":
