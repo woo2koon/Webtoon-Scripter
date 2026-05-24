@@ -1960,10 +1960,16 @@ class WebtoonManager(QMainWindow):
         settings_menu.addAction(action_settings)
 
         # 도움말 메뉴 추가
-        help_menu = menubar.addMenu("도움말(&H)")
+        help_menu = menubar.addMenu("도움말\u200b(&H)")
+        help_menu.menuAction().setMenuRole(QAction.NoRole) # macOS의 넓은 검색창 생성 방지
         action_update_check = QAction("업데이트 확인", self)
         action_update_check.triggered.connect(lambda: self.check_for_updates(manual=True))
         help_menu.addAction(action_update_check)
+
+        # [신설] 이전 버전 마이그레이션 기능 추가
+        action_migration = QAction("이전 버전 데이터 가져오기 (마이그레이션)", self)
+        action_migration.triggered.connect(self.migrate_old_projects)
+        help_menu.addAction(action_migration)
 
     def open_settings_dialog(self):
         dlg = SettingsDialog(self)
@@ -3980,6 +3986,122 @@ class WebtoonManager(QMainWindow):
                 dlg.set_downloading_mode(False)
         except Exception as e:
             dlg.show_error(str(e))
+
+    def migrate_old_projects(self):
+        # 1. 파일 다이얼로그로 이전 버전 폴더 선택받기
+        selected_path = QFileDialog.getExistingDirectory(
+            self, 
+            "이전 버전 폴더 선택 (프로젝트 폴더 또는 실행파일 폴더)",
+            ""
+        )
+        if not selected_path:
+            return
+
+        # 2. projects 폴더 위치 판별
+        src_projects_dir = None
+        if os.path.basename(selected_path.rstrip("/\\")) == "projects":
+            src_projects_dir = selected_path
+        elif os.path.exists(os.path.join(selected_path, "projects")):
+            src_projects_dir = os.path.join(selected_path, "projects")
+        else:
+            src_projects_dir = selected_path
+
+        # 3. 폴더 유효성 검사 (하위에 실제 폴더가 존재하는지 확인)
+        try:
+            subdirs = [d for d in os.listdir(src_projects_dir) if os.path.isdir(os.path.join(src_projects_dir, d))]
+        except Exception as e:
+            QMessageBox.warning(
+                self, 
+                "가져오기 실패", 
+                f"폴더를 읽는 중 오류가 발생했습니다.\n올바른 폴더인지 확인해 주세요.\n(에러: {e})"
+            )
+            return
+
+        valid_projects = []
+        for d in subdirs:
+            if d.startswith('.'):
+                continue
+            valid_projects.append(d)
+
+        if not valid_projects:
+            QMessageBox.warning(
+                self, 
+                "가져오기 실패", 
+                "선택한 폴더 내에서 프로젝트 데이터를 찾을 수 없습니다.\n올바른 폴더를 선택했는지 확인해 주세요."
+            )
+            return
+
+        # 4. 가져오기 진행 여부 확인
+        reply = QMessageBox.question(
+            self,
+            "프로젝트 가져오기",
+            f"선택한 폴더에서 총 {len(valid_projects)}개의 작품(프로젝트)을 발견했습니다.\n"
+            f"이 데이터를 현재 저장소로 가져오시겠습니까?\n\n"
+            f"(이미 동일한 이름의 작품/회차가 존재할 경우 새로운 내용으로 덮어쓰거나 병합됩니다.)",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
+        )
+        if reply == QMessageBox.No:
+            return
+
+        # 5. 복사 및 병합 작업 진행
+        imported_count = 0
+        error_list = []
+
+        for project_name in valid_projects:
+            src_project_path = os.path.join(src_projects_dir, project_name)
+            dst_project_path = os.path.join(PROJECTS_DIR, project_name)
+
+            try:
+                if not os.path.exists(dst_project_path):
+                    shutil.copytree(src_project_path, dst_project_path)
+                else:
+                    try:
+                        episodes = [e for e in os.listdir(src_project_path) if os.path.isdir(os.path.join(src_project_path, e))]
+                    except Exception:
+                        episodes = []
+
+                    for ep in episodes:
+                        if ep.startswith('.'):
+                            continue
+                        src_ep_path = os.path.join(src_project_path, ep)
+                        dst_ep_path = os.path.join(dst_project_path, ep)
+
+                        if not os.path.exists(dst_ep_path):
+                            shutil.copytree(src_ep_path, dst_ep_path)
+                        else:
+                            for root, _, files in os.walk(src_ep_path):
+                                rel_path = os.path.relpath(root, src_ep_path)
+                                target_dir = os.path.join(dst_ep_path, rel_path)
+                                os.makedirs(target_dir, exist_ok=True)
+                                for file in files:
+                                    shutil.copy2(os.path.join(root, file), os.path.join(target_dir, file))
+
+                    for file_name in ["characters.json", "character_info.csv"]:
+                        src_file = os.path.join(src_project_path, file_name)
+                        dst_file = os.path.join(dst_project_path, file_name)
+                        if os.path.exists(src_file):
+                            shutil.copy2(src_file, dst_file)
+                imported_count += 1
+            except Exception as e:
+                error_list.append(f"{project_name} ({e})")
+
+        # 6. 목록 갱신 및 결과 표시
+        self.refresh_project_list()
+        
+        if error_list:
+            error_msg = "\n".join(error_list)
+            QMessageBox.warning(
+                self,
+                "가져오기 완료 (일부 오류)",
+                f"총 {imported_count}개의 프로젝트를 성공적으로 가져왔으나, 다음 프로젝트 복사 중 오류가 발생했습니다:\n\n{error_msg}"
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "가져오기 성공",
+                f"총 {imported_count}개의 프로젝트 데이터를 성공적으로 가져왔습니다!\n좌측의 작품 목록을 확인해 주세요."
+            )
 
 
 if __name__ == "__main__":
