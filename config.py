@@ -387,6 +387,11 @@ QProgressBar::chunk { background-color: #ff4b4b; border-radius: 2px; }
 QTextEdit { color: #333333; line-height: 160%; background-color: white; border: 1px solid #d1d5db; border-radius: 4px; }
 """
 
+# QComboBox의 dropdown-arrow.svg 상대경로를 빌드 환경에서도 로드할 수 있도록 절대경로로 치환
+dropdown_arrow_path = os.path.join(ASSETS_DIR, "dropdown-arrow.svg").replace("\\", "/")
+MODERN_STYLE = MODERN_STYLE.replace("url(assets/dropdown-arrow.svg)", f"url('{dropdown_arrow_path}')")
+
+
 MODERN_MENU_STYLE = """
 QMenu { 
     background-color: white; 
