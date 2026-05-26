@@ -294,7 +294,7 @@ EXCEL_TEMPLATE_BASE64 = ""
 
 MODERN_STYLE = """
 QWidget { font-family: 'Pretendard', 'Malgun Gothic', 'AppleGothic', sans-serif; font-size: 14px; color: #333333; }
-QMainWindow { background-color: #ffffff; }
+QMainWindow, QDialog { background-color: #ffffff; }
 QMenuBar { background-color: white; border-bottom: 1px solid #e5e7eb; }
 QMenuBar::item { padding: 8px 12px; background: transparent; color: #333; }
 QMenuBar::item:selected { background-color: #f3f4f6; color: #000; }
