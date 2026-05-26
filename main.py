@@ -3457,9 +3457,12 @@ class WebtoonManager(QMainWindow):
     def show_script_context_menu(self, pos):
         menu = QMenu()
         # [추가] 최상단에 실행취소 / 다시실행 추가 (아이콘 적용)
-        cmd_key = "Cmd" if sys.platform == "darwin" else "Ctrl"
-        undo_action = menu.addAction(get_icon(config.ICON_UNDO), f"실행취소 ({cmd_key}+Z)")
-        redo_action = menu.addAction(get_icon(config.ICON_REDO), f"다시실행 ({cmd_key}+Shift+Z)")
+        if sys.platform == "darwin":
+            undo_action = menu.addAction(get_icon(config.ICON_UNDO), "실행취소 (⌘Z)")
+            redo_action = menu.addAction(get_icon(config.ICON_REDO), "다시실행 (⇧⌘Z)")
+        else:
+            undo_action = menu.addAction(get_icon(config.ICON_UNDO), "실행취소 (Ctrl+Z)")
+            redo_action = menu.addAction(get_icon(config.ICON_REDO), "다시실행 (Ctrl+Shift+Z)")
         menu.addSeparator()
 
         action_insert_above = menu.addAction(get_icon(config.ICON_ARROW_UP), "위에 행 추가")
