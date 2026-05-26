@@ -2690,6 +2690,22 @@ class WebtoonManager(QMainWindow):
         
 
     def run_ocr(self):
+        # 0. API 키 등록 여부 검증
+        if not config.OCR_API_KEY or not config.OCR_API_KEY.strip():
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("API 키 필요")
+            msg_box.setText("⚠️ 구글 클라우드 API 키가 설정되지 않았습니다.\n\n"
+                            "분석을 시작하려면 먼저 설정에서 API 키를 입력해 주세요.")
+            msg_box.setIcon(QMessageBox.Warning)
+            btn_settings = msg_box.addButton("설정 열기", QMessageBox.ActionRole)
+            btn_close = msg_box.addButton("닫기", QMessageBox.RejectRole)
+            msg_box.setDefaultButton(btn_settings)
+            msg_box.exec()
+            
+            if msg_box.clickedButton() == btn_settings:
+                self.open_settings_dialog()
+            return
+
         # 1. 파일 경로 및 대상 확인
         _, i_path, _ = self.get_paths()
         files = sorted([os.path.join(i_path, f) for f in os.listdir(i_path) 
@@ -3737,6 +3753,22 @@ class WebtoonManager(QMainWindow):
         cursor.endEditBlock()
 
     def run_spell_check(self):
+        # 0. API 키 등록 여부 검증
+        if not config.AI_API_KEY or not config.AI_API_KEY.strip():
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("API 키 필요")
+            msg_box.setText("⚠️ 구글 Cloud API 키가 설정되지 않았습니다.\n\n"
+                            "AI 맞춤법 검사를 시작하려면 먼저 설정에서 API 키를 입력해 주세요.")
+            msg_box.setIcon(QMessageBox.Warning)
+            btn_settings = msg_box.addButton("설정 열기", QMessageBox.ActionRole)
+            btn_close = msg_box.addButton("닫기", QMessageBox.RejectRole)
+            msg_box.setDefaultButton(btn_settings)
+            msg_box.exec()
+            
+            if msg_box.clickedButton() == btn_settings:
+                self.open_settings_dialog()
+            return
+
         text = self.text_editor.toPlainText().strip()
         if not text:
              self.toast.show_message("⚠️ 검사할 텍스트가 없습니다.", 2000)
