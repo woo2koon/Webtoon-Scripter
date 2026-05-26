@@ -949,6 +949,8 @@ class WebtoonManager(QMainWindow):
         self.combo_api_type.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.combo_api_type.view().window().setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
         self.combo_api_type.view().window().setAttribute(Qt.WA_TranslucentBackground)
+        
+        dropdown_arrow_path = os.path.join(config.ASSETS_DIR, "dropdown-arrow.svg").replace("\\", "/")
         self.combo_api_type.setStyleSheet("""
             QComboBox {
                 combobox-popup: 0;
@@ -994,7 +996,7 @@ class WebtoonManager(QMainWindow):
                 background-color: #fff5f5;
                 color: #ff4b4b;
             }
-        """)
+        """.replace('url("assets/dropdown-arrow.svg")', f"url('{dropdown_arrow_path}')"))
         self.combo_api_type.setItemDelegate(PopupItemDelegate())
         self.combo_api_type.setCursor(Qt.PointingHandCursor)
         self.combo_api_type.currentIndexChanged.connect(self.update_api_display)

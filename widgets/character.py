@@ -294,6 +294,7 @@ class CharacterRow(QFrame):
             padding-left: 10px; font-family: 'Pretendard', sans-serif; font-size: 14px; color: #333333;
         """
         FOCUS_STYLE = "border: 1px solid #ff4b4b;"
+        dropdown_arrow_path = os.path.join(config.ASSETS_DIR, "dropdown-arrow.svg").replace("\\", "/")
         FULL_COMBO_STYLE = f"""
             QComboBox {{ 
                 combobox-popup: 0;
@@ -305,7 +306,7 @@ class CharacterRow(QFrame):
                 border-top-right-radius: 5px; border-bottom-right-radius: 5px; 
             }}
             QComboBox::down-arrow {{ 
-                image: url(assets/dropdown-arrow.svg);
+                image: url("{dropdown_arrow_path}");
                 width: 12px; height: 12px; 
             }}
             QComboBox QAbstractItemView {{ 
