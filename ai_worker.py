@@ -22,8 +22,8 @@ class SpellCheckWorker(QThread):
             self.error.emit("AI API 키가 없습니다. [설정] > [API 키 설정]을 확인해주세요.")
             return
 
-        # [모델 변경] 더 이상 유효하지 않은 임시 프리뷰 모델(gemini-3.1-flash-lite-preview)에서 정식 안정화 모델인 gemini-2.0-flash로 변경합니다.
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={active_key}"
+        # [모델 변경] 높은 사용량 한도를 제공하는 정식 안정화 모델인 gemini-3.1-flash-lite로 변경합니다.
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key={active_key}"
 
         prompt_text = f"""
         너는 한국어 웹툰 대사 교정 전문가야.
