@@ -29,9 +29,11 @@ if getattr(sys, 'frozen', False):
     # [읽기전용] EXE 내부에 압축된 아이콘 등 (임시 폴더)
     BUNDLE_DIR = sys._MEIPASS 
     
-    # [쓰기권한] 프로젝트 저장소 (윈도우가 허락한 자유 구역: AppData)
-    # 이제 'C:\Users\진우\AppData\Roaming\Webtoon_Script_Manager'를 사용합니다.
-    STORAGE_DIR = os.path.join(os.environ["APPDATA"], APP_NAME)
+    # [쓰기권한] 프로젝트 저장소 (운영체제별 구분)
+    if sys.platform == "darwin":  # macOS
+        STORAGE_DIR = os.path.join(os.path.expanduser("~/Library/Application Support"), APP_NAME)
+    else:  # Windows 또는 기타
+        STORAGE_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 else:
     # 개발 환경 (VS Code) - 현재 폴더 사용
     BUNDLE_DIR = STORAGE_DIR = os.path.dirname(os.path.abspath(__file__))
