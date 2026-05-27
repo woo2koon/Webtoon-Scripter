@@ -46,7 +46,7 @@ restore_template()
 
 
 
-from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner
+from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog
 from update_worker import UpdateCheckWorker, UpdateDownloadWorker
 
 class GlobalScrollShortcutFilter(QObject):
@@ -316,7 +316,7 @@ class AlwaysUpComboBox(QComboBox):
 class WebtoonManager(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"Webtoon Script Manager v{config.APP_VERSION}") 
+        self.setWindowTitle(f"Webtoon Scripter v{config.APP_VERSION}") 
         self.resize(1600, 950)
         self.current_title = ""
         self.current_episode = ""
@@ -1940,11 +1940,12 @@ class WebtoonManager(QMainWindow):
         self.action_simple_mode = file_menu.addAction("심플 모드 전환")
         self.action_simple_mode.triggered.connect(self.toggle_simple_mode)
 
-        file_menu.addSeparator() 
-        
-        action_exit = QAction("종료", self)
-        action_exit.triggered.connect(self.close)
-        file_menu.addAction(action_exit)
+        # macOS의 경우 시스템 메뉴 막대에 이미 '종료(Quit)'가 있으므로 중복 제거
+        if platform.system() != "Darwin":
+            file_menu.addSeparator() 
+            action_exit = QAction("종료", self)
+            action_exit.triggered.connect(self.close)
+            file_menu.addAction(action_exit)
 
         # 설정 메뉴
         settings_menu = menubar.addMenu("설정(&S)")
@@ -1957,9 +1958,10 @@ class WebtoonManager(QMainWindow):
         settings_menu.addSeparator()
 
         # API 키 설정을 아래로
-        action_settings = QAction("API 키 설정", self)
-        action_settings.triggered.connect(self.open_settings_dialog)
-        settings_menu.addAction(action_settings)
+        self.action_settings = QAction("API 키 설정", self)
+        self.action_settings.setMenuRole(QAction.PreferencesRole)
+        self.action_settings.triggered.connect(self.open_settings_dialog)
+        settings_menu.addAction(self.action_settings)
 
         # 도움말 메뉴 추가
         help_menu = menubar.addMenu("도움말\u200b(&H)")
@@ -1972,6 +1974,19 @@ class WebtoonManager(QMainWindow):
         action_migration = QAction("이전 버전 데이터 가져오기 (마이그레이션)", self)
         action_migration.triggered.connect(self.migrate_old_projects)
         help_menu.addAction(action_migration)
+
+        help_menu.addSeparator()
+        
+        # [신설] Apple 스타일 프로그램 정보 다이얼로그 바인딩
+        self.action_about = QAction("Webtoon Scripter 정보", self)
+        # macOS의 기본 "앱 정보" 메뉴 역할과 연계되도록 설정
+        self.action_about.setMenuRole(QAction.AboutRole)
+        self.action_about.triggered.connect(self.open_about_dialog)
+        help_menu.addAction(self.action_about)
+
+    def open_about_dialog(self):
+        dlg = AboutDialog(self)
+        dlg.exec()
 
     def open_settings_dialog(self):
         dlg = SettingsDialog(self)
@@ -4010,10 +4025,10 @@ class WebtoonManager(QMainWindow):
 
                 script = f"""(
                     sleep 1 && \
-                    rm -rf "/Applications/Webtoon_Script_Manager.app" && \
-                    cp -R "{app_folder}" "/Applications/Webtoon_Script_Manager.app" && \
-                    xattr -d com.apple.quarantine "/Applications/Webtoon_Script_Manager.app" && \
-                    open "/Applications/Webtoon_Script_Manager.app"
+                    rm -rf "/Applications/Webtoon Scripter.app" && \
+                    cp -R "{app_folder}" "/Applications/Webtoon Scripter.app" && \
+                    xattr -d com.apple.quarantine "/Applications/Webtoon Scripter.app" && \
+                    open "/Applications/Webtoon Scripter.app"
                 ) &"""
                 
                 subprocess.Popen(script, shell=True)

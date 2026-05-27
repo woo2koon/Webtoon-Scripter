@@ -2604,3 +2604,151 @@ class UpdateNotificationBanner(QFrame):
             self.anim.setEndValue(QPoint(x, self.target_y))
         else:
             self.setGeometry(x, self.target_y, width, height)
+
+class SVGCloseButton(QPushButton):
+    SVG_CLOSE_NORMAL = b"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4b5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>"""
+    SVG_CLOSE_HOVER = b"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(22, 22)
+        self.setCursor(Qt.PointingHandCursor)
+        
+        self.pix_normal = QPixmap()
+        self.pix_normal.loadFromData(self.SVG_CLOSE_NORMAL)
+        self.icon_normal = QIcon(self.pix_normal)
+        
+        self.pix_hover = QPixmap()
+        self.pix_hover.loadFromData(self.SVG_CLOSE_HOVER)
+        self.icon_hover = QIcon(self.pix_hover)
+        
+        self.setIcon(self.icon_normal)
+        self.setIconSize(QSize(10, 10))
+        
+        self.setStyleSheet("""
+            QPushButton {
+                border: none;
+                border-radius: 11px;
+                background-color: #f3f4f6;
+            }
+            QPushButton:hover {
+                background-color: #FF5722;
+            }
+        """)
+
+    def enterEvent(self, event):
+        self.setIcon(self.icon_hover)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.setIcon(self.icon_normal)
+        super().leaveEvent(event)
+
+# =================================================================
+# Apple 스타일 프로그램 정보 다이얼로그 (AboutDialog)
+# =================================================================
+class AboutDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Webtoon Scripter 정보")
+        self.setFixedSize(510, 270)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground) # 둥근 테두리 구현을 위한 투명화
+        
+        self.init_ui()
+
+    def init_ui(self):
+        # 외부 레이아웃 (그림자 및 테두리 포함)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        
+        # 내부 카드 바디 (하얀색 배경 + macOS 스타일)
+        self.body = QFrame()
+        self.body.setObjectName("AboutBody")
+        self.body.setStyleSheet("""
+            QFrame#AboutBody {
+                background-color: #ffffff;
+                border: 1px solid #e5e7eb;
+                border-radius: 12px;
+            }
+        """)
+        
+        body_layout = QHBoxLayout(self.body)
+        body_layout.setContentsMargins(30, 25, 30, 25)
+        body_layout.setSpacing(25)
+        
+        # 1. 왼쪽 영역: 로고/아이콘 (140x140 크기 확대)
+        left_layout = QVBoxLayout()
+        left_layout.setContentsMargins(0, 15, 0, 0)
+        left_layout.setAlignment(Qt.AlignTop)
+        
+        self.lbl_logo = QLabel()
+        self.lbl_logo.setFixedSize(140, 140)
+        self.lbl_logo.setScaledContents(True)
+        
+        # 로고 로드
+        logo_path = os.path.join(config.ASSETS_DIR, "../app_icon/Webtoon_script_manager_icon.png")
+        if os.path.exists(logo_path):
+            self.lbl_logo.setPixmap(QPixmap(logo_path))
+        else:
+            # 폴백용 기본 아이콘
+            self.lbl_logo.setPixmap(get_icon(config.ICON_APP).pixmap(140, 140))
+            
+        left_layout.addWidget(self.lbl_logo)
+        left_layout.addStretch()
+        
+        # 2. 오른쪽 영역: 상세 정보 및 텍스트
+        right_layout = QVBoxLayout()
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(6)
+        
+        # 커스텀 닫기 버튼 (우측 상단 절대 배치 - 510 가로 기준)
+        self.btn_close = SVGCloseButton(self.body)
+        self.btn_close.clicked.connect(self.close)
+        self.btn_close.move(456, 12)
+        
+        right_layout.addSpacing(18)
+        
+        # 타이틀
+        lbl_title = QLabel("Webtoon Scripter")
+        lbl_title.setStyleSheet("color: #1f2937; font-size: 26px; font-weight: bold; font-family: 'Helvetica Neue', Arial; border: none; background: transparent;")
+        right_layout.addWidget(lbl_title)
+        
+        # 버전 정보
+        lbl_version = QLabel(f"Version {config.APP_VERSION}")
+        lbl_version.setStyleSheet("color: #4b5563; font-size: 14px; font-family: 'Helvetica Neue'; border: none; background: transparent;")
+        right_layout.addWidget(lbl_version)
+        
+        right_layout.addSpacing(10)
+        
+        # 개발자 및 피드백 정보 링크
+        lbl_links = QLabel("<a href='https://github.com/woo2koon/Webtoon-Scripter' style='color:#e64a19; text-decoration:none;'>GitHub 저장소 바로가기</a><br>"
+                           "<a href='https://github.com/woo2koon/Webtoon-Scripter/issues' style='color:#e64a19; text-decoration:none;'>버그 제보 및 건의사항</a>")
+        lbl_links.setOpenExternalLinks(True)
+        lbl_links.setStyleSheet("font-size: 13px; font-family: 'Helvetica Neue', Arial; border: none; background: transparent;")
+        right_layout.addWidget(lbl_links)
+        
+        right_layout.addStretch()
+        
+        # 저작권 정보 표기
+        lbl_copyright = QLabel("© 2026 PAK JINWOO. All rights reserved.")
+        lbl_copyright.setWordWrap(True)
+        lbl_copyright.setStyleSheet("color: #6b7280; font-size: 10px; font-family: 'Helvetica Neue'; line-height: 14px; border: none; background: transparent;")
+        right_layout.addWidget(lbl_copyright)
+        
+        body_layout.addLayout(left_layout)
+        body_layout.addLayout(right_layout)
+        
+        main_layout.addWidget(self.body)
+
+    def mousePressEvent(self, event):
+        # 팝업 드래그 이동 지원
+        if event.button() == Qt.LeftButton:
+            self.drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton:
+            self.move(event.globalPosition().toPoint() - self.drag_position)
+            event.accept()
+

@@ -15,3 +15,7 @@ settings.json
 # Agent plans
 implementation_plan.md
 character_management_plan.md
+
+# Build temp directories
+dmg_temp/
+daily_api_usage.json

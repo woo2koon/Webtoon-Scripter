@@ -22,7 +22,7 @@ MY_DEFAULT_AI_KEY = ""   # <-- 여기에 직접 입력하지 마세요!
 # =================================================================
 
 # 1. 앱 이름 (이 이름으로 사용자의 컴퓨터에 폴더가 생깁니다)
-APP_NAME = "Webtoon_Script_Manager"
+APP_NAME = "Webtoon Scripter"
 APP_VERSION = "2.5.5"
 
 if getattr(sys, 'frozen', False):
