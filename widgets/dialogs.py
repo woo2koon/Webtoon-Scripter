@@ -2691,8 +2691,8 @@ class AboutDialog(QDialog):
         if os.path.exists(logo_path):
             self.lbl_logo.setPixmap(QPixmap(logo_path))
         else:
-            # 폴백용 기본 아이콘
-            self.lbl_logo.setPixmap(get_icon(config.ICON_APP).pixmap(160, 160))
+            # 폴백용 기본 아이콘 (AttributeError 방지를 위해 존재하는 ICON_MOVIE 사용)
+            self.lbl_logo.setPixmap(get_icon(config.ICON_MOVIE).pixmap(160, 160))
 
         left_layout.addWidget(self.lbl_logo)
 

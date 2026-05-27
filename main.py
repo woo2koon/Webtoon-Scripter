@@ -329,6 +329,8 @@ class WebtoonManager(QMainWindow):
         self.idiom_viewer = None
         self.character_viewer = None
         self.last_active_editor = None # [추가] 관용구 스마트 삽입용 활성 에디터 기록 변수
+        # About 다이얼로그 강한 참조 (GC 방지: 빌드 앱에서 로컬 변수는 즉시 해제될 수 있음)
+        self.about_dialog = None
         self.init_ui()
         self.refresh_project_list()
         self.idiom_shortcuts = []
@@ -1919,6 +1921,10 @@ class WebtoonManager(QMainWindow):
 
     def create_menu(self):
         menubar = self.menuBar()
+
+        # macOS 네이티브 메뉴바 사용 (번들 앱에서 About/Preferences 메뉴 연동 필수)
+        # setNativeMenuBar(True)는 기본값이지만 번들 환경에서 명시적으로 선언해야 안정적으로 동작함
+        menubar.setNativeMenuBar(True)
         
         # 파일 메뉴
         file_menu = menubar.addMenu("파일(&F)")
@@ -1959,7 +1965,7 @@ class WebtoonManager(QMainWindow):
 
         # API 키 설정을 아래로
         self.action_settings = QAction("API 키 설정", self)
-        self.action_settings.setMenuRole(QAction.PreferencesRole)
+        self.action_settings.setMenuRole(QAction.NoRole)  # macOS 앱 메뉴로 이동하지 않고 설정 메뉴 안에 유지
         self.action_settings.triggered.connect(self.open_settings_dialog)
         settings_menu.addAction(self.action_settings)
 
@@ -1976,17 +1982,60 @@ class WebtoonManager(QMainWindow):
         help_menu.addAction(action_migration)
 
         help_menu.addSeparator()
-        
-        # [신설] Apple 스타일 프로그램 정보 다이얼로그 바인딩
+
+        # macOS About 메뉴 바인딩:
+        # AboutRole이 설정된 액션은 Qt가 macOS 앱 메뉴("Webtoon Scripter" > "정보")로 자동 이동시킴.
+        # 번들 앱에서는 NSApplication 초기화 완료 전에 addAction이 호출되면 액션이 비활성화(dim)될 수 있으므로
+        # QTimer.singleShot(0, ...)으로 이벤트 루프 진입 후 지연 등록하여 이 문제를 방지함.
         self.action_about = QAction("Webtoon Scripter 정보", self)
-        # macOS의 기본 "앱 정보" 메뉴 역할과 연계되도록 설정
         self.action_about.setMenuRole(QAction.AboutRole)
         self.action_about.triggered.connect(self.open_about_dialog)
         help_menu.addAction(self.action_about)
 
+        if platform.system() == "Darwin":
+            # 이벤트 루프 진입(singleShot 0ms) 후 네이티브 메뉴바 강제 재초기화 실행
+            # → NSApplication 초기화 완료 후 시점에 바인딩하므로 번들 앱에서도 활성화됨
+            QTimer.singleShot(0, self._bind_macos_about_menu)
+
+    def _bind_macos_about_menu(self):
+        """macOS About 메뉴 강제 바인딩 - 이벤트 루프 진입 후 실행.
+
+        PyInstaller 번들에서 create_menu()가 실행되는 시점에는
+        NSApplication이 아직 완전히 초기화되지 않아 AboutRole 액션이 dim 처리될 수 있음.
+        QTimer.singleShot(0) 으로 이벤트 루프 첫 틱 이후 이 메서드를 호출하면
+        NSApplication 초기화가 완료된 상태이므로 안정적으로 바인딩 가능.
+        """
+        if not hasattr(self, 'action_about'):
+            return
+        self.action_about.setEnabled(True)
+
     def open_about_dialog(self):
-        dlg = AboutDialog(self)
-        dlg.exec()
+        """About 다이얼로그를 표시합니다.
+
+        [GC 방지 전략]
+        self.about_dialog에 인스턴스를 저장하여 강한 참조(strong reference)를 유지함.
+        빌드 앱에서는 로컬 변수로 생성된 다이얼로그가 즉시 GC에 의해 해제될 수 있으므로
+        반드시 클래스 멤버 변수에 바인딩해야 함.
+
+        [show vs exec 전략]
+        exec()는 macOS 번들에서 AboutRole 트리거 시 이벤트 루프 중첩으로
+        블로킹되거나 무시될 수 있어, show()/raise_()/activateWindow() 조합을 사용함.
+        """
+        # 이미 살아있는 다이얼로그가 있으면 앞으로 가져옴
+        if self.about_dialog is not None:
+            try:
+                if self.about_dialog.isVisible():
+                    self.about_dialog.raise_()
+                    self.about_dialog.activateWindow()
+                    return
+            except RuntimeError:
+                # C++ 레이어 오브젝트가 이미 소멸된 경우 재생성
+                self.about_dialog = None
+        # 새 다이얼로그를 self.about_dialog에 강하게 바인딩 (GC 방지)
+        self.about_dialog = AboutDialog(self)
+        self.about_dialog.show()
+        self.about_dialog.raise_()
+        self.about_dialog.activateWindow()
 
     def open_settings_dialog(self):
         dlg = SettingsDialog(self)
@@ -4159,6 +4208,18 @@ class WebtoonManager(QMainWindow):
 if __name__ == "__main__":
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.Round)
     app = QApplication(sys.argv)
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # macOS 앱 메뉴 바인딩 필수 선행 조건:
+    # QApplication.setApplicationName()을 WebtoonManager 생성 전에 반드시 호출해야 함.
+    # macOS는 이 값으로 앱 메뉴("Webtoon Scripter" ▶ "정보")의 이름을 결정하며,
+    # Qt의 AboutRole 액션과 OS 시스템 메뉴를 매핑할 때도 이 값을 기준으로 함.
+    # 미설정 시 프로세스명(Webtoon_Scripter)으로 대체되어 AboutRole 매핑이 틀어짐.
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    app.setApplicationName(config.APP_NAME)           # "Webtoon Scripter"
+    app.setApplicationVersion(config.APP_VERSION)     # "2.5.5"
+    app.setOrganizationName("PAK JINWOO")
+    app.setOrganizationDomain("com.woo2koon.webtoonscripter")
     
     # [추가] 기본 콘텍스트 메뉴 및 공통 위젯 한글화 (QTranslator 등록)
     from PySide6.QtCore import QTranslator, QLibraryInfo
