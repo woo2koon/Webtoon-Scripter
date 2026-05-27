@@ -2675,70 +2675,64 @@ class AboutDialog(QDialog):
         
         body_layout = QHBoxLayout(self.body)
         body_layout.setContentsMargins(30, 25, 30, 25)
-        body_layout.setSpacing(25)
-        
-        # 1. 왼쪽 영역: 로고/아이콘 (140x140 크기 확대)
+        body_layout.setSpacing(12)
+
+        # 1. 왼쪽 영역: 로고/아이콘 (160x160 크기 확대 및 세로 중앙 정렬)
         left_layout = QVBoxLayout()
-        left_layout.setContentsMargins(0, 15, 0, 0)
-        left_layout.setAlignment(Qt.AlignTop)
-        
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setAlignment(Qt.AlignVCenter)
+
         self.lbl_logo = QLabel()
-        self.lbl_logo.setFixedSize(140, 140)
+        self.lbl_logo.setFixedSize(160, 160)
         self.lbl_logo.setScaledContents(True)
-        
+
         # 로고 로드
         logo_path = os.path.join(config.ASSETS_DIR, "../app_icon/Webtoon_script_manager_icon.png")
         if os.path.exists(logo_path):
             self.lbl_logo.setPixmap(QPixmap(logo_path))
         else:
             # 폴백용 기본 아이콘
-            self.lbl_logo.setPixmap(get_icon(config.ICON_APP).pixmap(140, 140))
-            
+            self.lbl_logo.setPixmap(get_icon(config.ICON_APP).pixmap(160, 160))
+
         left_layout.addWidget(self.lbl_logo)
-        left_layout.addStretch()
-        
-        # 2. 오른쪽 영역: 상세 정보 및 텍스트
+
+        # 2. 오른쪽 영역: 상세 정보 및 텍스트 (세로 중앙 정렬)
         right_layout = QVBoxLayout()
-        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setContentsMargins(0, 10, 0, 10)
         right_layout.setSpacing(6)
-        
+        right_layout.setAlignment(Qt.AlignVCenter)
+
         # 커스텀 닫기 버튼 (우측 상단 절대 배치 - 510 가로 기준)
         self.btn_close = SVGCloseButton(self.body)
         self.btn_close.clicked.connect(self.close)
         self.btn_close.move(456, 12)
-        
-        right_layout.addSpacing(18)
-        
+
         # 타이틀
         lbl_title = QLabel("Webtoon Scripter")
         lbl_title.setStyleSheet("color: #1f2937; font-size: 26px; font-weight: bold; font-family: 'Helvetica Neue', Arial; border: none; background: transparent;")
         right_layout.addWidget(lbl_title)
-        
+
         # 버전 정보
         lbl_version = QLabel(f"Version {config.APP_VERSION}")
         lbl_version.setStyleSheet("color: #4b5563; font-size: 14px; font-family: 'Helvetica Neue'; border: none; background: transparent;")
         right_layout.addWidget(lbl_version)
-        
-        right_layout.addSpacing(10)
-        
+
         # 개발자 및 피드백 정보 링크
         lbl_links = QLabel("<a href='https://github.com/woo2koon/Webtoon-Scripter' style='color:#e64a19; text-decoration:none;'>GitHub 저장소 바로가기</a><br>"
                            "<a href='https://github.com/woo2koon/Webtoon-Scripter/issues' style='color:#e64a19; text-decoration:none;'>버그 제보 및 건의사항</a>")
         lbl_links.setOpenExternalLinks(True)
-        lbl_links.setStyleSheet("font-size: 13px; font-family: 'Helvetica Neue', Arial; border: none; background: transparent;")
+        lbl_links.setStyleSheet("font-size: 13px; font-family: 'Helvetica Neue', Arial; border: none; background: transparent; margin-top: 4px; margin-bottom: 4px;")
         right_layout.addWidget(lbl_links)
-        
-        right_layout.addStretch()
-        
+
         # 저작권 정보 표기
         lbl_copyright = QLabel("© 2026 PAK JINWOO. All rights reserved.")
         lbl_copyright.setWordWrap(True)
-        lbl_copyright.setStyleSheet("color: #6b7280; font-size: 10px; font-family: 'Helvetica Neue'; line-height: 14px; border: none; background: transparent;")
+        lbl_copyright.setStyleSheet("color: #6b7280; font-size: 10px; font-family: 'Helvetica Neue'; line-height: 14px; border: none; background: transparent; margin-top: 4px;")
         right_layout.addWidget(lbl_copyright)
-        
+
         body_layout.addLayout(left_layout)
         body_layout.addLayout(right_layout)
-        
+
         main_layout.addWidget(self.body)
 
     def mousePressEvent(self, event):
