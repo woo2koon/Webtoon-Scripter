@@ -220,11 +220,50 @@ class OCRWorker(QThread):
                     groups[first_idx].extend(groups[other_idx])
                     del groups[other_idx]
 
-        # 그룹 정렬 및 텍스트 합치기
-        groups.sort(key=lambda g: min(b['y'] for b in g) + (min(b['x1'] for b in g) * 0.5))
+        from functools import cmp_to_key
+
+        # 각 그룹(말풍선)의 전체 바운딩 박스 정보 및 중심점 계산
+        group_metadata = []
+        for g in groups:
+            y1 = min(b['y'] for b in g)
+            y2 = max(b['bottom'] for b in g)
+            x1 = min(b['x1'] for b in g)
+            x2 = max(b['x2'] for b in g)
+            group_metadata.append({
+                'group': g,
+                'y1': y1,
+                'y2': y2,
+                'x1': x1,
+                'x2': x2,
+                'yc': (y1 + y2) / 2.0,
+                'xc': (x1 + x2) / 2.0,
+                'h': y2 - y1
+            })
+
+        def compare_metadata(a, b):
+            # 두 그룹의 Y축 중심점 간격 차이
+            dy = abs(a['yc'] - b['yc'])
+            # Y축 오버랩 높이 계산
+            overlap_y = min(a['y2'], b['y2']) - max(a['y1'], b['y1'])
+            min_h = min(a['h'], b['h'])
+            
+            # Y축이 상당히 겹치거나 Y축 중심선 차이가 평균 글자 크기 기준값 미만으로 미세한 경우 -> 동일 선상의 대화(좌우 배치)로 간주
+            is_horizontal_layout = (dy < avg_height * 1.8) or (min_h > 0 and (overlap_y / min_h) > 0.3)
+            
+            if is_horizontal_layout:
+                # 같은 라인에 있다면 더 왼쪽에 있는(X축 좌표가 작은) 대사가 무조건 먼저 읽힘
+                if abs(a['xc'] - b['xc']) > 5:
+                    return -1 if a['xc'] < b['xc'] else 1
+            
+            # 그 외의 세로 배치 관계는 위에서 아래로 순차 배치
+            return -1 if a['yc'] < b['yc'] else 1
+
+        # 커스텀 비교 정렬 적용
+        group_metadata.sort(key=cmp_to_key(compare_metadata))
+        sorted_groups = [m['group'] for m in group_metadata]
 
         final_merged = []
-        for group in groups:
+        for group in sorted_groups:
             # 같은 말풍선 안에서도 비슷한 높이면 왼쪽부터 합치도록 미세 조정
             group.sort(key=lambda b: (int(b['y'] // (avg_height * 0.5)), b['x1']))
             merged_text = " ".join(b['text'] for b in group)
