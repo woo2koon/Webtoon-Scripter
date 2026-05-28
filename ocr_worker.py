@@ -22,7 +22,17 @@ def call_google_api_raw(png_bytes):
         if not current_key: return []
             
         image_content = base64.b64encode(png_bytes).decode("utf-8")
-        req = {"requests": [{"image": {"content": image_content}, "features": [{"type": "DOCUMENT_TEXT_DETECTION"}]}]}
+        req = {
+            "requests": [
+                {
+                    "image": {"content": image_content},
+                    "features": [{"type": "DOCUMENT_TEXT_DETECTION"}],
+                    "imageContext": {
+                        "languageHints": ["ko"]
+                    }
+                }
+            ]
+        }
         
         # 연결 풀링을 사용해 구글 서버와 더 빠르게 통신
         res = session.post(f"https://vision.googleapis.com/v1/images:annotate?key={current_key}", json=req, timeout=15)
