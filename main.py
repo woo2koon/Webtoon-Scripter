@@ -869,7 +869,7 @@ class WebtoonManager(QMainWindow):
             QToolButton {
                 background-color: #FF5722;
                 color: white;
-                font-size: 15px;
+                font-size: 17px;
                 font-weight: bold;
                 border-radius: 4px;
                 padding: 4px;
@@ -1451,7 +1451,7 @@ class WebtoonManager(QMainWindow):
         self.btn_simple_start.setStyleSheet("""
             QToolButton {
                 background-color: #FF5722; color: white;
-                font-weight: bold; border-radius: 4px; font-size: 14px; border: none;
+                font-weight: bold; border-radius: 4px; font-size: 16px; border: none;
                 padding-right: 30px;
             }
             QToolButton:hover { background-color: #F97316; }
