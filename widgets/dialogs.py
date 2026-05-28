@@ -290,8 +290,7 @@ class SettingsDialog(QDialog):
     def set_unified_mode(self, is_unified):
         self.is_unified = is_unified
         self.ai_container.setVisible(not is_unified)
-
-        QApplication.processEvents()
+        self.layout().activate()
         self.resize(550, self.sizeHint().height())
 
         if is_unified:
@@ -2675,7 +2674,7 @@ class AboutDialog(QDialog):
         
         body_layout = QHBoxLayout(self.body)
         body_layout.setContentsMargins(30, 25, 30, 25)
-        body_layout.setSpacing(12)
+        body_layout.setSpacing(20)
 
         # 1. 왼쪽 영역: 로고/아이콘 (160x160 크기 확대 및 세로 중앙 정렬)
         left_layout = QVBoxLayout()
@@ -2683,23 +2682,23 @@ class AboutDialog(QDialog):
         left_layout.setAlignment(Qt.AlignVCenter)
 
         self.lbl_logo = QLabel()
-        self.lbl_logo.setFixedSize(160, 160)
+        self.lbl_logo.setFixedSize(130, 130)
         self.lbl_logo.setScaledContents(True)
 
         # 로고 로드
-        logo_path = os.path.join(config.ASSETS_DIR, "../app_icon/Webtoon_script_manager_icon.png")
+        logo_path = os.path.join(config.ASSETS_DIR, "../app_icon/webtoo_scripter_yellow.png")
         if os.path.exists(logo_path):
             self.lbl_logo.setPixmap(QPixmap(logo_path))
         else:
             # 폴백용 기본 아이콘 (AttributeError 방지를 위해 존재하는 ICON_MOVIE 사용)
-            self.lbl_logo.setPixmap(get_icon(config.ICON_MOVIE).pixmap(160, 160))
+            self.lbl_logo.setPixmap(get_icon(config.ICON_MOVIE).pixmap(130, 130))
 
         left_layout.addWidget(self.lbl_logo)
 
         # 2. 오른쪽 영역: 상세 정보 및 텍스트 (세로 중앙 정렬)
         right_layout = QVBoxLayout()
-        right_layout.setContentsMargins(0, 10, 0, 10)
-        right_layout.setSpacing(6)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
         right_layout.setAlignment(Qt.AlignVCenter)
 
         # 커스텀 닫기 버튼 (우측 상단 절대 배치 - 510 가로 기준)
@@ -2721,7 +2720,7 @@ class AboutDialog(QDialog):
         lbl_links = QLabel("<a href='https://github.com/woo2koon/Webtoon-Scripter' style='color:#e64a19; text-decoration:none;'>GitHub 저장소 바로가기</a><br>"
                            "<a href='https://github.com/woo2koon/Webtoon-Scripter/issues' style='color:#e64a19; text-decoration:none;'>버그 제보 및 건의사항</a>")
         lbl_links.setOpenExternalLinks(True)
-        lbl_links.setStyleSheet("font-size: 13px; font-family: 'Helvetica Neue', Arial; border: none; background: transparent; margin-top: 4px; margin-bottom: 4px;")
+        lbl_links.setStyleSheet("font-size: 13px; font-family: 'Pretendard', 'Helvetica Neue', Arial, sans-serif; border: none; background: transparent; margin-top: 4px; margin-bottom: 4px;")
         right_layout.addWidget(lbl_links)
 
         # 저작권 정보 표기
@@ -2730,8 +2729,10 @@ class AboutDialog(QDialog):
         lbl_copyright.setStyleSheet("color: #6b7280; font-size: 10px; font-family: 'Helvetica Neue'; line-height: 14px; border: none; background: transparent; margin-top: 4px;")
         right_layout.addWidget(lbl_copyright)
 
+        body_layout.addStretch(1)
         body_layout.addLayout(left_layout)
         body_layout.addLayout(right_layout)
+        body_layout.addStretch(1)
 
         main_layout.addWidget(self.body)
 

@@ -1,0 +1,82 @@
+{
+  "images": [
+    {
+      "size": "1024x1024",
+      "idiom": "mac",
+      "filename": "icon_light.png",
+      "scale": "1x"
+    },
+    {
+      "size": "1024x1024",
+      "idiom": "mac",
+      "filename": "icon_dark.png",
+      "scale": "1x",
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ]
+    },
+    {
+      "size": "1024x1024",
+      "idiom": "mac",
+      "filename": "icon_clear_light.png",
+      "scale": "1x",
+      "appearances": [
+        {
+          "appearance": "presentation",
+          "value": "clear"
+        }
+      ]
+    },
+    {
+      "size": "1024x1024",
+      "idiom": "mac",
+      "filename": "icon_clear_dark.png",
+      "scale": "1x",
+      "appearances": [
+        {
+          "appearance": "presentation",
+          "value": "clear"
+        },
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ]
+    },
+    {
+      "size": "1024x1024",
+      "idiom": "mac",
+      "filename": "icon_tinted_light.png",
+      "scale": "1x",
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "tinted"
+        }
+      ]
+    },
+    {
+      "size": "1024x1024",
+      "idiom": "mac",
+      "filename": "icon_tinted_dark.png",
+      "scale": "1x",
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "tinted"
+        },
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ]
+    }
+  ],
+  "info": {
+    "version": 1,
+    "author": "xcode"
+  }
+}

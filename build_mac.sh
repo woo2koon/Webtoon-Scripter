@@ -20,7 +20,7 @@ echo "  완료"
 
 # ── 2. PyInstaller 빌드 ──────────────────────────────────────────
 echo "▶ PyInstaller 빌드 중..."
-venv/bin/pyinstaller --noconfirm Webtoon_Scripter.spec
+venv/bin/python -m PyInstaller --noconfirm Webtoon_Scripter.spec
 echo "  빌드 완료"
 
 # ── 3. ._* 메타데이터 파일 제거 (외장 드라이브 서명 버그 방지) ─────

@@ -1,5 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
 
+# OS 플랫폼별 빌드 아이콘 분기 설정 (Windows: .ico, macOS: .icns)
+app_icon = 'app_icon/webtoon_scripter_icon_windows.ico' if sys.platform == 'win32' else 'app_icon/webtoon_scripter_icon_mac.icns'
 
 a = Analysis(
     ['main.py'],
@@ -35,7 +38,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['app_icon/Webtoon_script_manager_icon.icns'],
+    icon=[app_icon],
 )
 coll = COLLECT(
     exe,
@@ -49,7 +52,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='Webtoon Scripter.app',
-    icon='app_icon/Webtoon_script_manager_icon.icns',
+    icon='app_icon/webtoon_scripter_icon_mac.icns',
     bundle_identifier='com.woo2koon.webtoonscripter',
     info_plist={
         # 기본 앱 식별 정보

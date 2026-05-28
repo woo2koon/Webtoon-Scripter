@@ -4269,11 +4269,18 @@ if __name__ == "__main__":
         font_family = QFontDatabase.applicationFontFamilies(font_id)[0]
         font = QFont(font_family, 11) 
     else:
+        font_family = "Pretendard"
         font = QFont("sans-serif", 10)
     
     font.setStyleStrategy(QFont.PreferAntialias) 
     font.setHintingPreference(QFont.PreferNoHinting)
     app.setFont(font)
+    
+    # 스타일시트가 시스템 기본 폰트로 롤백되지 않도록 Pretendard 단독 강제 바인딩
+    global MODERN_STYLE
+    MODERN_STYLE = MODERN_STYLE.replace(config.FONT_FAMILY, font_family)
+    config.MODERN_STYLE = config.MODERN_STYLE.replace(config.FONT_FAMILY, font_family)
+    config.MODERN_MENU_STYLE = config.MODERN_MENU_STYLE.replace(config.FONT_FAMILY, font_family)
 
     TOOLTIP_STYLE = """
         QToolTip {
@@ -4286,7 +4293,7 @@ if __name__ == "__main__":
             font-size: 12px;
         }
     """
-    app.setStyleSheet(MODERN_STYLE + "\n" + TOOLTIP_STYLE)
+    app.setStyleSheet(config.MODERN_STYLE + "\n" + TOOLTIP_STYLE)
     
     window = WebtoonManager()
     window.show()
