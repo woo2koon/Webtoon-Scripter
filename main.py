@@ -1530,7 +1530,7 @@ class WebtoonManager(QMainWindow):
         
         tab2_widget = QWidget()
         tab2_layout = QVBoxLayout(tab2_widget)
-        tab2_layout.setContentsMargins(5, 12, 5, 5)
+        tab2_layout.setContentsMargins(5, 15, 5, 5)
         
         top_bar_step2 = QHBoxLayout()
         top_bar_step2.setContentsMargins(5, 0, 5, 0)
