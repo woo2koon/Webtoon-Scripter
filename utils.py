@@ -84,6 +84,9 @@ def natural_sort_key(s):
 def clean_korean_text(text):
     if not text: return ""
     
+    # 0. 일본식 가운뎃점 및 불릿 기호 말줄임표(· · ·, ・・・, • • •)를 한국식 말줄임표(...)로 치환
+    text = re.sub(r'([·・•]\s*){2,}', '...', text)
+    
     # 1. 기본 공백 정리
     text = re.sub(r'\s+', ' ', text).strip()
 
