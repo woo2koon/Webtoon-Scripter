@@ -4261,13 +4261,33 @@ if __name__ == "__main__":
     palette.setColor(QPalette.All, QPalette.ToolTipText, tooltip_fg)
     app.setPalette(palette)
     
-    font_filename = "Pretendard.ttf"
-    font_path = os.path.join(ASSETS_DIR, font_filename)
-    font_id = QFontDatabase.addApplicationFont(font_path)
+    fonts_dir = os.path.join(ASSETS_DIR, "fonts")
+    loaded_any = False
+    font_family = "Pretendard"
     
-    if font_id != -1:
-        font_family = QFontDatabase.applicationFontFamilies(font_id)[0]
-        font = QFont(font_family, 11) 
+    if os.path.exists(fonts_dir):
+        for file in os.listdir(fonts_dir):
+            if file.lower().endswith(".ttf") and not file.startswith("._"):
+                f_path = os.path.join(fonts_dir, file)
+                font_id = QFontDatabase.addApplicationFont(f_path)
+                if font_id != -1:
+                    families = QFontDatabase.applicationFontFamilies(font_id)
+                    if families:
+                        font_family = families[0]
+                        loaded_any = True
+                        
+    if not loaded_any:
+        font_path = os.path.join(ASSETS_DIR, "Pretendard.ttf")
+        if os.path.exists(font_path):
+            font_id = QFontDatabase.addApplicationFont(font_path)
+            if font_id != -1:
+                families = QFontDatabase.applicationFontFamilies(font_id)
+                if families:
+                    font_family = families[0]
+                    loaded_any = True
+
+    if loaded_any:
+        font = QFont(font_family, 11)
     else:
         font_family = "Pretendard"
         font = QFont("sans-serif", 10)
