@@ -6,11 +6,32 @@ import base64
 import hashlib
 import requests
 import concurrent.futures
-from PIL import Image
+from PIL import Image, ImageOps, ImageEnhance
 from PySide6.QtCore import QThread, Signal
 import config
 from config import CACHE_DIR
 from utils import clean_korean_text 
+
+def preprocess_image_for_ocr(pil_img):
+    """OCR 인식률 극대화를 위한 Pillow 기반 고성능 전처리 파이프라인 (2배 업스케일링 포함)"""
+    try:
+        w, h = pil_img.size
+        # 1. 2배 업스케일링
+        processed = pil_img.resize((w * 2, h * 2), Image.Resampling.LANCZOS)
+        # 2. 그레이스케일 변환
+        processed = processed.convert("L")
+        # 3. 오토 콘트라스트 (상하위 2% 무시로 아웃라이어 제거)
+        processed = ImageOps.autocontrast(processed, cutoff=2)
+        # 4. 대비 증폭 (1.8배)
+        contrast_enhancer = ImageEnhance.Contrast(processed)
+        processed = contrast_enhancer.enhance(1.8)
+        # 5. 샤프니스 선명화 (2.0배)
+        sharpness_enhancer = ImageEnhance.Sharpness(processed)
+        processed = sharpness_enhancer.enhance(2.0)
+        return processed
+    except Exception as e:
+        print(f"이미지 전처리 실패 (원본으로 대체): {e}")
+        return pil_img
 
 # [필수] HTTP 연결 재사용을 위한 세션 객체
 session = requests.Session()
@@ -59,12 +80,13 @@ def call_google_api_raw(png_bytes):
                     cleaned = clean_korean_text(block_text)
                     vs = block["boundingBox"]["vertices"]
                     if cleaned:
+                        # 전처리 단계의 2배 업스케일링을 고려하여 좌표값을 다시 1/2로 보정합니다.
                         blocks_found.append({
                             "text": cleaned, 
-                            "y": min(v.get("y", 0) for v in vs), 
-                            "bottom": max(v.get("y", 0) for v in vs),
-                            "x1": min(v.get("x", 0) for v in vs), 
-                            "x2": max(v.get("x", 0) for v in vs)
+                            "y": int(min(v.get("y", 0) for v in vs) / 2.0), 
+                            "bottom": int(max(v.get("y", 0) for v in vs) / 2.0),
+                            "x1": int(min(v.get("x", 0) for v in vs) / 2.0), 
+                            "x2": int(max(v.get("x", 0) for v in vs) / 2.0)
                         })
         return blocks_found
     except Exception as e:
@@ -137,8 +159,9 @@ class OCRWorker(QThread):
                             cut_y = min(current_y + self.MAX_SLICE_HEIGHT, h)
                         
                         cropped = img.crop((0, current_y, w, cut_y))
+                        preprocessed = preprocess_image_for_ocr(cropped)
                         buf = io.BytesIO()
-                        cropped.save(buf, format="PNG")
+                        preprocessed.save(buf, format="PNG")
                         png_bytes = buf.getvalue()
                         
                         tasks.append({
