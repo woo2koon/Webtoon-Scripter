@@ -107,6 +107,7 @@ class SpreadsheetTable(QTableWidget):
         self.verticalHeader().setMinimumSectionSize(47)
         self.verticalHeader().setDefaultSectionSize(47)
         self.verticalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.verticalHeader().setDefaultAlignment(Qt.AlignCenter)
 
         self.setStyleSheet("""
             QTableWidget {

@@ -51,6 +51,7 @@ class ResponsiveLabel(QLabel):
 class ClickableComboBox(QComboBox):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setFocusPolicy(Qt.StrongFocus) # [추가] 스크롤 시 자동 포커스(클릭되는 현상) 방지
         self.setEditable(True) 
         self.lineEdit().setReadOnly(True)
         self.lineEdit().setCursor(Qt.ArrowCursor)
@@ -272,7 +273,7 @@ class DropOverlay(QWidget):
         self.lbl_text.setStyleSheet("""
             QLabel {
                 font-family: 'Pretendard', '-apple-system', 'Helvetica Neue', 'Segoe UI', sans-serif;
-                font-size: 24px;
+                font-size: 27px;
                 font-weight: bold;
                 color: #1E293B;
                 background: transparent;
@@ -285,9 +286,9 @@ class DropOverlay(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        icon_size = 80
-        y_pos = (self.height() - icon_size) // 2 + 50
-        self.lbl_text.setGeometry(0, y_pos, self.width(), 40)
+        # 이미지 크기(100px) 증가 및 겹침 방지를 위해 텍스트의 y 위치를 조절하여 간격을 넓힙니다.
+        y_pos = self.height() // 2 + 25
+        self.lbl_text.setGeometry(0, y_pos, self.width(), 45)
 
     def set_snapshot(self, pixmap):
         self.snapshot = pixmap
@@ -314,9 +315,9 @@ class DropOverlay(QWidget):
         )
 
         svg_path = config.ICON_AVATAR_UPLOAD
-        icon_size = 80
+        icon_size = 100 # 80에서 100으로 25% 크기 증가
         cx = (self.width() - icon_size) // 2
-        cy = (self.height() - icon_size) // 2 - 20
+        cy = (self.height() - icon_size) // 2 - 45 # 텍스트와의 겹침 방지 및 여백 확보를 위해 위치 조정
         svg_pix = get_colored_pixmap(svg_path, "#1E293B", icon_size, icon_size)
         painter.drawPixmap(cx, cy, svg_pix)
 

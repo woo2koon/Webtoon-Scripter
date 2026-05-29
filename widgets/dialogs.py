@@ -696,7 +696,7 @@ class IdiomSettingsDialog(QDialog):
             lay.setContentsMargins(0, 0, 0, 0)
             lbl = QLabel(text)
             lbl.setAlignment(Qt.AlignCenter)
-            lbl.setStyleSheet("color: #4b5563; font-size: 11px; font-weight: bold; border: none;")
+            lbl.setStyleSheet("color: #4b5563; font-size: 12px; font-weight: bold; border: none;")
             lay.addWidget(lbl)
             if width: box.setFixedWidth(width)
             return box
@@ -1360,7 +1360,7 @@ class EpisodeItemWidget(QWidget):
 
         self.lbl_name = QLabel(name)
         self.lbl_name.setFont(QFont("Pretendard", 15))
-        self.lbl_name.setStyleSheet("font-weight: bold; font-size: 15px; color: #374151; background: transparent;")
+        self.lbl_name.setStyleSheet("font-weight: 600; font-size: 15px; color: #374151; background: transparent;")
         
         self.lbl_status = QLabel(status)
         self.lbl_status.setFixedSize(80, 26)
@@ -1383,7 +1383,7 @@ class EpisodeItemWidget(QWidget):
                     border-radius: 10px;
                 }
             """)
-            self.lbl_name.setStyleSheet("font-weight: bold; font-size: 15px; color: #0369A1; background: transparent; font-family: 'Pretendard';")
+            self.lbl_name.setStyleSheet("font-weight: 600; font-size: 15px; color: #0369A1; background: transparent; font-family: 'Pretendard';")
         else:
             self.container.setStyleSheet("""
                 QFrame#itemContainer {
@@ -1392,7 +1392,7 @@ class EpisodeItemWidget(QWidget):
                     border-radius: 10px;
                 }
             """)
-            self.lbl_name.setStyleSheet("font-weight: bold; font-size: 15px; color: #374151; background: transparent; font-family: 'Pretendard';")
+            self.lbl_name.setStyleSheet("font-weight: 600; font-size: 15px; color: #374151; background: transparent; font-family: 'Pretendard';")
 
     def get_status_style(self, status):
         if status == "분석 완료":
@@ -1532,7 +1532,7 @@ class ProjectManagementDialog(QDialog):
                 border: 1px solid #D1D5DB;
                 border-radius: 6px;
                 padding: 6px 12px;
-                font-weight: bold;
+                font-weight: 600;
                 color: #374151;
                 font-family: 'Pretendard';
             }
@@ -1560,7 +1560,7 @@ class ProjectManagementDialog(QDialog):
         icon_lib = QLabel()
         icon_lib.setPixmap(get_icon(config.ICON_LIBRARY).pixmap(20, 20))
         lbl_lib_text = QLabel("작품 목록")
-        lbl_lib_text.setStyleSheet("font-weight: bold; font-size: 15px; color: #111827; font-family: 'Pretendard';")
+        lbl_lib_text.setStyleSheet("font-weight: 600; font-size: 15px; color: #111827; font-family: 'Pretendard';")
 
         title_list_layout.addWidget(icon_lib)
         title_list_layout.addWidget(lbl_lib_text)
@@ -1654,7 +1654,7 @@ class ProjectManagementDialog(QDialog):
         icon_epi = QLabel()
         icon_epi.setPixmap(get_icon(config.ICON_MOVIE).pixmap(20, 20))
         lbl_epi_text = QLabel("회차 목록")
-        lbl_epi_text.setStyleSheet("font-weight: bold; font-size: 15px; color: #111827; font-family: 'Pretendard';")
+        lbl_epi_text.setStyleSheet("font-weight: 600; font-size: 15px; color: #111827; font-family: 'Pretendard';")
 
         epi_list_layout.addWidget(icon_epi)
         epi_list_layout.addWidget(lbl_epi_text)

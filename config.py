@@ -330,6 +330,7 @@ QMenu::separator {
 }
 QWidget#Sidebar { background-color: #f8f9fa; border-right: 1px solid #e0e0e0; }
 QLabel#SidebarTitle { font-size: 16px; font-weight: bold; color: #1f2937; margin: 10px 0; }
+QLabel#LabelBold { font-weight: 500; font-size: 15px; }
 QLineEdit, QComboBox { 
     font-family: 'Pretendard'; 
     border: 1px solid #d1d5db; 
@@ -360,7 +361,7 @@ QComboBox QAbstractItemView::item:hover { background-color: #fff5f5; }
 QTableWidget { border: 1px solid #d1d5db; gridline-color: #d0d0d0; font-family: 'Pretendard', 'AppleGothic'; font-size: 10pt; selection-background-color: transparent; selection-color: black; }
 QTableWidget::item:selected, QTableWidget::item:focus { border: 2px solid #ff4b4b; background-color: transparent; color: black; }
 QHeaderView::section { background-color: #f0f0f0; border: none; border-right: 1px solid #d0d0d0; border-bottom: 1px solid #d0d0d0; padding: 4px; font-weight: normal; color: #333; font-family: 'Pretendard'; font-size: 10pt; }
-QPushButton { background-color: #ffffff; border: 1px solid #d1d5db; border-radius: 4px; padding: 6px 16px; font-weight: bold; color: #444; }
+QPushButton { background-color: #ffffff; border: 1px solid #d1d5db; border-radius: 4px; padding: 6px 16px; font-weight: bold; color: #444; font-size: 15px; }
 QPushButton:hover { border-color: #ff4b4b; color: #ff4b4b; }
 QPushButton:pressed { background-color: #fff0f0; }
 QPushButton#PlusBtn { background-color: #ff4b4b; color: white; border: none; font-size: 20px; font-family: 'Arial'; padding: 0px 0px 4px 0px; }
@@ -370,7 +371,7 @@ QPushButton#PrimaryBtn:hover { background-color: #e03e3e; }
 QPushButton#BlackBtn { background-color: #212529; color: white; border: none; padding: 12px; }
 QPushButton#BlackBtn:hover { background-color: #000000; }
 QTabWidget::pane { border: 1px solid #e5e7eb; border-radius: 4px; top: -1px; }
-QTabBar::tab { background: transparent; border-bottom: 3px solid transparent; padding: 10px 16px; font-weight: bold; color: #888; margin-right: 4px; }
+QTabBar::tab { background: transparent; border-bottom: 3px solid transparent; padding: 10px 16px; font-weight: 600; font-size: 17px; color: #888; margin-right: 4px; }
 QTabBar::tab:selected { color: #ff4b4b; border-bottom: 3px solid #ff4b4b; }
 QListWidget { border: 1px solid #e0e0e0; border-radius: 4px; background-color: #ffffff; padding: 5px; }
 QListWidget::item { padding: 8px; border-bottom: 1px solid #f0f0f0; color: #333; }

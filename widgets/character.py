@@ -649,7 +649,7 @@ class GlobalCharacterCard(QWidget):
         info_layout.addStretch()
         
         name_lbl = QLabel(self.char_info.get('name', ''))
-        name_lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #111827; border: none; background: transparent;")
+        name_lbl.setStyleSheet("font-size: 17px; font-weight: 600; color: #111827; border: none; background: transparent;")
         info_layout.addWidget(name_lbl)
         
         memo = self.char_info.get('memo', '').strip()
@@ -666,7 +666,7 @@ class GlobalCharacterCard(QWidget):
         age = self.char_info.get('age', '미상')
         gender = self.char_info.get('gender', '미상')
         
-        tag_style = "font-size: 11px; font-weight: bold; border-radius: 4px; padding: 2px 6px; border: 1px solid;"
+        tag_style = "font-size: 11px; font-weight: 600; border-radius: 4px; padding: 2px 6px; border: 1px solid;"
         
         role_colors = {
             "주연": "background-color: #FEE2E2; color: #EF4444; border-color: #FCA5A5;",
@@ -761,7 +761,7 @@ class CharacterListItemWidget(QWidget):
         self.item_layout.addWidget(self.lbl_item_avatar, 0, Qt.AlignVCenter)
         
         self.lbl_name = QLabel(self.char.get("name", ""))
-        self.lbl_name.setStyleSheet("font-size: 14px; font-weight: bold; color: #1F2937; background: transparent;")
+        self.lbl_name.setStyleSheet("font-size: 16px; font-weight: 600; color: #1F2937; background: transparent;")
         self.item_layout.addWidget(self.lbl_name, 1, Qt.AlignVCenter)
         
         role = self.char.get("role", "단역")
@@ -783,7 +783,7 @@ class CharacterListItemWidget(QWidget):
                 border-radius: 4px;
                 padding: 2px 6px;
                 font-size: 11px;
-                font-weight: bold;
+                font-weight: 600;
             }}
         """)
         self.item_layout.addWidget(self.lbl_role, 0, Qt.AlignVCenter)
@@ -1296,7 +1296,7 @@ class GlobalCharacterSettingsDialog(QDialog):
                 border-radius: 8px;
             }
             QLabel {
-                font-weight: bold;
+                font-weight: 500;
                 color: #374151;
                 border: none;
             }
@@ -1324,7 +1324,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         lbl_title_icon.setPixmap(title_pix)
         
         title_lbl = QLabel("캐릭터 추가 / 수정")
-        title_lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: #111827; border: none; background: transparent; padding: 0px;")
+        title_lbl.setStyleSheet("font-size: 15px; font-weight: 600; color: #111827; border: none; background: transparent; padding: 0px;")
         
         title_container_layout.addWidget(lbl_title_icon)
         title_container_layout.addWidget(title_lbl)
@@ -1368,7 +1368,7 @@ class GlobalCharacterSettingsDialog(QDialog):
                 border-radius: 4px;
                 font-size: 12px;
                 color: #374151;
-                font-weight: bold;
+                font-weight: 500;
                 padding: 0px;
             }
             QPushButton:hover {
@@ -1388,7 +1388,7 @@ class GlobalCharacterSettingsDialog(QDialog):
                 border-radius: 4px;
                 font-size: 12px;
                 color: #EF4444;
-                font-weight: bold;
+                font-weight: 500;
                 padding: 0px;
             }
             QPushButton:hover {
@@ -1431,7 +1431,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         age_layout.setContentsMargins(0, 0, 0, 0)
         age_layout.setSpacing(13)
         lbl_age = QLabel("연령")
-        lbl_age.setStyleSheet("font-weight: bold; color: #374151; border: none;")
+        lbl_age.setStyleSheet("font-weight: 500; color: #374151; border: none;")
         self.combo_age = QComboBox()
         self.combo_age.addItems(config.AGE_OPTIONS)
         self.combo_age.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
@@ -1445,7 +1445,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         gender_layout.setContentsMargins(0, 0, 0, 0)
         gender_layout.setSpacing(13)
         lbl_gender = QLabel("성별")
-        lbl_gender.setStyleSheet("font-weight: bold; color: #374151; border: none;")
+        lbl_gender.setStyleSheet("font-weight: 500; color: #374151; border: none;")
         self.combo_gender = QComboBox()
         self.combo_gender.addItems(config.GENDER_OPTIONS)
         self.combo_gender.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
@@ -1534,7 +1534,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         lbl_list_icon.setPixmap(list_pix)
         
         list_title = QLabel("등록된 캐릭터 목록")
-        list_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #111827; border: none; background: transparent; padding: 0px;")
+        list_title.setStyleSheet("font-size: 15px; font-weight: 600; color: #111827; border: none; background: transparent; padding: 0px;")
         
         list_header_layout.addWidget(lbl_list_icon)
         list_header_layout.addWidget(list_title)
@@ -1559,7 +1559,7 @@ class GlobalCharacterSettingsDialog(QDialog):
                 border-radius: 4px;
                 padding: 4px 10px;
                 font-size: 12px;
-                font-weight: bold;
+                font-weight: 500;
                 color: #2563EB;
                 min-height: 18px;
             }
@@ -1587,7 +1587,7 @@ class GlobalCharacterSettingsDialog(QDialog):
                 border-radius: 4px;
                 padding: 4px 10px;
                 font-size: 12px;
-                font-weight: bold;
+                font-weight: 500;
                 color: #EF4444;
                 min-height: 18px;
             }

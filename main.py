@@ -702,7 +702,7 @@ class WebtoonManager(QMainWindow):
 
         # 3. 글자 라벨 (기존 스타일 유지)
         self.lbl_side_title = QLabel("작품/회차 선택")
-        self.lbl_side_title.setStyleSheet("font-weight: bold; font-size: 15px; color: #374151;")
+        self.lbl_side_title.setStyleSheet("font-weight: 600; font-size: 17px; color: #374151;")
 
         # 컨테이너 내부에 아이콘과 글자 순서대로 추가
         title_inner_layout.addWidget(self.icon_label)
@@ -947,7 +947,7 @@ class WebtoonManager(QMainWindow):
         api_stat_layout.setSpacing(0)
 
         self.combo_api_type = AlwaysUpComboBox()
-        self.combo_api_type.addItems(["현재 회차 API 호출 수", "오늘 총 API 사용 횟수"])
+        self.combo_api_type.addItems(["현재 회차 API 사용 횟수", "오늘 총 API 사용 횟수"])
         self.combo_api_type.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.combo_api_type.view().window().setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
         self.combo_api_type.view().window().setAttribute(Qt.WA_TranslucentBackground)
@@ -958,7 +958,7 @@ class WebtoonManager(QMainWindow):
                 combobox-popup: 0;
                 color: #6B7280; 
                 font-size: 13px;
-                font-weight: 600;
+                font-weight: 500;
                 background: transparent;
                 border: 1px solid transparent; 
                 padding: 0px;
@@ -989,6 +989,7 @@ class WebtoonManager(QMainWindow):
             }
             QComboBox QAbstractItemView::item {
                 font-family: 'Pretendard';
+                font-weight: 500;
                 padding: 4px 10px;
                 min-height: 24px;
                 border-radius: 5px;
@@ -1008,7 +1009,7 @@ class WebtoonManager(QMainWindow):
         self.lbl_api_count.setStyleSheet("""
             color: #111827; 
             font-size: 38px;      
-            font-weight: 900; 
+            font-weight: 800; 
             margin-top: 1px;     
             margin-left: -10px;    /* 드롭다운 글자와 시작점을 맞추기 위해 미세 조정 */
             padding-left: 2px;
@@ -1282,8 +1283,8 @@ class WebtoonManager(QMainWindow):
             QTabBar::tab {
                 background: transparent;
                 color: #888888;
-                font-size: 15px;
-                font-weight: bold;
+                font-size: 17px;
+                font-weight: 600;
                 padding: 10px 15px;
                 border-bottom: 3px solid transparent;
                 margin-right: 5px;
@@ -1337,12 +1338,12 @@ class WebtoonManager(QMainWindow):
         
         # [줌 컨트롤 그룹]
         lbl_zoom = QLabel("텍스트 배율:")
-        lbl_zoom.setStyleSheet("color: #4B5563; font-size: 13px; font-weight: bold; margin-right: 5px;")
+        lbl_zoom.setStyleSheet("color: #4B5563; font-size: 15px; font-weight: 600; margin-right: 5px;")
         
         self.lbl_zoom_val = QLabel("100%")
         self.lbl_zoom_val.setFixedWidth(50)
         self.lbl_zoom_val.setAlignment(Qt.AlignCenter)
-        self.lbl_zoom_val.setStyleSheet("color: #111827; font-weight: 800; font-size: 13px; margin-right: 10px;")
+        self.lbl_zoom_val.setStyleSheet("color: #111827; font-weight: 600; font-size: 15px; margin-right: 10px;")
 
         # 줌 버튼 스타일
         zoom_btn_style = """
@@ -1400,7 +1401,7 @@ class WebtoonManager(QMainWindow):
                 border-radius: 4px; 
                 color: #EF4444; 
                 font-size: 13px; 
-                font-weight: bold;
+                font-weight: 500;
             } 
             QPushButton:hover { background-color: #FEE2E2; border-color: #FCA5A5; } 
             QPushButton:pressed { background-color: #FECACA; }
@@ -1492,7 +1493,7 @@ class WebtoonManager(QMainWindow):
                 font-weight: bold;
                 border-radius: 4px;
                 padding: 0 15px;
-                font-size: 13px;
+                font-size: 14px;
             }
             QPushButton:hover { background-color: #FFF59D; }
             QPushButton:pressed { background-color: #FFF176; }
@@ -1513,7 +1514,7 @@ class WebtoonManager(QMainWindow):
                 padding: 0 15px; 
                 font-weight: bold; 
                 color: #333; 
-                font-size: 13px; 
+                font-size: 14px; 
             } 
             QPushButton:hover { background-color: #F3F4F6; border-color: #9CA3AF; } 
             QPushButton:pressed { background-color: #E5E7EB; }
@@ -1551,7 +1552,7 @@ class WebtoonManager(QMainWindow):
                 border-radius: 6px; 
                 color: #2563EB; 
                 font-size: 13px; 
-                font-weight: bold;
+                font-weight: 500;
                 padding: 0 12px;
             } 
             QPushButton:hover { 
@@ -1582,7 +1583,7 @@ class WebtoonManager(QMainWindow):
                 border-radius: 6px; 
                 color: #374151; 
                 font-size: 13px; 
-                font-weight: bold;
+                font-weight: 500;
                 padding: 0 12px;
             } 
             QPushButton:hover { 
@@ -1602,7 +1603,8 @@ class WebtoonManager(QMainWindow):
         btn_add_char = QPushButton("+ 캐릭터 추가")
         btn_add_char.setObjectName("PrimaryBtn")
         btn_add_char.setFixedHeight(32)
-        btn_add_char.setFixedWidth(108)
+        btn_add_char.setFixedWidth(120)
+        btn_add_char.setStyleSheet("padding-left: 8px; padding-right: 8px;")
         btn_add_char.setCursor(Qt.PointingHandCursor)
         btn_add_char.clicked.connect(lambda: self.add_character_card(set_focus=True))
         top_bar_step2.addWidget(btn_add_char)
@@ -1615,7 +1617,7 @@ class WebtoonManager(QMainWindow):
         header_layout.setContentsMargins(10, 0, 10, 0)
         header_layout.setSpacing(10)
         
-        lbl_style = "color: white; font-weight: bold; font-size: 14px;"
+        lbl_style = "color: white; font-weight: bold; font-size: 15px;"
         
         lbl_drag_spacer = QLabel()
         lbl_drag_spacer.setFixedWidth(24)
@@ -1651,6 +1653,7 @@ class WebtoonManager(QMainWindow):
         lbl_empty.setAlignment(Qt.AlignCenter)
         lbl_empty.setFixedWidth(65)
         header_layout.addWidget(lbl_empty)
+        tab2_layout.addSpacing(7)
         tab2_layout.addWidget(header_frame)
 
         self.scroll_area_char = QScrollArea()
@@ -1696,6 +1699,7 @@ class WebtoonManager(QMainWindow):
 
         # A. 상단 툴바
         top_bar = QHBoxLayout()
+        top_bar.setSpacing(5)
         
         # 1. Step 1 가져오기 (가장 왼쪽으로 이동)
         self.btn_load_script = HoverIconButton(
@@ -1713,6 +1717,7 @@ class WebtoonManager(QMainWindow):
                 border-radius: 4px; 
                 padding: 0 15px; 
                 font-size: 13px; 
+                font-weight: 500;
                 font-family: 'Pretendard', sans-serif;
             } 
             QPushButton:hover { 
@@ -1738,7 +1743,7 @@ class WebtoonManager(QMainWindow):
                 border-radius: 4px; 
                 color: #EF4444; 
                 font-size: 13px; 
-                font-weight: bold;
+                font-weight: 500;
             } 
             QPushButton:hover { background-color: #FEE2E2; border-color: #FCA5A5; } 
             QPushButton:pressed { background-color: #FECACA; }
@@ -1761,7 +1766,7 @@ class WebtoonManager(QMainWindow):
                 border-radius: 4px; 
                 color: #2563EB; 
                 font-size: 13px; 
-                font-weight: bold;
+                font-weight: 500;
                 padding: 0 12px;
             } 
             QPushButton:hover { 
@@ -1791,7 +1796,7 @@ class WebtoonManager(QMainWindow):
                 border-radius: 4px; 
                 color: #374151; 
                 font-size: 13px; 
-                font-weight: bold;
+                font-weight: 500;
                 padding: 0 12px;
             } 
             QPushButton:hover { 
@@ -1831,6 +1836,14 @@ class WebtoonManager(QMainWindow):
 
         # 테이블 설정 (기존 코드 이동)
         self.table_script = SpreadsheetTable()
+        try:
+            # QApplication.font()에서 이미 안티앨리어싱 및 힌팅 비활성화 옵션이 설정된 폰트를 복제합니다.
+            h_font = QFont(QApplication.font())
+            h_font.setPointSize(11) # 11pt (1포인트 증가)
+            h_font.setBold(True)
+            self.table_script.horizontalHeader().setFont(h_font)
+        except:
+            pass
         self.table_script.setColumnCount(2)
         self.table_script.setHorizontalHeaderLabels(["캐릭터", "대사"])
         self.table_script.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
@@ -1840,7 +1853,6 @@ class WebtoonManager(QMainWindow):
         self.table_script.itemChanged.connect(lambda item: self.save_script_data())
         self.table_script.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table_script.customContextMenuRequested.connect(self.show_script_context_menu)
-        # 테이블 테두리를 없애 컨테이너와 하나처럼 보이게 합니다.
         self.table_script.setStyleSheet("""
             QTableWidget {
                 border: none;
@@ -1850,16 +1862,23 @@ class WebtoonManager(QMainWindow):
                 font-size: 15px; 
                 font-family: 'Pretendard';
             }
-            QHeaderView::section {
+        """) 
+        try:
+            f_family = QApplication.font().family()
+        except:
+            f_family = "Pretendard"
+            
+        self.table_script.horizontalHeader().setStyleSheet(f"""
+            QHeaderView::section {{
                 background-color: #F9FAFB;
                 border-bottom: 1px solid #E5E7EB;
                 border-right: 1px solid #E5E7EB;
                 padding: 5px;
-                font-weight: bold;
-                /* 헤더 글자 크기도 함께 조절하면 균형이 맞습니다 */
-                font-size: 13px; 
-            }
-        """) 
+                font-family: '{f_family}';
+                font-weight: 500;
+                font-size: 15px;
+            }}
+        """)
 
         container_layout.addWidget(self.table_script)
         tab3_layout.addWidget(editor_container) # 컨테이너를 메인 레이아웃에 추가
@@ -1882,7 +1901,7 @@ class WebtoonManager(QMainWindow):
                 padding: 0 15px; 
                 font-weight: bold; 
                 color: #333; 
-                font-size: 13px; 
+                font-size: 14px; 
                 /* 맥북 환경을 고려해 폰트를 Pretendard로 지정하면 더 깔끔합니다 */
                 font-family: 'Pretendard', sans-serif;
             } 
@@ -2351,8 +2370,8 @@ class WebtoonManager(QMainWindow):
                 QTabBar::tab {
                     background: transparent;
                     color: #888888;
-                    font-size: 15px;
-                    font-weight: bold;
+                    font-size: 17px;
+                    font-weight: 600;
                     padding: 10px 15px;
                     border-bottom: 3px solid transparent;
                     margin-right: 5px;
