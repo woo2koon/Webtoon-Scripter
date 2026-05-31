@@ -59,6 +59,15 @@ class ClickableComboBox(QComboBox):
         self.installEventFilter(self) # [추가] 자기 자신에게도 필터 설치
         self.setView(QListView())
         
+        # Apply application-wide dynamic font and size
+        app_font = QApplication.font()
+        combo_font = QFont(app_font)
+        combo_font.setPointSize(11)
+        self.setFont(combo_font)
+        if self.lineEdit():
+            self.lineEdit().setFont(combo_font)
+        self.view().setFont(combo_font)
+        
         # [추가] 프리미엄 드롭다운 스타일 (잔상 제거 및 라운드 대응)
         self.view().window().setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
         self.view().window().setAttribute(Qt.WA_TranslucentBackground)

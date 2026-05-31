@@ -84,6 +84,8 @@ ICON_USER = os.path.join(ASSETS_DIR, "user.svg") # 사람 모양 캐릭터 아�
 ICON_SETTINGS_COG = os.path.join(ASSETS_DIR, "settings.svg") # 톱니바퀴 설정 아이콘 추가
 ICON_AVATAR_UPLOAD = os.path.join(ASSETS_DIR, "avatar-upload.svg") # 아바타 전용 업로드 아이콘
 ICON_SPLIT = os.path.join(ASSETS_DIR, "separator-horizontal.svg") # 셀 나누기 아이콘 추가
+ICON_ZOOM_IN = os.path.join(ASSETS_DIR, "plus_icon.svg")
+ICON_ZOOM_OUT = os.path.join(ASSETS_DIR, "minus_icon.svg")
 # =================================================================
 
 OCR_API_KEY = ""

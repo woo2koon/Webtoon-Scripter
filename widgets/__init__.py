@@ -12,5 +12,5 @@ from .table import (
     SpreadsheetTable, ExcelTextDelegate
 )
 from .dialogs import (
-    SpellCheckDialog, ProjectManagementDialog, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog
+    SpellCheckDialog, ScriptMergeDialog, ProjectManagementDialog, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog
 )

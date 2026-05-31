@@ -1634,6 +1634,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         scroll_area.setStyleSheet("border: 1px solid #E5E7EB; border-radius: 8px; background-color: #F9FAFB;")
         
         self.list_container = QWidget()

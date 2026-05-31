@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QComboBox, QLineEdit, QStyledItemDelegate, QApplication, QPushButton
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QModelIndex
-from PySide6.QtGui import QPainter, QColor, QPen, QKeySequence
+from PySide6.QtGui import QPainter, QColor, QPen, QKeySequence, QFont
 
 import config
 
@@ -109,17 +109,31 @@ class SpreadsheetTable(QTableWidget):
         self.verticalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.verticalHeader().setDefaultAlignment(Qt.AlignCenter)
 
-        self.setStyleSheet("""
-            QTableWidget {
+        app_font = QApplication.font()
+        f_family = app_font.family()
+        if f_family == "sans-serif" or not f_family:
+            f_family = "Pretendard"
+        table_font = QFont(f_family, 11)
+        table_font.setStyleStrategy(QFont.PreferAntialias)
+        table_font.setHintingPreference(QFont.PreferNoHinting)
+        self.setFont(table_font)
+
+        self.setStyleSheet(f"""
+            QTableWidget {{
                 gridline-color: #e0e0e0;
                 background-color: white;
                 selection-background-color: #e8f0fe;
                 selection-color: black;
-                font-size: 13px;
+                font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
+                font-size: 14px;
                 outline: none;
-            }
-            QTableWidget::item { padding-left: 5px; padding-right: 5px; } 
-            QTableWidget::item:focus { border: 2px solid #1a73e8; }
+            }}
+            QTableWidget::item {{ 
+                padding-left: 5px; 
+                padding-right: 5px; 
+                font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
+            }} 
+            QTableWidget::item:focus {{ border: 2px solid #1a73e8; }}
         """)
         
         self.drop_target_row = None

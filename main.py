@@ -7,12 +7,12 @@ import shutil
 import subprocess
 import platform
 import unicodedata
-from utils import get_icon
+from utils import get_icon, get_colored_icon
 from copy import copy
 from openpyxl import load_workbook
 from openpyxl.worksheet.datavalidation import DataValidation
 from ai_worker import SpellCheckWorker
-from widgets import SpellCheckDialog
+from widgets import SpellCheckDialog, ScriptMergeDialog
 from widgets import ProjectManagementDialog, HoverIconButton
 
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
@@ -30,6 +30,8 @@ from PySide6.QtGui import (QCursor, QFontDatabase, QFont, QTextCursor, QAction,
                            QDragEnterEvent, QDropEvent, QIcon, QShortcut, QKeySequence,
                            QPainter, QPixmap, QColor, QPen, QPalette, QGuiApplication)
 import config
+import threading
+import requests
 
 from config import BASE_DIR, ASSETS_DIR, CACHE_DIR, PROJECTS_DIR, TEMPLATE_PATH, MODERN_STYLE
 from utils import restore_template, natural_sort_key
@@ -323,6 +325,8 @@ class WebtoonManager(QMainWindow):
         self.is_simple_mode = False
         self.api_call_count = 0 
         self.daily_api_count = 0 # [추가] 오늘 전체 API 사용량
+        self.session_api_count = 0 # [신규 추가] 세션별 API 사용량 (종료 시 텔레메트리용)
+        self.api_display_mode = 0  # 0: 현재 회차, 1: 오늘 총 횟수
         self.zoom_step = 0
         self.overlay = DropOverlay(self)
         
@@ -940,83 +944,44 @@ class WebtoonManager(QMainWindow):
         body_layout.setSpacing(15) 
         body_layout.addStretch()
 
-        # 6. API 호출 수 (그룹화하여 정렬 최적화)
+        # 6. API 호출 수 (그룹화하여 정렬 최적화 및 클릭 토글 지원)
         api_stat_group = QWidget()
         api_stat_layout = QVBoxLayout(api_stat_group)
         api_stat_layout.setContentsMargins(0, 0, 0, 5) # 가로선과 맞추기 위해 좌측 여백 0으로 설정
         api_stat_layout.setSpacing(0)
 
-        self.combo_api_type = AlwaysUpComboBox()
-        self.combo_api_type.addItems(["현재 회차 API 사용 횟수", "오늘 총 API 사용 횟수"])
-        self.combo_api_type.setSizeAdjustPolicy(QComboBox.AdjustToContents)
-        self.combo_api_type.view().window().setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
-        self.combo_api_type.view().window().setAttribute(Qt.WA_TranslucentBackground)
-        
-        dropdown_arrow_path = os.path.join(config.ASSETS_DIR, "dropdown-arrow.svg").replace("\\", "/")
-        self.combo_api_type.setStyleSheet("""
-            QComboBox {
-                combobox-popup: 0;
-                color: #6B7280; 
-                font-size: 13px;
-                font-weight: 500;
-                background: transparent;
-                border: 1px solid transparent; 
-                padding: 0px;
-                padding-right: 15px;
-                min-width: 0px; 
-                min-height: 20px;
-            }
-            QComboBox::drop-down {
-                border: none;
-                width: 15px;
-                subcontrol-origin: padding;
-                subcontrol-position: center right;
-            }
-            QComboBox::down-arrow {
-                image: url("assets/dropdown-arrow.svg");
-                width: 12px;
-                height: 12px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: white;
-                border: 1px solid #D1D5DB;
-                border-radius: 8px;
-                selection-background-color: #ffd7d7;
-                selection-color: #ff4b4b;
-                outline: none;
-                padding: 2px;
-                margin: 0px;
-            }
-            QComboBox QAbstractItemView::item {
-                font-family: 'Pretendard';
-                font-weight: 500;
-                padding: 4px 10px;
-                min-height: 24px;
-                border-radius: 5px;
-                margin: 1px;
-            }
-            QComboBox QAbstractItemView::item:hover {
-                background-color: #fff5f5;
-                color: #ff4b4b;
-            }
-        """.replace('url("assets/dropdown-arrow.svg")', f"url('{dropdown_arrow_path}')"))
-        self.combo_api_type.setItemDelegate(PopupItemDelegate())
-        self.combo_api_type.setCursor(Qt.PointingHandCursor)
-        self.combo_api_type.currentIndexChanged.connect(self.update_api_display)
-        api_stat_layout.addWidget(self.combo_api_type, 0, Qt.AlignLeft)
+        self.lbl_api_type = QLabel("현재 회차 API 사용 횟수")
+        self.lbl_api_type.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        self.lbl_api_type.setCursor(Qt.PointingHandCursor)
+        self.lbl_api_type.setToolTip("클릭하여 '현재 회차' / '오늘 총' 사용량으로 전환")
+        self.lbl_api_type.setStyleSheet("""
+            color: #6B7280; 
+            font-size: 13px;
+            font-weight: 500;
+            background: transparent;
+            min-height: 20px;
+        """)
+        api_stat_layout.addWidget(self.lbl_api_type, 0, Qt.AlignLeft)
 
         self.lbl_api_count = QLabel("0회")
+        self.lbl_api_count.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        self.lbl_api_count.setCursor(Qt.PointingHandCursor)
+        self.lbl_api_count.setToolTip("클릭하여 '현재 회차' / '오늘 총' 사용량으로 전환")
         self.lbl_api_count.setStyleSheet("""
             color: #111827; 
             font-size: 38px;      
             font-weight: 800; 
             margin-top: 1px;     
-            margin-left: -10px;    /* 드롭다운 글자와 시작점을 맞추기 위해 미세 조정 */
+            margin-left: -10px;    /* 타이틀 라벨과 시작점을 맞추기 위해 미세 조정 */
             padding-left: 2px;
             padding-bottom: 0px;
         """)
         self.lbl_api_count.setAlignment(Qt.AlignLeft)
         api_stat_layout.addWidget(self.lbl_api_count)
+        
+        # 타이틀이나 숫자를 클릭했을 때 토글 이벤트 바인딩
+        self.lbl_api_type.mousePressEvent = lambda event: self.toggle_api_display_mode()
+        self.lbl_api_count.mousePressEvent = lambda event: self.toggle_api_display_mode()
         
         body_layout.addSpacing(-7)
         body_layout.addWidget(api_stat_group)
@@ -1362,7 +1327,9 @@ class WebtoonManager(QMainWindow):
             QPushButton:pressed { background-color: #E5E7EB; }
         """
         
-        btn_zoom_out = QPushButton("-")
+        btn_zoom_out = QPushButton()
+        btn_zoom_out.setIcon(get_colored_icon(config.ICON_ZOOM_OUT, "#374151"))
+        btn_zoom_out.setIconSize(QSize(14, 14))
         btn_zoom_out.setFixedSize(32, 32)
         btn_zoom_out.setCursor(Qt.PointingHandCursor)
         btn_zoom_out.setStyleSheet(zoom_btn_style)
@@ -1374,7 +1341,9 @@ class WebtoonManager(QMainWindow):
         btn_zoom_reset.setStyleSheet(zoom_btn_style)
         btn_zoom_reset.clicked.connect(self.text_zoom_reset)
         
-        btn_zoom_in = QPushButton("+")
+        btn_zoom_in = QPushButton()
+        btn_zoom_in.setIcon(get_colored_icon(config.ICON_ZOOM_IN, "#374151"))
+        btn_zoom_in.setIconSize(QSize(14, 14))
         btn_zoom_in.setFixedSize(32, 32)
         btn_zoom_in.setCursor(Qt.PointingHandCursor)
         btn_zoom_in.setStyleSheet(zoom_btn_style)
@@ -1549,7 +1518,7 @@ class WebtoonManager(QMainWindow):
             QPushButton { 
                 border: 1px solid #D1D5DB; 
                 background-color: #EFF6FF; 
-                border-radius: 6px; 
+                border-radius: 4px; 
                 color: #2563EB; 
                 font-size: 13px; 
                 font-weight: 500;
@@ -1580,7 +1549,7 @@ class WebtoonManager(QMainWindow):
             QPushButton { 
                 border: 1px solid #D1D5DB; 
                 background-color: #F3F4F6; 
-                border-radius: 6px; 
+                border-radius: 4px; 
                 color: #374151; 
                 font-size: 13px; 
                 font-weight: 500;
@@ -1865,6 +1834,8 @@ class WebtoonManager(QMainWindow):
         """) 
         try:
             f_family = QApplication.font().family()
+            if f_family == "sans-serif" or not f_family:
+                f_family = "Pretendard"
         except:
             f_family = "Pretendard"
             
@@ -1874,7 +1845,7 @@ class WebtoonManager(QMainWindow):
                 border-bottom: 1px solid #E5E7EB;
                 border-right: 1px solid #E5E7EB;
                 padding: 5px;
-                font-family: '{f_family}';
+                font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
                 font-weight: 500;
                 font-size: 15px;
             }}
@@ -2650,7 +2621,36 @@ class WebtoonManager(QMainWindow):
     def closeEvent(self, event):
         """프로그램 종료 시 현재 상태를 저장합니다."""
         self.save_viewer_state()
+        
+        # [신규 추가] 세션 API 호출량 전송 (0회보다 클 때만 백그라운드 전송)
+        if hasattr(self, 'session_api_count') and self.session_api_count > 0:
+            count_to_send = self.session_api_count
+            threading.Thread(target=self.send_usage_telemetry_bg, args=(count_to_send,)).start()
+            
         super().closeEvent(event)
+
+    def send_usage_telemetry_bg(self, count):
+        form_url = "https://docs.google.com/forms/d/e/1FAIpQLSdxr9XETDAnsujmZF5GbEYrJfeGUU7PwuQoAFLd3I126SZ0AQ/formResponse"
+        entry_id_user = "entry.1752713297"
+        entry_id_count = "entry.930589908"
+        
+        try:
+            username = os.getlogin()
+        except Exception:
+            username = platform.node()
+            
+        os_info = f"{username} ({platform.system()})"
+        
+        data = {
+            entry_id_user: os_info,
+            entry_id_count: str(count)
+        }
+        
+        try:
+            # 타임아웃을 3초로 주어 전송 대기 방지
+            requests.post(form_url, data=data, timeout=3)
+        except Exception as e:
+            print(f"DEBUG: 텔레메트리 백그라운드 전송 오류 -> {e}")
 
     def keyPressEvent(self, event):
         """단축키 처리 (Home/End)"""
@@ -2892,19 +2892,29 @@ class WebtoonManager(QMainWindow):
         self.analysis_menu.raise_()
 
     def update_api_display(self):
-        """드롭다운 선택에 따라 API 호출 수 표시를 전환합니다."""
-        if not hasattr(self, 'lbl_api_count') or not hasattr(self, 'combo_api_type'):
+        """API 호출 수 및 타이틀 표시를 현재 상태(api_display_mode)에 맞게 전환합니다."""
+        if not hasattr(self, 'lbl_api_count') or not hasattr(self, 'lbl_api_type'):
             return
             
-        if self.combo_api_type.currentIndex() == 0: # 현재 회차
-            self.lbl_api_count.setText(f"{self.api_call_count}회")
+        if self.api_display_mode == 0: # 현재 회차
+            self.lbl_api_type.setText("현재 회차 API 사용 횟수")
+            cost = self.api_call_count * 2
+            self.lbl_api_count.setText(f"<span style='color: #111827;'>{self.api_call_count}회</span> <span style='font-size: 15px; color: #6B7280; font-weight: 500;'> (약 {cost:,}원)</span>")
         else: # 오늘 총 API 사용 횟수
-            self.lbl_api_count.setText(f"{self.daily_api_count}회")
+            self.lbl_api_type.setText("오늘 총 API 사용 횟수")
+            cost = self.daily_api_count * 2
+            self.lbl_api_count.setText(f"<span style='color: #FF4B4B;'>{self.daily_api_count}회</span> <span style='font-size: 15px; color: #6B7280; font-weight: 500;'> (약 {cost:,}원)</span>")
+
+    def toggle_api_display_mode(self):
+        """API 표시 모드를 토글하고 화면을 갱신합니다."""
+        self.api_display_mode = 1 - self.api_display_mode
+        self.update_api_display()
 
     def increment_api_counter(self):
         """API 호출 시 회차별 카운트와 오늘 누적 카운트를 동시에 올립니다."""
         self.api_call_count += 1
         self.daily_api_count += 1
+        self.session_api_count += 1
         self.update_api_display()
         self.save_api_count()
 
@@ -2997,28 +3007,45 @@ class WebtoonManager(QMainWindow):
 
     def create_table_combo(self, items, current_text=""):
         combo = ClickableComboBox()
+        
+        app_font = QApplication.font()
+        combo_font = QFont(app_font)
+        combo_font.setPointSize(11)
+        combo.setFont(combo_font)
+        if combo.lineEdit():
+            combo.lineEdit().setFont(combo_font)
+        combo.view().setFont(combo_font)
+        
         combo.addItems(items)
         if current_text and current_text in items:
             combo.setCurrentText(current_text)
         else:
             combo.setCurrentIndex(-1)
         
-        combo.setStyleSheet("""
-            QComboBox {
+        f_family = app_font.family()
+        if f_family == "sans-serif" or not f_family:
+            f_family = "Pretendard"
+
+        combo.setStyleSheet(f"""
+            QComboBox {{
                 border: none;
                 border-radius: 0px;
                 background-color: transparent;
                 padding-left: 5px;
-            }
-            QComboBox::drop-down {
+                font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
+                font-size: 14px;
+            }}
+            QComboBox::drop-down {{
                 border: none;
                 background-color: transparent;
                 width: 20px;
-            }
-            QComboBox QAbstractItemView {
+            }}
+            QComboBox QAbstractItemView {{
                 border: 1px solid #d1d5db;
                 background-color: white;
-            }
+                font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
+                font-size: 14px;
+            }}
         """)
         line_edit = combo.lineEdit()
         if line_edit:
@@ -3614,26 +3641,44 @@ class WebtoonManager(QMainWindow):
         self.insert_script_row_at(self.table_script.rowCount())
 
     def load_script_to_table(self):
-        if self.table_script.rowCount() > 0:
-            msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("초기화 확인")
-            msg_box.setText("역할 배정 정보가 초기화 됩니다.\n 그래도 Step 1 내용을 가져오시겠습니까?")
-            msg_box.setIcon(QMessageBox.Question)
-            btn_yes = msg_box.addButton("예", QMessageBox.YesRole)
-            btn_no = msg_box.addButton("아니오", QMessageBox.NoRole)
-            msg_box.setDefaultButton(btn_no)
-            msg_box.exec()
-            if msg_box.clickedButton() != btn_yes:
-                return
-
         text = self.text_editor.toPlainText()
         lines = [line.strip() for line in text.split('\n') if line.strip()]
         clean_lines = [re.sub(r'^(\[\d+\]|\d+\.)\s*', '', line).strip() for line in lines]
+
+        rows_to_load = []
+        
+        if self.table_script.rowCount() > 0:
+            # 1. 기존 배정 데이터 추출
+            current_script = []
+            for i in range(self.table_script.rowCount()):
+                combo = self.table_script.cellWidget(i, 0)
+                char_name = combo.currentText() if combo and isinstance(combo, QComboBox) else ""
+                line_item = self.table_script.item(i, 1)
+                line_text = line_item.text() if line_item else ""
+                current_script.append({"char": char_name, "line": line_text})
+                
+            # 2. 스마트 병합 다이얼로그 호출
+            dlg = ScriptMergeDialog(current_script, clean_lines, self)
+            if dlg.exec() == QDialog.Accepted:
+                action = dlg.merge_action
+                if action == "merge":
+                    for item in dlg.aligned_data:
+                        if item["status"] != "delete":
+                            rows_to_load.append((item["curr_char"] if item["keep_char"] else "", item["new_line"]))
+                elif action == "overwrite":
+                    rows_to_load = [("", line) for line in clean_lines]
+                else:
+                    return
+            else:
+                return
+        else:
+            rows_to_load = [("", line) for line in clean_lines]
+
         self.table_script.blockSignals(True)
-        self.table_script.setRowCount(len(clean_lines))
+        self.table_script.setRowCount(len(rows_to_load))
         char_list = self.get_character_list()
-        for i, line in enumerate(clean_lines):
-            combo = self.create_table_combo(char_list)
+        for i, (char_name, line) in enumerate(rows_to_load):
+            combo = self.create_table_combo(char_list, current_text=char_name)
             combo.set_refresh_callback(self.get_character_list)
             combo.currentTextChanged.connect(lambda text: self.save_script_data())
             
@@ -4225,6 +4270,17 @@ class WebtoonManager(QMainWindow):
 
 
 if __name__ == "__main__":
+    # 윈도우 환경에서만 DPI 인식을 강제로 활성화 (가상 스케일링 방지 및 폰트 흐림 방지)
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Windows 8.1 이상 (모니터별 DPI 인식)
+        except Exception:
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()  # Windows 7/8 (시스템 전체 DPI 인식)
+            except Exception:
+                pass
+
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.Round)
     app = QApplication(sys.argv)
 
@@ -4309,10 +4365,15 @@ if __name__ == "__main__":
         font = QFont(font_family, 11)
     else:
         font_family = "Pretendard"
-        font = QFont("sans-serif", 10)
+        font = QFont("Pretendard", 10)
     
     font.setStyleStrategy(QFont.PreferAntialias) 
     font.setHintingPreference(QFont.PreferNoHinting)
+    
+    # 윈도우 렌더러 특성상 글자가 가늘게 파먹히며 깨지는 현상을 방지하기 위해 굵기를 한 단계(Medium) 상향 보정
+    if platform.system() == "Windows":
+        font.setWeight(QFont.Weight.Medium)
+        
     app.setFont(font)
     
     # 스타일시트가 시스템 기본 폰트로 롤백되지 않도록 Pretendard 단독 강제 바인딩
@@ -4329,7 +4390,7 @@ if __name__ == "__main__":
             border-radius: 3px;
             padding: 1px 4px;
             font-family: 'Pretendard';
-            font-size: 12px;
+            font-size: 13px;
         }
     """
     app.setStyleSheet(config.MODERN_STYLE + "\n" + TOOLTIP_STYLE)
