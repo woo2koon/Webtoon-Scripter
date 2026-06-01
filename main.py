@@ -327,7 +327,7 @@ class WebtoonManager(QMainWindow):
         self.daily_api_count = 0 # [추가] 오늘 전체 API 사용량
         self.session_api_count = 0 # [신규 추가] 세션별 API 사용량 (종료 시 텔레메트리용)
         self.api_display_mode = 0  # 0: 현재 회차, 1: 오늘 총 횟수
-        self.zoom_step = 0
+        self.zoom_step = getattr(config, 'TEXT_ZOOM_STEP', 0)
         self.overlay = DropOverlay(self)
         
         self.idiom_viewer = None
@@ -336,6 +336,7 @@ class WebtoonManager(QMainWindow):
         # About 다이얼로그 강한 참조 (GC 방지: 빌드 앱에서 로컬 변수는 즉시 해제될 수 있음)
         self.about_dialog = None
         self.init_ui()
+        self.update_zoom_style()
         self.refresh_project_list()
         self.idiom_shortcuts = []
         self.setup_idiom_shortcuts()
@@ -790,7 +791,7 @@ class WebtoonManager(QMainWindow):
         plus_icon_path = os.path.join(ASSETS_DIR, "plus.svg")
         if os.path.exists(plus_icon_path): btn_add_proj.setIcon(QIcon(plus_icon_path))
         btn_add_proj.setIconSize(QSize(20, 20))
-        btn_add_proj.setStyleSheet("background-color: #FF5722; border-radius: 3px;")
+        btn_add_proj.setStyleSheet("background-color: #FF5722; border-radius: 4px;")
         btn_add_proj.setCursor(Qt.PointingHandCursor)
         btn_add_proj.clicked.connect(self.create_project)
         
@@ -833,7 +834,7 @@ class WebtoonManager(QMainWindow):
         btn_add_ep.setFixedSize(36, 36)
         if os.path.exists(plus_icon_path): btn_add_ep.setIcon(QIcon(plus_icon_path))
         btn_add_ep.setIconSize(QSize(20, 20))
-        btn_add_ep.setStyleSheet("background-color: #FF5722; border-radius: 3px;")
+        btn_add_ep.setStyleSheet("background-color: #FF5722; border-radius: 4px;")
         btn_add_ep.setCursor(Qt.PointingHandCursor)
         btn_add_ep.clicked.connect(self.create_episode)
         
@@ -3811,19 +3812,35 @@ class WebtoonManager(QMainWindow):
         scale = 1.0 + (self.zoom_step * 0.1)
         new_size = int(base_size * scale)
         if new_size < 8: new_size = 8
-        self.text_editor.setStyleSheet(f"line-height: 160%; font-size: {new_size}px;")
+        self.text_editor.setStyleSheet(f"""
+            QTextEdit {{
+                border: 1px solid #D1D5DB;
+                border-radius: 8px;
+                padding: 1px;
+                background-color: white;
+                line-height: 160%;
+                color: #333333;
+                font-size: {new_size}px;
+            }}
+        """ + "\n" + config.MODERN_MENU_STYLE)
 
     def text_zoom_in(self):
         self.zoom_step += 1
         self.update_zoom_style()
+        config.TEXT_ZOOM_STEP = self.zoom_step
+        config.save_settings()
 
     def text_zoom_out(self):
         self.zoom_step -= 1
         self.update_zoom_style()
+        config.TEXT_ZOOM_STEP = self.zoom_step
+        config.save_settings()
 
     def text_zoom_reset(self):
         self.zoom_step = 0
         self.update_zoom_style()
+        config.TEXT_ZOOM_STEP = self.zoom_step
+        config.save_settings()
 
     def save_text_to_file(self):
         content = self.text_editor.toPlainText()
@@ -4073,7 +4090,8 @@ class WebtoonManager(QMainWindow):
             current_version=config.APP_VERSION,
             version_tag=version_tag, 
             release_notes=changelog,
-            on_show_dialog=lambda auto_start: self.show_update_dialog(version_tag, changelog, download_url, auto_start)
+            on_show_dialog=lambda auto_start: self.show_update_dialog(version_tag, changelog, download_url, auto_start),
+            on_direct_update=lambda: self.start_update_download(self.update_banner, download_url, version_tag)
         )
         self.update_banner.show_banner()
 
@@ -4095,7 +4113,7 @@ class WebtoonManager(QMainWindow):
 
     def on_update_download_finished(self, dlg, file_path):
         dlg.set_progress(100, "다운로드 완료! 업데이트를 적용하는 중...")
-        
+
         # 업데이트 전에 작성 중이던 모든 문서 강제 자동 저장
         try:
             self.save_text_content()

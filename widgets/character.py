@@ -370,8 +370,9 @@ class CharacterRow(QFrame):
                 color: white; 
                 border-radius: 6px; 
                 font-weight: bold; 
-                font-size: 13px; 
+                font-size: 15px; 
                 font-family: 'Pretendard', sans-serif;
+                padding: 0px;
             }
             QPushButton:hover {
                 background-color: #2563EB;
@@ -388,7 +389,7 @@ class CharacterRow(QFrame):
         self.btn_delete = QPushButton("삭제")
         self.btn_delete.setFixedSize(65, WIDGET_HEIGHT)
         self.btn_delete.setCursor(Qt.PointingHandCursor)
-        self.btn_delete.setStyleSheet("QPushButton { border: none; background-color: #ff4b4b; color: white; border-radius: 6px; font-weight: bold; font-size: 13px; font-family: 'Pretendard', sans-serif; } QPushButton:hover { background-color: #e03e3e; }")
+        self.btn_delete.setStyleSheet("QPushButton { border: none; background-color: #ff4b4b; color: white; border-radius: 6px; font-weight: bold; font-size: 15px; font-family: 'Pretendard', sans-serif; padding: 0px; } QPushButton:hover { background-color: #e03e3e; }")
         self.btn_delete.clicked.connect(lambda: self.delete_signal.emit(self))
         layout.addWidget(self.btn_delete)
 

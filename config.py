@@ -104,6 +104,7 @@ ROLE_OPTIONS = ["주연", "조연", "단역"]
 # 탭별 프로필 이미지 초기 크기 설정
 AVATAR_SIZE_ALL = 45
 AVATAR_SIZE_CURRENT = 45
+TEXT_ZOOM_STEP = 0
 
 # [관용구 설정] 자주 쓰는 지문 리스트
 IDIOMS = []
@@ -120,7 +121,7 @@ MODERN_STYLE = f"""
 """
 
 def load_settings():
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP
     IS_SIMPLE_MODE = False
     
     # 1. 일단 하드코딩된 키로 초기화
@@ -167,6 +168,7 @@ def load_settings():
                     LAST_SAVE_DIR = data.get("last_save_dir", "")
                     AVATAR_SIZE_ALL = data.get("avatar_size_all", 45)
                     AVATAR_SIZE_CURRENT = data.get("avatar_size_current", 45)
+                    TEXT_ZOOM_STEP = data.get("text_zoom_step", 0)
                 
                 else:
                     # 구형 데이터 구조일 경우 처리
@@ -205,7 +207,7 @@ def load_settings():
         AI_API_KEY = OCR_API_KEY
 
 def save_settings(presets=None, active_name=None, is_simple_mode=None):
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP
     
     if presets is not None:
         API_PRESETS = presets
@@ -228,7 +230,8 @@ def save_settings(presets=None, active_name=None, is_simple_mode=None):
         "idioms": IDIOMS,
         "last_save_dir": LAST_SAVE_DIR,
         "avatar_size_all": AVATAR_SIZE_ALL,
-        "avatar_size_current": AVATAR_SIZE_CURRENT
+        "avatar_size_current": AVATAR_SIZE_CURRENT,
+        "text_zoom_step": TEXT_ZOOM_STEP
     }
     try:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
@@ -421,4 +424,4 @@ QMenu::separator {
     background: #e5e7eb;
     margin: 5px 10px;
 }
-"""
+"""

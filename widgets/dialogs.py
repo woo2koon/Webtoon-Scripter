@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QCheckBox, QMenu, QScrollArea, QGraphicsOpacityEffect, QTextEdit,
     QProgressBar, QGraphicsDropShadowEffect, QTableWidget, QTableWidgetItem, QHeaderView
 )
-from PySide6.QtCore import Qt, Signal, QPoint, QSize, QMimeData, QByteArray, QTimer, QEvent, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Qt, Signal, QPoint, QSize, QMimeData, QByteArray, QTimer, QEvent, QPropertyAnimation, QEasingCurve, QRect
 from PySide6.QtGui import (
     QPixmap, QIcon, QDrag, QPainter, QColor, QPen, QFont, QAction, QKeySequence,
     QTextCharFormat, QTextFormat, QTextCursor
@@ -1343,6 +1343,38 @@ class SpellCheckDialog(QDialog):
         self.accept()
 
 # =================================================================
+# Windows ClearType 폰트 깨짐 방지 전용 커스텀 헤더뷰
+# =================================================================
+class ClearTypeHeaderView(QHeaderView):
+    """Windows에서 QHeaderView 스타일시트 적용 시 ClearType(안티앨리어싱) 렌더링이
+    비활성화되어 폰트가 깨져 보이는 Qt 고질 버그를 paintSection() 오버라이드로 해결."""
+    def __init__(self, orientation, font, bg_color="#F9FAFB", text_color="#374151", parent=None):
+        super().__init__(orientation, parent)
+        self._section_font = font
+        self._bg_color = QColor(bg_color)
+        self._text_color = QColor(text_color)
+        self._border_color = QColor("#E5E7EB")
+
+    def paintSection(self, painter, rect, logical_index):
+        painter.save()
+        # 배경 채우기
+        painter.setRenderHint(QPainter.Antialiasing, False)
+        painter.fillRect(rect, self._bg_color)
+        # 하단 경계선 그리기
+        painter.setPen(QPen(self._border_color, 1))
+        painter.drawLine(rect.left(), rect.bottom(), rect.right(), rect.bottom())
+        # 텍스트 렌더링 - 안티앨리어싱 강제 활성화
+        painter.setRenderHint(QPainter.TextAntialiasing, True)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setFont(self._section_font)
+        painter.setPen(self._text_color)
+        label = self.model().headerData(logical_index, self.orientation(), Qt.DisplayRole)
+        if label:
+            text_rect = rect.adjusted(8, 0, -8, 0)
+            painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignCenter, str(label))
+        painter.restore()
+
+# =================================================================
 # 스마트 스크립트 병합 다이얼로그 (ScriptMergeDialog)
 # =================================================================
 class ScriptMergeDialog(QDialog):
@@ -1464,14 +1496,17 @@ class ScriptMergeDialog(QDialog):
                         
         return alignment
 
-    def get_dialog_font(self, bold=False, strikeout=False, size_px=13):
+    def get_dialog_font(self, bold=False, strikeout=False, size_px=13, weight=None):
         app_font = QApplication.font()
         f_family = app_font.family()
         if f_family == "sans-serif" or not f_family:
             f_family = "Pretendard"
         font = QFont(f_family)
         font.setPixelSize(size_px)
-        font.setBold(bold)
+        if weight is not None:
+            font.setWeight(weight)
+        else:
+            font.setBold(bold)
         font.setStrikeOut(strikeout)
         font.setStyleStrategy(QFont.PreferAntialias)
         font.setHintingPreference(QFont.PreferNoHinting)
@@ -1513,7 +1548,7 @@ class ScriptMergeDialog(QDialog):
         
         # Table
         self.table = QTableWidget()
-        self.table.setFont(self.get_dialog_font())
+        self.table.setFont(self.get_dialog_font(size_px=14))
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(["", "기존 대사 (스텝 3)", "상태", "가져올 대사 (스텝 1)"])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -1521,10 +1556,13 @@ class ScriptMergeDialog(QDialog):
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         
-        # Style header
-        header = self.table.horizontalHeader()
-        header.setFont(self.get_dialog_font(bold=True, size_px=14))
-        header.setMinimumHeight(40)  # Windows에서 헤더 높이가 작아 글자 위아래가 깨지거나 잘리는 현상 방지
+        # Style header - ClearTypeHeaderView로 Windows 폰트 깨짐 근본 해결
+        h_font = QFont(QApplication.font())
+        h_font.setPointSize(11)
+        h_font.setWeight(QFont.Medium)
+        header = ClearTypeHeaderView(Qt.Horizontal, h_font, parent=self.table)
+        self.table.setHorizontalHeader(header)
+        header.setMinimumHeight(40)
         header.setSectionResizeMode(0, QHeaderView.Interactive)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         header.setSectionResizeMode(2, QHeaderView.Interactive)
@@ -1536,7 +1574,7 @@ class ScriptMergeDialog(QDialog):
         self.table.setRowCount(len(self.aligned_data))
         for row_idx, item in enumerate(self.aligned_data):
             item_char = QTableWidgetItem(item['curr_char'] if item['curr_char'] else "")
-            item_char.setFont(self.get_dialog_font())
+            item_char.setFont(self.get_dialog_font(size_px=14))
             item_char.setTextAlignment(Qt.AlignCenter)
             
             # Status styling
@@ -1565,7 +1603,7 @@ class ScriptMergeDialog(QDialog):
             item_status.setTextAlignment(Qt.AlignCenter)
             item_status.setBackground(QColor(bg_color))
             item_status.setForeground(QColor(fg_color))
-            item_status.setFont(self.get_dialog_font(bold=True))
+            item_status.setFont(self.get_dialog_font(bold=True, size_px=14))
             
             if item['status'] == 'replace':
                 # 수정됨 상태에서는 텍스트를 위젯(QLabel)으로 직접 렌더링하므로 중복 겹침 방지를 위해 빈 문자열로 생성
@@ -1574,22 +1612,22 @@ class ScriptMergeDialog(QDialog):
             else:
                 exist_text = item['curr_line'] if item['curr_line'] else ""
                 item_exist = QTableWidgetItem(exist_text)
-                item_exist.setFont(self.get_dialog_font())
+                item_exist.setFont(self.get_dialog_font(size_px=14))
                 
                 item_new = QTableWidgetItem(item['new_line'])
-                item_new.setFont(self.get_dialog_font())
+                item_new.setFont(self.get_dialog_font(size_px=14))
                 
                 # Delete/insert styles
                 if item['status'] == 'delete':
-                    item_char.setFont(self.get_dialog_font(strikeout=True))
+                    item_char.setFont(self.get_dialog_font(strikeout=True, size_px=14))
                     item_char.setForeground(QColor("#94A3B8"))
-                    item_exist.setFont(self.get_dialog_font(strikeout=True))
+                    item_exist.setFont(self.get_dialog_font(strikeout=True, size_px=14))
                     item_exist.setForeground(QColor("#94A3B8"))
                     item_new.setText("(삭제됨)")
-                    item_new.setFont(self.get_dialog_font(strikeout=True))
+                    item_new.setFont(self.get_dialog_font(strikeout=True, size_px=14))
                     item_new.setForeground(QColor("#94A3B8"))
                 elif item['status'] == 'insert':
-                    item_new.setFont(self.get_dialog_font(bold=True))
+                    item_new.setFont(self.get_dialog_font(bold=True, size_px=14))
                     item_new.setForeground(QColor("#1565C0"))
             
             self.table.setItem(row_idx, 0, item_char)
@@ -1602,7 +1640,7 @@ class ScriptMergeDialog(QDialog):
                 # 기존 대사
                 exist_html = self.get_html_diff(item['curr_line'], item['new_line'], mode='delete')
                 lbl_exist = QLabel(exist_html)
-                lbl_exist.setFont(self.get_dialog_font())
+                lbl_exist.setFont(self.get_dialog_font(size_px=14))
                 lbl_exist.setWordWrap(True)
                 lbl_exist.setStyleSheet("padding: 2px; margin: 0px; background-color: transparent;")
                 self.table.setCellWidget(row_idx, 1, lbl_exist)
@@ -1610,7 +1648,7 @@ class ScriptMergeDialog(QDialog):
                 # 가져올 대사
                 new_html = self.get_html_diff(item['curr_line'], item['new_line'], mode='insert')
                 lbl_new = QLabel(new_html)
-                lbl_new.setFont(self.get_dialog_font())
+                lbl_new.setFont(self.get_dialog_font(size_px=14))
                 lbl_new.setWordWrap(True)
                 lbl_new.setStyleSheet("padding: 2px; margin: 0px; background-color: transparent;")
                 self.table.setCellWidget(row_idx, 3, lbl_new)
@@ -1693,23 +1731,14 @@ class ScriptMergeDialog(QDialog):
                 gridline-color: #F3F4F6;
                 background-color: white;
                 font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
-                font-size: 13px;
+                font-size: 14px;
             }}
             QTableWidget::item {{
-                font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
-                font-size: 13px;
-            }}
-            QHeaderView::section {{
-                background-color: #F9FAFB;
-                border: none;
-                border-bottom: 1px solid #E5E7EB;
-                padding: 8px;
-                font-weight: 600;
-                color: #374151;
                 font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
                 font-size: 14px;
             }}
         """)
+
 
     def on_overwrite(self):
         reply = QMessageBox.warning(
@@ -2744,12 +2773,13 @@ class UpdateNotificationBanner(QFrame):
         <path d="M19 21H5"/>
     </svg>"""
 
-    def __init__(self, parent, current_version, version_tag, release_notes, on_show_dialog):
+    def __init__(self, parent, current_version, version_tag, release_notes, on_show_dialog, on_direct_update):
         super().__init__(parent)
         self.current_version = current_version
         self.version_tag = version_tag
         self.release_notes = release_notes
         self.on_show_dialog = on_show_dialog  # Callback takes auto_start (bool)
+        self.on_direct_update = on_direct_update
         
         self.setObjectName("UpdateNotificationBanner")
         self.setFixedSize(420, 115)
@@ -2773,22 +2803,22 @@ class UpdateNotificationBanner(QFrame):
         main_layout.setContentsMargins(16, 12, 16, 12)
         main_layout.setSpacing(10)
         
-        # [상단 영역] 아이콘 + 텍스트 정보 (가로 배치)
-        top_layout = QHBoxLayout()
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.setSpacing(12)
+        # [콘텐츠 레이아웃] (가로 배치: 아이콘 + 우측 수직 영역)
+        content_layout = QHBoxLayout()
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(12)
         
-        # 1. SVG 아이콘 라벨
+        # 1. SVG 아이콘 라벨 (수직 가운데 정렬)
         self.lbl_icon = QLabel()
         self.lbl_icon.setPixmap(self.get_svg_pixmap(self.SVG_UPDATE_ICON, 24, 24))
         self.lbl_icon.setFixedSize(24, 24)
         self.lbl_icon.setAlignment(Qt.AlignCenter)
-        top_layout.addWidget(self.lbl_icon)
+        content_layout.addWidget(self.lbl_icon, 0, Qt.AlignVCenter)
         
-        # 2. 텍스트 정보 영역 (수직 배치)
-        text_layout = QVBoxLayout()
-        text_layout.setSpacing(4)
-        text_layout.setContentsMargins(0, 0, 0, 0)
+        # 2. 우측 수직 영역 (타이틀, 요약글, 진행률, 버튼 영역을 한데 묶음)
+        right_layout = QVBoxLayout()
+        right_layout.setSpacing(8)
+        right_layout.setContentsMargins(0, 0, 0, 0)
         
         # 타이틀: 새로운 업데이트가 있습니다! (현재버전 → 업뎃버전)
         self.lbl_title = QLabel(f"새로운 업데이트가 있습니다! (v{current_version} → {version_tag})")
@@ -2800,7 +2830,7 @@ class UpdateNotificationBanner(QFrame):
                 color: #111827;
             }
         """)
-        text_layout.addWidget(self.lbl_title)
+        right_layout.addWidget(self.lbl_title)
         
         # 본문 요약: 1~2줄
         summary_text = self.clean_release_notes(release_notes)
@@ -2814,12 +2844,37 @@ class UpdateNotificationBanner(QFrame):
             }
         """)
         self.lbl_summary.setWordWrap(True)
-        text_layout.addWidget(self.lbl_summary)
+        right_layout.addWidget(self.lbl_summary)
         
-        top_layout.addLayout(text_layout)
-        main_layout.addLayout(top_layout)
+        # [진행률 컨테이너] (다운로드 시작 시 표시 - 우측 영역 내부 하단에 배치됨)
+        self.progress_container = QWidget()
+        self.progress_layout = QVBoxLayout(self.progress_container)
+        self.progress_layout.setContentsMargins(0, 0, 0, 0)
+        self.progress_layout.setSpacing(6)
         
-        # [하단 영역] 버튼 배치 (오른쪽 정렬)
+        self.lbl_progress_status = QLabel("다운로드 대기 중...")
+        self.lbl_progress_status.setStyleSheet("font-size: 12px; color: #2563EB; font-weight: bold; font-family: 'Pretendard';")
+        self.progress_layout.addWidget(self.lbl_progress_status)
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(6)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #E5E7EB;
+                border-radius: 3px;
+            }
+            QProgressBar::chunk {
+                background-color: #FF5722;
+                border-radius: 3px;
+            }
+        """)
+        self.progress_layout.addWidget(self.progress_bar)
+        self.progress_container.setVisible(False)
+        right_layout.addWidget(self.progress_container)
+        
+        # [하단 영역] 버튼 배치 (오른쪽 정렬 - 우측 영역 하단에 결합)
         bottom_layout = QHBoxLayout()
         bottom_layout.setContentsMargins(0, 0, 0, 0)
         bottom_layout.addStretch()
@@ -2867,7 +2922,9 @@ class UpdateNotificationBanner(QFrame):
         self.btn_update.clicked.connect(self.update_clicked)
         bottom_layout.addWidget(self.btn_update)
         
-        main_layout.addLayout(bottom_layout)
+        right_layout.addLayout(bottom_layout)
+        content_layout.addLayout(right_layout)
+        main_layout.addLayout(content_layout)
 
         # 닫기 버튼 (우측 상단 절대 좌표 배치 - 모서리 쪽으로 더 밀어 밀착시킴)
         self.btn_close = QPushButton(self)
@@ -2927,12 +2984,41 @@ class UpdateNotificationBanner(QFrame):
         return "\n".join(lines) if lines else "새로운 업데이트 버전이 준비되었습니다."
 
     def update_clicked(self):
-        self.hide_banner()
-        self.on_show_dialog(True)
+        if hasattr(self, 'on_direct_update') and self.on_direct_update:
+            self.on_direct_update()
 
     def details_clicked(self):
         self.hide_banner()
         self.on_show_dialog(False)
+
+    def set_downloading_mode(self, active=True):
+        self.is_downloading = active
+        self.btn_details.setVisible(not active)
+        self.btn_update.setVisible(not active)
+        self.lbl_summary.setVisible(not active)
+        self.progress_container.setVisible(active)
+        self.btn_close.setEnabled(not active)
+        self.btn_close.setVisible(not active)
+        
+        # 다운로드 중일 때는 배너 박스 크기를 작게(85px로) 축소하여 불필요한 공백을 줄이고 균형감 확보
+        if active:
+            self.setFixedSize(420, 85)
+        else:
+            self.setFixedSize(420, 115)
+            
+        # 크기가 변경되었으므로 부모창 내에서의 y 위치(바닥 기준 위치)를 재정렬합니다.
+        if self.parent():
+            parent_rect = self.parent().rect()
+            self.target_y = parent_rect.height() - self.height() - 20
+            self.move(self.x(), self.target_y)
+
+    def set_progress(self, percent, text):
+        self.progress_bar.setValue(percent)
+        self.lbl_progress_status.setText(text)
+
+    def show_error(self, err_msg):
+        self.set_downloading_mode(False)
+        QMessageBox.critical(self, "업데이트 오류", f"업데이트 파일 다운로드 중 오류가 발생했습니다:\n{err_msg}")
 
     def show_banner(self):
         if not self.parent():
