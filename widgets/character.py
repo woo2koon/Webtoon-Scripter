@@ -1,6 +1,7 @@
 # widgets/character.py
 import json
 import os
+import sys
 import random
 import tempfile
 import uuid
@@ -289,43 +290,86 @@ class CharacterRow(QFrame):
         layout.setSpacing(10) 
         WIDGET_HEIGHT = 45 
 
-        BASIC_BOX_STYLE = """
-            border: 1px solid #d1d5db; border-radius: 6px; background-color: white; 
-            padding-left: 10px; font-family: 'Pretendard', sans-serif; font-size: 14px; color: #333333;
-        """
+        if sys.platform == "darwin":
+            BASIC_BOX_STYLE = """
+                border: 1px solid #d1d5db; border-radius: 6px; background-color: white; 
+                padding-left: 10px; font-family: 'Pretendard', sans-serif; font-size: 14pt; color: #333333;
+            """
+        else:
+            BASIC_BOX_STYLE = """
+                border: 1px solid #d1d5db; border-radius: 6px; background-color: white; 
+                padding-left: 10px; font-family: 'Pretendard', sans-serif; font-size: 14px; color: #333333;
+            """
         FOCUS_STYLE = "border: 1px solid #ff4b4b;"
         dropdown_arrow_path = os.path.join(config.ASSETS_DIR, "dropdown-arrow.svg").replace("\\", "/")
-        FULL_COMBO_STYLE = f"""
-            QComboBox {{ 
-                combobox-popup: 0;
-                {BASIC_BOX_STYLE} 
-            }}
-            QComboBox:focus {{ {FOCUS_STYLE} }}
-            QComboBox::drop-down {{ 
-                border: none; background-color: #f9fafb; width: 30px; 
-                border-top-right-radius: 5px; border-bottom-right-radius: 5px; 
-            }}
-            QComboBox::down-arrow {{ 
-                image: url("{dropdown_arrow_path}");
-                width: 12px; height: 12px; 
-            }}
-            QComboBox QAbstractItemView {{ 
-                font-family: 'Pretendard'; 
-                background-color: white; 
-                border: 1px solid #9CA3AF; 
-                border-radius: 8px; 
-                selection-background-color: #ffecec; 
-                selection-color: #ff4b4b; 
-                outline: none; 
-                padding: 4px; 
-            }}
-            QComboBox QAbstractItemView::item {{ 
-                min-height: 35px; 
-                padding: 5px; 
-                margin: 2px 0px; 
-                border-radius: 4px;
-            }}
-        """
+        
+        if sys.platform == "darwin":
+            FULL_COMBO_STYLE = f"""
+                QComboBox {{ 
+                    combobox-popup: 0;
+                    {BASIC_BOX_STYLE} 
+                }}
+                QComboBox:focus {{ {FOCUS_STYLE} }}
+                QComboBox::drop-down {{ 
+                    border: none; background-color: #f9fafb; width: 30px; 
+                    border-top-right-radius: 5px; border-bottom-right-radius: 5px; 
+                }}
+                QComboBox::down-arrow {{ 
+                    image: url("{dropdown_arrow_path}");
+                    width: 12px; height: 12px; 
+                }}
+                QComboBox QAbstractItemView {{ 
+                    font-family: 'Pretendard'; 
+                    font-size: 14pt;
+                    background-color: white; 
+                    border: 1px solid #9CA3AF; 
+                    border-radius: 8px; 
+                    selection-background-color: #ffecec; 
+                    selection-color: #ff4b4b; 
+                    outline: none; 
+                    padding: 4px; 
+                }}
+                QComboBox QAbstractItemView::item {{ 
+                    font-family: 'Pretendard'; 
+                    font-size: 14pt;
+                    min-height: 35px; 
+                    padding: 5px; 
+                    margin: 2px 0px; 
+                    border-radius: 4px;
+                }}
+            """
+        else:
+            FULL_COMBO_STYLE = f"""
+                QComboBox {{ 
+                    combobox-popup: 0;
+                    {BASIC_BOX_STYLE} 
+                }}
+                QComboBox:focus {{ {FOCUS_STYLE} }}
+                QComboBox::drop-down {{ 
+                    border: none; background-color: #f9fafb; width: 30px; 
+                    border-top-right-radius: 5px; border-bottom-right-radius: 5px; 
+                }}
+                QComboBox::down-arrow {{ 
+                    image: url("{dropdown_arrow_path}");
+                    width: 12px; height: 12px; 
+                }}
+                QComboBox QAbstractItemView {{ 
+                    font-family: 'Pretendard'; 
+                    background-color: white; 
+                    border: 1px solid #9CA3AF; 
+                    border-radius: 8px; 
+                    selection-background-color: #ffecec; 
+                    selection-color: #ff4b4b; 
+                    outline: none; 
+                    padding: 4px; 
+                }}
+                QComboBox QAbstractItemView::item {{ 
+                    min-height: 35px; 
+                    padding: 5px; 
+                    margin: 2px 0px; 
+                    border-radius: 4px;
+                }}
+            """
 
         self.lbl_drag = DragHandle(self)
         layout.addWidget(self.lbl_drag)
@@ -844,7 +888,62 @@ class FloatingCharacterViewer(QDialog):
         
         self.init_ui()
         self.load_data()
-        
+
+    def hideEvent(self, event):
+        parent = self.parent()
+        if parent and hasattr(parent, 'geometry'):
+            import sys
+            if sys.platform == "darwin":
+                pos = (self.geometry().x() - parent.geometry().x(), self.geometry().y() - parent.geometry().y())
+            else:
+                pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+            size = (self.width(), self.height())
+            parent._character_relative_pos = pos
+            parent._character_size = size
+            config.update_character_viewer_geometry(pos, size)
+        super().hideEvent(event)
+
+    def closeEvent(self, event):
+        parent = self.parent()
+        if parent and hasattr(parent, 'geometry'):
+            import sys
+            if sys.platform == "darwin":
+                pos = (self.geometry().x() - parent.geometry().x(), self.geometry().y() - parent.geometry().y())
+            else:
+                pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+            size = (self.width(), self.height())
+            parent._character_relative_pos = pos
+            parent._character_size = size
+            config.update_character_viewer_geometry(pos, size)
+        super().closeEvent(event)
+
+    def moveEvent(self, event):
+        parent = self.parent()
+        if parent and hasattr(parent, 'geometry') and self.isVisible():
+            import sys
+            if sys.platform == "darwin":
+                pos = (self.geometry().x() - parent.geometry().x(), self.geometry().y() - parent.geometry().y())
+            else:
+                pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+            parent._character_relative_pos = pos
+            size = parent._character_size if parent._character_size else (self.width(), self.height())
+            config.update_character_viewer_geometry(pos, size)
+        super().moveEvent(event)
+
+    def resizeEvent(self, event):
+        parent = self.parent()
+        if parent and hasattr(parent, 'geometry') and self.isVisible():
+            size = (self.width(), self.height())
+            parent._character_size = size
+            import sys
+            if sys.platform == "darwin":
+                pos = (self.geometry().x() - parent.geometry().x(), self.geometry().y() - parent.geometry().y())
+            else:
+                pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+            parent._character_relative_pos = pos
+            config.update_character_viewer_geometry(pos, size)
+        super().resizeEvent(event)
+
     def init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 10, 8, 10)
@@ -1857,6 +1956,7 @@ class GlobalCharacterSettingsDialog(QDialog):
             return
             
         menu = QMenu(self)
+        menu.setFont(QApplication.font())
         menu.setStyleSheet("""
             QMenu {
                 background-color: #FFFFFF;

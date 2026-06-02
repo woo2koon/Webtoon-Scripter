@@ -98,32 +98,63 @@ class SettingsDialog(QDialog):
         self.combo_presets.view().window().setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
         self.combo_presets.view().window().setAttribute(Qt.WA_TranslucentBackground)
 
-        self.combo_presets.setStyleSheet("""
-            QComboBox#PresetCombo {
-                combobox-popup: 0;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                padding-left: 10px;
-                background: white;
-                min-height: 33px;
-                max-height: 33px;
-                height: 33px;
-            }
-            QComboBox QAbstractItemView {
-                border: 1px solid #ddd;
-                border-radius: 8px;
-                background-color: white;
-                outline: 0;
-                padding: 2px;
-            }
-            QComboBox QAbstractItemView::item {
-                font-family: 'Pretendard';
-                min-height: 30px;
-                padding: 5px;
-                margin: 1px;
-                border-radius: 5px;
-            }
-        """)
+        if sys.platform == "darwin":
+            self.combo_presets.setStyleSheet("""
+                QComboBox#PresetCombo {
+                    combobox-popup: 0;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    padding-left: 10px;
+                    background: white;
+                    min-height: 33px;
+                    max-height: 33px;
+                    height: 33px;
+                    font-size: 14pt;
+                }
+                QComboBox QAbstractItemView {
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    background-color: white;
+                    outline: 0;
+                    padding: 2px;
+                    font-size: 14pt;
+                }
+                QComboBox QAbstractItemView::item {
+                    font-family: 'Pretendard';
+                    min-height: 30px;
+                    padding: 5px;
+                    margin: 1px;
+                    border-radius: 5px;
+                    font-size: 14pt;
+                }
+            """)
+        else:
+            self.combo_presets.setStyleSheet("""
+                QComboBox#PresetCombo {
+                    combobox-popup: 0;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    padding-left: 10px;
+                    background: white;
+                    min-height: 33px;
+                    max-height: 33px;
+                    height: 33px;
+                }
+                QComboBox QAbstractItemView {
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    background-color: white;
+                    outline: 0;
+                    padding: 2px;
+                }
+                QComboBox QAbstractItemView::item {
+                    font-family: 'Pretendard';
+                    min-height: 30px;
+                    padding: 5px;
+                    margin: 1px;
+                    border-radius: 5px;
+                }
+            """)
 
         self.combo_presets.addItems(list(self.local_presets.keys()))
         self.combo_presets.setCurrentText(self.local_active)
@@ -848,9 +879,37 @@ class FloatingIdiomViewer(QDialog):
             self.setWindowFlags(Qt.Tool | Qt.WindowCloseButtonHint)
         else:
             self.setWindowFlags(Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
-        self.setMinimumSize(300, 450)
+        self.resize(300, 450)
         self.init_ui()
         self.refresh_list()
+
+    def hideEvent(self, event):
+        parent = self.parent()
+        if parent and hasattr(parent, 'geometry'):
+            import sys
+            if sys.platform == "darwin":
+                pos = (self.geometry().x() - parent.geometry().x(), self.geometry().y() - parent.geometry().y())
+            else:
+                pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+            size = (self.width(), self.height())
+            parent._idiom_relative_pos = pos
+            parent._idiom_size = size
+            config.update_idiom_viewer_geometry(pos, size)
+        super().hideEvent(event)
+
+    def closeEvent(self, event):
+        parent = self.parent()
+        if parent and hasattr(parent, 'geometry'):
+            import sys
+            if sys.platform == "darwin":
+                pos = (self.geometry().x() - parent.geometry().x(), self.geometry().y() - parent.geometry().y())
+            else:
+                pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+            size = (self.width(), self.height())
+            parent._idiom_relative_pos = pos
+            parent._idiom_size = size
+            config.update_idiom_viewer_geometry(pos, size)
+        super().closeEvent(event)
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -1104,6 +1163,33 @@ class SpellCheckDialog(QDialog):
         btn_layout.addWidget(btn_apply)
         layout.addLayout(btn_layout)
 
+    def get_granular_segments(self, org, new, tag_type):
+        if tag_type == 'equal':
+            return [('equal', org, new)]
+        if not org:
+            return [('insert', '', new)]
+        if not new:
+            return [('delete', org, '')]
+        
+        res = []
+        org_words = re.findall(r'\s+|\S+', org)
+        new_words = re.findall(r'\s+|\S+', new)
+        
+        max_len = max(len(org_words), len(new_words))
+        for i in range(max_len):
+            o_w = org_words[i] if i < len(org_words) else ""
+            n_w = new_words[i] if i < len(new_words) else ""
+            
+            if o_w == n_w:
+                res.append(('equal', o_w, n_w))
+            elif not o_w:
+                res.append(('insert', '', n_w))
+            elif not n_w:
+                res.append(('delete', o_w, ''))
+            else:
+                res.append(('replace', o_w, n_w))
+        return res
+
     def show_diff(self, text1, text2):
         start_time = time.time()
         print(f"DEBUG: [SpellCheck] 결과 렌더링 시작 (원본 길이: {len(text1)}, 교정본 길이: {len(text2)})")
@@ -1125,33 +1211,6 @@ class SpellCheckDialog(QDialog):
         
         current_idx = 0
         self._is_syncing = True
-        
-        def get_granular_segments(org, new, tag_type):
-            if tag_type == 'equal':
-                return [('equal', org, new)]
-            if not org:
-                return [('insert', '', new)]
-            if not new:
-                return [('delete', org, '')]
-            
-            res = []
-            org_words = re.findall(r'\s+|\S+', org)
-            new_words = re.findall(r'\s+|\S+', new)
-            
-            max_len = max(len(org_words), len(new_words))
-            for i in range(max_len):
-                o_w = org_words[i] if i < len(org_words) else ""
-                n_w = new_words[i] if i < len(new_words) else ""
-                
-                if o_w == n_w:
-                    res.append(('equal', o_w, n_w))
-                elif not o_w:
-                    res.append(('insert', '', n_w))
-                elif not n_w:
-                    res.append(('delete', o_w, ''))
-                else:
-                    res.append(('replace', o_w, n_w))
-            return res
 
         cursor_org.beginEditBlock()
         cursor_new.beginEditBlock()
@@ -1159,7 +1218,7 @@ class SpellCheckDialog(QDialog):
         for idx, (tag, i1, i2, j1, j2) in enumerate(opcodes):
             org_full = text1[i1:i2]
             new_full = text2[j1:j2]
-            segments = get_granular_segments(org_full, new_full, tag)
+            segments = self.get_granular_segments(org_full, new_full, tag)
 
             for s_tag, s_org, s_new in segments:
                 if s_tag == 'equal':
@@ -1201,7 +1260,6 @@ class SpellCheckDialog(QDialog):
                     else:
                         fmt_new.setBackground(QColor("#FFCDD2"))
                         fmt_new.setForeground(QColor("#B71C1C"))
-                        fmt_new.setFontStrikeOut(True)
                         cursor_new.insertText(s_org.replace(' ', '✓'), fmt_new)
                     
                 elif s_tag == 'insert':
@@ -1299,11 +1357,20 @@ class SpellCheckDialog(QDialog):
             block = block.next()
 
         if start_pos != -1 and end_pos != -1 and start_pos < end_pos:
+            org_text = item["org"]
+            
+            # 원본 텍스트가 순수 공백/줄바꿈이 아닌 실제 글자를 포함하는 경우,
+            # 앞뒤 줄바꿈(\n)을 제거합니다.
+            # - trailing \n: 문서에 이미 존재하는 블록 구분자와 중복 삽입되는 것을 방지
+            # - leading \n:  위 블록의 \n과 org_text 앞의 \n이 겹쳐 빈 줄이 생기는 것을 방지
+            if org_text.strip() != "":
+                org_text = org_text.strip('\n')
+            
             revert_cursor = self.edit_new.textCursor()
             revert_cursor.setPosition(start_pos)
             revert_cursor.setPosition(end_pos, QTextCursor.KeepAnchor)
             revert_cursor.beginEditBlock()
-            revert_cursor.insertText(item["org"], QTextCharFormat())
+            revert_cursor.insertText(org_text, QTextCharFormat())
             revert_cursor.endEditBlock()
 
         self.undo_btn.hide()
@@ -1338,8 +1405,6 @@ class SpellCheckDialog(QDialog):
         text = text.replace("⁀", "")
         
         self.result_text = text
-        self.accept()
-
         self.accept()
 
 # =================================================================
@@ -1774,13 +1839,27 @@ class EpisodeItemWidget(QWidget):
         container_layout.setContentsMargins(15, 0, 15, 0)
         container_layout.setSpacing(10)
 
+        # 폰트 깨짐 방지 안티앨리어싱 전략 주입
+        item_font = QFont("Pretendard", 15)
+        item_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        item_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        if platform.system() == "Windows":
+            item_font.setWeight(QFont.Weight.Medium)
+
         self.lbl_name = QLabel(name)
-        self.lbl_name.setFont(QFont("Pretendard", 15))
+        self.lbl_name.setFont(item_font)
         self.lbl_name.setStyleSheet("font-weight: 600; font-size: 15px; color: #374151; background: transparent;")
         
         self.lbl_status = QLabel(status)
         self.lbl_status.setFixedSize(80, 26)
         self.lbl_status.setAlignment(Qt.AlignCenter)
+        
+        status_font = QFont("Pretendard", 11)
+        status_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        status_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        if platform.system() == "Windows":
+            status_font.setWeight(QFont.Weight.Bold)
+        self.lbl_status.setFont(status_font)
         self.lbl_status.setStyleSheet(self.get_status_style(status))
 
         container_layout.addWidget(self.lbl_name)
@@ -2008,7 +2087,13 @@ class ProjectManagementDialog(QDialog):
         left_layout.addWidget(self.search_bar)
         
         self.list_titles = QListWidget()
-        self.list_titles.setFont(QFont("Pretendard", 10))
+        
+        list_font = QFont("Pretendard", 13) # 기존 10에서 가독성을 높이기 위해 상향 조정
+        list_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        list_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        if platform.system() == "Windows":
+            list_font.setWeight(QFont.Weight.Medium)
+        self.list_titles.setFont(list_font)
         self.list_titles.setStyleSheet("""
             QListWidget {
                 background-color: white;
@@ -2089,6 +2174,7 @@ class ProjectManagementDialog(QDialog):
         empty_box.addStretch()
         
         self.list_episodes = QListWidget()
+        self.list_episodes.setFont(list_font)
         self.list_episodes.setSelectionMode(QListWidget.ExtendedSelection)
         self.list_episodes.setSpacing(5)
         self.list_episodes.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -2254,6 +2340,7 @@ class ProjectManagementDialog(QDialog):
         project_name = item.text()
         
         menu = QMenu(self)
+        menu.setFont(QApplication.font())
         menu.setStyleSheet("""
             QMenu { background-color: white; border: 1px solid #D1D5DB; padding: 3px; }
             QMenu::item { padding: 8px 10px 8px 25px; border-radius: 4px; color: #374151; font-size: 14px; margin: 2px 5px; }
@@ -2293,6 +2380,7 @@ class ProjectManagementDialog(QDialog):
         epi_names = [item.data(Qt.UserRole) for item in selected_items]
         
         menu = QMenu(self)
+        menu.setFont(QApplication.font())
         menu.setStyleSheet("""
             QMenu { background-color: white; border: 1px solid #D1D5DB; padding: 3px; }
             QMenu::item { padding: 8px 10px 8px 25px; border-radius: 4px; color: #374151; font-size: 14px; margin: 2px 5px; }
@@ -2793,9 +2881,9 @@ class UpdateNotificationBanner(QFrame):
         
         # 그림자 효과 적용 (Premium UI)
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(0, 0, 0, 30))
-        shadow.setOffset(0, 4)
+        shadow.setBlurRadius(24)
+        shadow.setColor(QColor(0, 0, 0, 15))
+        shadow.setOffset(0, 3)
         self.setGraphicsEffect(shadow)
         
         # 메인 레이아웃 (수직)
@@ -3340,4 +3428,47 @@ class AboutDialog(QDialog):
         if event.buttons() == Qt.LeftButton:
             self.move(event.globalPosition().toPoint() - self.drag_position)
             event.accept()
+
+
+class TextCleanDialog(SpellCheckDialog):
+    def __init__(self, original, cleaned, parent=None, initial_vscroll=0):
+        super().__init__(original, cleaned, parent, initial_vscroll)
+        self.setWindowTitle("텍스트 정리 결과 비교")
+        self.resize(600, 700)
+        
+        # 왼쪽 교정 전 텍스트 창 숨김 (오른쪽 단일 창으로 넓게 시각화)
+        self.edit_org.hide()
+        
+        # 안내 문구 및 적용 버튼 텍스트/스타일을 텍스트 정리에 어울리게 치환
+        for label in self.findChildren(QLabel):
+            if "수정된 부분" in label.text():
+                label.setText("💡 정리(삭제/교정)된 단어에 마우스 커서를 두면 떠오르는 '원래대로' 버튼을 클릭하여 개별 복구할 수 있습니다.")
+                label.setStyleSheet("color: #4F46E5; margin-bottom: 10px; font-weight: bold; font-family: 'Pretendard';")
+                
+        for btn in self.findChildren(QPushButton):
+            if btn.text() == "교정 내용 적용":
+                btn.setText("정리 내용 적용")
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #4F46E5;
+                        color: white;
+                        font-weight: bold;
+                        border-radius: 4px;
+                    }
+                    QPushButton:hover {
+                        background-color: #4338CA;
+                    }
+                """)
+
+    def apply_changes(self):
+        """텍스트 정리 전용: 부모의 apply_changes 결과에서 연속 빈 줄을 제거합니다."""
+        super().apply_changes()
+        if self.result_text is not None:
+            import re as _re
+            # 2개 이상 연속 줄바꿈(= 빈 줄 1개 이상)을 줄바꿈 하나로 압축
+            # 삭제된 블록이 있던 자리에 남는 빈 줄을 자동으로 붙여줍니다.
+            self.result_text = _re.sub(r'\n{2,}', '\n', self.result_text)
+            # 텍스트 앞뒤 공백 제거
+            self.result_text = self.result_text.strip()
+
 

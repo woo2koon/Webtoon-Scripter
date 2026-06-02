@@ -112,6 +112,12 @@ IDIOMS = []
 # [저장 경로 설정] 마지막으로 저장한 디렉토리 경로 기억
 LAST_SAVE_DIR = ""
 
+# [도우미 창 상대 위치 및 크기 기억]
+IDIOM_VIEWER_POS = None
+IDIOM_VIEWER_SIZE = None
+CHARACTER_VIEWER_POS = None
+CHARACTER_VIEWER_SIZE = None
+
 MODERN_STYLE = f"""
     QWidget {{
         font-family: {FONT_FAMILY};
@@ -121,7 +127,7 @@ MODERN_STYLE = f"""
 """
 
 def load_settings():
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE
     IS_SIMPLE_MODE = False
     
     # 1. 일단 하드코딩된 키로 초기화
@@ -169,6 +175,10 @@ def load_settings():
                     AVATAR_SIZE_ALL = data.get("avatar_size_all", 45)
                     AVATAR_SIZE_CURRENT = data.get("avatar_size_current", 45)
                     TEXT_ZOOM_STEP = data.get("text_zoom_step", 0)
+                    IDIOM_VIEWER_POS = data.get("idiom_viewer_pos", None)
+                    IDIOM_VIEWER_SIZE = data.get("idiom_viewer_size", None)
+                    CHARACTER_VIEWER_POS = data.get("character_viewer_pos", None)
+                    CHARACTER_VIEWER_SIZE = data.get("character_viewer_size", None)
                 
                 else:
                     # 구형 데이터 구조일 경우 처리
@@ -207,7 +217,7 @@ def load_settings():
         AI_API_KEY = OCR_API_KEY
 
 def save_settings(presets=None, active_name=None, is_simple_mode=None):
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE
     
     if presets is not None:
         API_PRESETS = presets
@@ -231,7 +241,11 @@ def save_settings(presets=None, active_name=None, is_simple_mode=None):
         "last_save_dir": LAST_SAVE_DIR,
         "avatar_size_all": AVATAR_SIZE_ALL,
         "avatar_size_current": AVATAR_SIZE_CURRENT,
-        "text_zoom_step": TEXT_ZOOM_STEP
+        "text_zoom_step": TEXT_ZOOM_STEP,
+        "idiom_viewer_pos": IDIOM_VIEWER_POS,
+        "idiom_viewer_size": IDIOM_VIEWER_SIZE,
+        "character_viewer_pos": CHARACTER_VIEWER_POS,
+        "character_viewer_size": CHARACTER_VIEWER_SIZE
     }
     try:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
@@ -255,6 +269,18 @@ def update_last_save_dir(path):
         LAST_SAVE_DIR = path
     else:
         LAST_SAVE_DIR = os.path.dirname(path)
+    save_settings()
+
+def update_idiom_viewer_geometry(pos, size):
+    global IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE
+    IDIOM_VIEWER_POS = pos
+    IDIOM_VIEWER_SIZE = size
+    save_settings()
+
+def update_character_viewer_geometry(pos, size):
+    global CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE
+    CHARACTER_VIEWER_POS = pos
+    CHARACTER_VIEWER_SIZE = size
     save_settings()
 
 def get_global_characters_path(project_name):
@@ -300,18 +326,23 @@ EXCEL_TEMPLATE_BASE64 = ""
 MODERN_STYLE = """
 QWidget { font-family: 'Pretendard', 'Malgun Gothic', 'AppleGothic', sans-serif; font-size: 14px; color: #333333; }
 QMainWindow, QDialog { background-color: #ffffff; }
-QMenuBar { background-color: white; border-bottom: 1px solid #e5e7eb; }
-QMenuBar::item { padding: 8px 12px; background: transparent; color: #333; }
+QMenuBar { font-family: 'Pretendard'; background-color: white; border-bottom: 1px solid #e5e7eb; }
+QMenuBar::item { font-family: 'Pretendard'; padding: 8px 12px; background: transparent; color: #333; }
 QMenuBar::item:selected { background-color: #f3f4f6; color: #000; }
 QMenu { 
+    font-family: 'Pretendard';
+    font-size: 14px;
+    font-weight: 500;
     background-color: white; 
     border: 1px solid #d1d5db; 
-    border-radius: 0px; /* 메뉴창 모서리도 살짝 둥글게 하면 예쁩니다 */
+    border-radius: 0px; 
     padding: 3px; 
 }
 
 QMenu::item { 
-    /* 상, 우, 하, 좌 순서입니다. 좌측(40px)을 넉넉하게 주면 아이콘이 안으로 들어옵니다. */
+    font-family: 'Pretendard';
+    font-size: 14px;
+    font-weight: 500;
     padding: 8px 10px 8px 22px; 
     border-radius: 4px;
     margin: 2px 5px;
@@ -336,8 +367,19 @@ QMenu::separator {
 QWidget#Sidebar { background-color: #f8f9fa; border-right: 1px solid #e0e0e0; }
 QLabel#SidebarTitle { font-size: 16px; font-weight: bold; color: #1f2937; margin: 10px 0; }
 QLabel#LabelBold { font-weight: 500; font-size: 15px; }
-QLineEdit, QComboBox { 
+QLineEdit { 
     font-family: 'Pretendard'; 
+    font-size: 15px;
+    border: 1px solid #d1d5db; 
+    border-radius: 6px; 
+    background-color: #ffffff; 
+    min-height: 38px; 
+    padding-left: 12px; 
+    color: #333; 
+}
+QComboBox { 
+    font-family: 'Pretendard'; 
+    font-size: 15px;
     border: 1px solid #d1d5db; 
     border-radius: 6px; 
     background-color: #ffffff; 
@@ -360,11 +402,14 @@ QComboBox::down-arrow {
     width: 12px; 
     height: 12px; 
 }
-QComboBox QAbstractItemView { font-family: 'Pretendard'; border: 1px solid #9CA3AF; border-radius: 8px; background-color: white; selection-background-color: #ffd7d7; selection-color: #ff4b4b; outline: none; padding: 2px; }
-QComboBox QAbstractItemView::item { font-family: 'Pretendard'; min-height: 30px; padding: 5px; margin: 1px; border-radius: 5px; }
+QComboBox QAbstractItemView { font-family: 'Pretendard'; font-size: 15px; border: 1px solid #9CA3AF; border-radius: 8px; background-color: white; selection-background-color: #ffd7d7; selection-color: #ff4b4b; outline: none; padding: 2px; }
+QComboBox QAbstractItemView::item { font-family: 'Pretendard'; font-size: 15px; min-height: 30px; padding: 5px; margin: 1px; border-radius: 5px; }
 QComboBox QAbstractItemView::item:hover { background-color: #fff5f5; }
-QTableWidget { border: 1px solid #d1d5db; gridline-color: #d0d0d0; font-family: 'Pretendard', 'AppleGothic'; font-size: 10pt; selection-background-color: transparent; selection-color: black; }
-QTableWidget::item:selected, QTableWidget::item:focus { border: 2px solid #ff4b4b; background-color: transparent; color: black; }
+QTableWidget { border: 1px solid #d1d5db; gridline-color: #d0d0d0; font-family: 'Pretendard', 'AppleGothic'; font-size: 10pt; selection-background-color: #e8f0fe; selection-color: black; }
+QTableWidget::item { border-radius: 0px; }
+QTableWidget::item:selected { border: 2px solid #ff4b4b; background-color: #e8f0fe; color: black; border-radius: 0px; }
+QTableWidget::item:selected:focus { border: 2px solid #ff4b4b; background-color: #e8f0fe; color: black; border-radius: 0px; }
+QTableWidget::item:focus { border: 2px solid #ff4b4b; border-radius: 0px; }
 QHeaderView::section { background-color: #f0f0f0; border: none; border-right: 1px solid #d0d0d0; border-bottom: 1px solid #d0d0d0; padding: 4px; font-weight: normal; color: #333; font-family: 'Pretendard'; font-size: 10pt; }
 QPushButton { background-color: #ffffff; border: 1px solid #d1d5db; border-radius: 4px; padding: 6px 16px; font-weight: bold; color: #444; font-size: 15px; }
 QPushButton:hover { border-color: #ff4b4b; color: #ff4b4b; }
@@ -397,15 +442,34 @@ QTextEdit { color: #333333; line-height: 160%; background-color: white; border: 
 dropdown_arrow_path = os.path.join(ASSETS_DIR, "dropdown-arrow.svg").replace("\\", "/")
 MODERN_STYLE = MODERN_STYLE.replace("url(assets/dropdown-arrow.svg)", f"url('{dropdown_arrow_path}')")
 
+if sys.platform == "darwin":
+    MODERN_STYLE += """
+    QComboBox {
+        font-size: 14px;
+    }
+    QComboBox QAbstractItemView {
+        font-size: 14px;
+    }
+    QComboBox QAbstractItemView::item {
+        font-size: 14px;
+    }
+    """
+
 
 MODERN_MENU_STYLE = """
 QMenu { 
+    font-family: 'Pretendard';
+    font-size: 14px;
+    font-weight: 500;
     background-color: white; 
     border: 1px solid #d1d5db; 
     border-radius: 0px; 
     padding: 3px; 
 }
 QMenu::item { 
+    font-family: 'Pretendard';
+    font-size: 14px;
+    font-weight: 500;
     padding: 8px 10px 8px 22px; 
     border-radius: 4px;
     margin: 2px 5px;

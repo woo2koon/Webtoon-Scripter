@@ -17,7 +17,7 @@ from widgets import ProjectManagementDialog, HoverIconButton
 
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QPushButton, QComboBox, 
-                               QLineEdit, QTextEdit, QTabWidget, QSplitter, 
+                               QLineEdit, QTextEdit, QPlainTextEdit, QTabWidget, QSplitter, 
                                QTableWidget, QTableWidgetItem, QHeaderView, 
                                QFileDialog, QMessageBox, QProgressBar, QFrame, 
                                QMenu, QListWidgetItem, QListWidget, QListView, 
@@ -34,7 +34,7 @@ import threading
 import requests
 
 from config import BASE_DIR, ASSETS_DIR, CACHE_DIR, PROJECTS_DIR, TEMPLATE_PATH, MODERN_STYLE
-from utils import restore_template, natural_sort_key
+from utils import restore_template, natural_sort_key, clean_ocr_text
 from widgets import ResponsiveLabel, ClickableComboBox, WebtoonScrollArea, PopupItemDelegate, CharacterRow, SpreadsheetTable, ExcelTextDelegate, CharacterListContainer, FloatingCharacterViewer, GlobalCharacterSettingsDialog
 from ocr_worker import OCRWorker
 
@@ -100,74 +100,41 @@ class GlobalContextMenuFilter(QObject):
                         return True
 
             # 2. 텍스트 입력 위젯(QLineEdit, QTextEdit, QPlainTextEdit, SmartTextEdit 등)에서 우클릭이 발생했을 때
-            elif event.type() == QEvent.ContextMenu and obj.metaObject().className() in ["QLineEdit", "QTextEdit", "QPlainTextEdit", "SmartTextEdit", "SheetCellLineEdit"]:
-                # 위젯 자체의 표준 컨텍스트 메뉴 생성
-                menu = obj.createStandardContextMenu()
+            elif event.type() == QEvent.ContextMenu and isinstance(obj, (QLineEdit, QTextEdit, QPlainTextEdit)):
+                menu = QMenu(obj)
+                menu.setFont(QApplication.font())
+                menu.setStyleSheet(config.MODERN_MENU_STYLE)
                 
-                # 영문/한글 메뉴 항목들을 친근한 한국어로 동적 맵핑 및 단축키 조정
-                undo_action = None
-                redo_action_found = False
+                import sys
+                is_mac = sys.platform == "darwin"
+                undo_shortcut = "⌘Z" if is_mac else "Ctrl+Z"
+                redo_shortcut = "⇧⌘Z" if is_mac else "Ctrl+Shift+Z"
+                split_shortcut = "Shift+Enter"
+                cut_shortcut = "⌘X" if is_mac else "Ctrl+X"
+                copy_shortcut = "⌘C" if is_mac else "Ctrl+C"
+                paste_shortcut = "⌘V" if is_mac else "Ctrl+V"
+                select_all_shortcut = "⌘A" if is_mac else "Ctrl+A"
                 
-                actions = menu.actions()
-                for action in actions:
-                    text = action.text()
-                    clean_text = text.replace("&", "")
-                    clean_text_lower = clean_text.lower()
-                    
-                    # Undo 매칭
-                    if "undo" in clean_text_lower or "되돌리기" in clean_text_lower or "실행 취소" in clean_text_lower or "실행취소" in clean_text_lower:
-                        action.setText("되돌리기 (&U)")
-                        action.setShortcut(QKeySequence("Ctrl+Z"))
-                        undo_action = action
-                    # Redo 매칭
-                    elif "redo" in clean_text_lower or "다시 실행" in clean_text_lower or "다시실행" in clean_text_lower:
-                        redo_action = QAction("다시 실행 (&R)", obj)
-                        redo_action.setIcon(action.icon())
-                        redo_action.setShortcut(QKeySequence("Ctrl+Shift+Z"))
-                        redo_action.setEnabled(action.isEnabled())
-                        redo_action.triggered.connect(obj.redo)
-                        
-                        menu.insertAction(action, redo_action)
-                        menu.removeAction(action)
-                        redo_action_found = True
-                    elif "cut" in clean_text_lower or "잘라내기" in clean_text_lower:
-                        action.setText("잘라내기 (&T)")
-                        action.setShortcut(QKeySequence("Ctrl+X"))
-                    elif "copy" in clean_text_lower or "복사" in clean_text_lower:
-                        action.setText("복사 (&C)")
-                        action.setShortcut(QKeySequence("Ctrl+C"))
-                    elif "paste" in clean_text_lower or "붙여넣기" in clean_text_lower:
-                        action.setText("붙여넣기 (&P)")
-                        action.setShortcut(QKeySequence("Ctrl+V"))
-                    elif "delete" in clean_text_lower or "삭제" in clean_text_lower:
-                        action.setText("삭제 (&D)")
-                    elif "select all" in clean_text_lower or "모두 선택" in clean_text_lower or "모두선택" in clean_text_lower:
-                        action.setText("모두 선택 (&A)")
-                        action.setShortcut(QKeySequence("Ctrl+A"))
+                # 실행취소 / 다시실행 감지
+                can_undo = obj.isUndoAvailable() if hasattr(obj, 'isUndoAvailable') else True
+                can_redo = obj.isRedoAvailable() if hasattr(obj, 'isRedoAvailable') else True
                 
-                # QLineEdit 등에서 Redo 액션이 기본 메뉴에 없을 경우 추가
-                if not redo_action_found and undo_action and hasattr(obj, 'redo'):
-                    redo_action = QAction("다시 실행 (&R)", obj)
-                    redo_action.setShortcut(QKeySequence("Ctrl+Shift+Z"))
-                    is_enabled = obj.isRedoAvailable() if hasattr(obj, 'isRedoAvailable') else True
-                    redo_action.setEnabled(is_enabled)
-                    redo_action.triggered.connect(obj.redo)
-                    
-                    current_acts = menu.actions()
-                    try:
-                        undo_idx = current_acts.index(undo_action)
-                        if undo_idx + 1 < len(current_acts):
-                            menu.insertAction(current_acts[undo_idx + 1], redo_action)
-                        else:
-                            menu.addAction(redo_action)
-                    except ValueError:
-                        menu.addAction(redo_action)
+                undo_action = QAction(get_icon(config.ICON_UNDO), f"되돌리기 ({undo_shortcut}) (&U)", obj)
+                undo_action.setEnabled(can_undo)
+                undo_action.triggered.connect(obj.undo)
+                menu.addAction(undo_action)
                 
-                # 3. 만약 대본 시트의 에디터라면 '내용분리 (셀 나누기)' 추가
+                redo_action = QAction(get_icon(config.ICON_REDO), f"다시 실행 ({redo_shortcut}) (&R)", obj)
+                redo_action.setEnabled(can_redo)
+                redo_action.triggered.connect(obj.redo)
+                menu.addAction(redo_action)
+                
+                menu.addSeparator()
+                
+                # 셀 나누기 (대본 시트 에디터인 경우에만 추가)
                 if obj.property("is_sheet_editor") == True:
                     from utils import get_colored_icon
-                    split_action = QAction(get_colored_icon(config.ICON_SPLIT, "#333333"), "내용분리 (셀 나누기) (&S)", menu)
-                    split_action.setShortcut(QKeySequence("Shift+Enter"))
+                    split_action = QAction(get_colored_icon(config.ICON_SPLIT, "#333333"), f"셀 나누기 ({split_shortcut}) (&S)", menu)
                     
                     def trigger_split():
                         cursor_pos = obj.cursorPosition()
@@ -185,30 +152,57 @@ class GlobalContextMenuFilter(QObject):
                         row = obj.property("cell_row")
                         main_win = obj.window()
                         if main_win and hasattr(main_win, 'split_script_row'):
-                            # 에디터가 완전히 닫히고 정리된 후 실행되도록 지연 호출
                             QTimer.singleShot(50, lambda: main_win.split_script_row(row, left_text, right_text))
                             
                     split_action.triggered.connect(trigger_split)
+                    menu.addAction(split_action)
+                    menu.addSeparator()
+                
+                # 선택 텍스트 여부 감지
+                has_selection = False
+                if hasattr(obj, 'hasSelectedText'):
+                    has_selection = obj.hasSelectedText()
+                elif hasattr(obj, 'textCursor'):
+                    has_selection = obj.textCursor().hasSelection()
                     
-                    # '다시 실행' 액션을 찾아서 바로 다음(보통 구분선 앞)에 삽입합니다.
-                    redo_act = None
-                    current_actions = menu.actions()
-                    for act in current_actions:
-                        if "다시 실행" in act.text():
-                            redo_act = act
-                            break
-                            
-                    if redo_act:
-                        idx = current_actions.index(redo_act)
-                        if idx + 1 < len(current_actions):
-                            menu.insertSeparator(current_actions[idx + 1])
-                            menu.insertAction(current_actions[idx + 1], split_action)
-                        else:
-                            menu.addSeparator()
-                            menu.addAction(split_action)
-                    else:
-                        menu.addSeparator()
-                        menu.addAction(split_action)
+                is_readonly = obj.isReadOnly() if hasattr(obj, 'isReadOnly') else False
+                
+                # 편집 동작
+                cut_action = QAction(f"잘라내기 ({cut_shortcut}) (&T)", obj)
+                cut_action.setEnabled(not is_readonly and has_selection)
+                cut_action.triggered.connect(obj.cut)
+                menu.addAction(cut_action)
+                
+                copy_action = QAction(f"복사 ({copy_shortcut}) (&C)", obj)
+                copy_action.setEnabled(has_selection)
+                copy_action.triggered.connect(obj.copy)
+                menu.addAction(copy_action)
+                
+                paste_action = QAction(f"붙여넣기 ({paste_shortcut}) (&P)", obj)
+                paste_action.setEnabled(not is_readonly and bool(QApplication.clipboard().text()))
+                paste_action.triggered.connect(obj.paste)
+                menu.addAction(paste_action)
+                
+                delete_action = QAction(get_icon(config.ICON_DELETE), "삭제 (&D)", obj)
+                delete_action.setEnabled(not is_readonly and has_selection)
+                if hasattr(obj, 'textCursor'):
+                    delete_action.triggered.connect(lambda: obj.textCursor().removeSelectedText())
+                else:
+                    def delete_selection():
+                        if hasattr(obj, 'hasSelectedText') and obj.hasSelectedText():
+                            start = obj.selectionStart()
+                            length = len(obj.selectedText())
+                            obj.setSelection(start, length)
+                            obj.insert("")
+                    delete_action.triggered.connect(delete_selection)
+                menu.addAction(delete_action)
+                
+                menu.addSeparator()
+                
+                # 모두 선택
+                select_all_action = QAction(f"모두 선택 ({select_all_shortcut}) (&A)", obj)
+                select_all_action.triggered.connect(obj.selectAll)
+                menu.addAction(select_all_action)
                 
                 menu.exec(event.globalPos())
                 return True
@@ -332,6 +326,10 @@ class WebtoonManager(QMainWindow):
         
         self.idiom_viewer = None
         self.character_viewer = None
+        self._idiom_relative_pos = config.IDIOM_VIEWER_POS
+        self._idiom_size = config.IDIOM_VIEWER_SIZE
+        self._character_relative_pos = config.CHARACTER_VIEWER_POS
+        self._character_size = config.CHARACTER_VIEWER_SIZE
         self.last_active_editor = None # [추가] 관용구 스마트 삽입용 활성 에디터 기록 변수
         # About 다이얼로그 강한 참조 (GC 방지: 빌드 앱에서 로컬 변수는 즉시 해제될 수 있음)
         self.about_dialog = None
@@ -774,6 +772,13 @@ class WebtoonManager(QMainWindow):
         self.combo_project = ClickableComboBox()
         self.combo_project.setView(QListView()) 
         self.combo_project.setItemDelegate(PopupItemDelegate())
+        if sys.platform == "darwin":
+            font_pretendard = QFont("Pretendard")
+            font_pretendard.setPixelSize(14)
+        else:
+            font_pretendard = QFont("Pretendard", 11)
+        font_pretendard.setStyleStrategy(QFont.PreferAntialias)
+        self.combo_project.setFont(font_pretendard)
         self.combo_project.currentTextChanged.connect(self.on_project_change)
         self.combo_project.set_refresh_callback(self.get_project_list)
         body_layout.addWidget(self.combo_project)
@@ -818,6 +823,13 @@ class WebtoonManager(QMainWindow):
         self.combo_episode = ClickableComboBox()
         self.combo_episode.setView(QListView())
         self.combo_episode.setItemDelegate(PopupItemDelegate())
+        if sys.platform == "darwin":
+            font_pretendard = QFont("Pretendard")
+            font_pretendard.setPixelSize(14)
+        else:
+            font_pretendard = QFont("Pretendard", 11)
+        font_pretendard.setStyleStrategy(QFont.PreferAntialias)
+        self.combo_episode.setFont(font_pretendard)
         self.combo_episode.currentTextChanged.connect(self.on_episode_change)
         self.combo_episode.set_refresh_callback(self.get_episode_list)
         body_layout.addWidget(self.combo_episode)
@@ -890,6 +902,7 @@ class WebtoonManager(QMainWindow):
         """)
 
         self.analysis_menu = QMenu(self)
+        self.analysis_menu.setFont(QApplication.font())
         self.analysis_menu.setWindowFlags(self.analysis_menu.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
         self.analysis_menu.setAttribute(Qt.WA_TranslucentBackground)
         self.analysis_menu.setStyleSheet("QMenu { background-color: white; border: 1px solid #111827; border-radius: 12px; padding: 5px; }")
@@ -1294,12 +1307,35 @@ class WebtoonManager(QMainWindow):
         tab1_layout.setSpacing(10) # 각 요소 사이 간격
         
         # ---------------------------------------------------------
-        # 1. 상단 툴바 (오른쪽 정렬로 변경)
+        # 1. 상단 툴바 (오른쪽 정렬로 변경, 단 텍스트 정리는 좌측 배치)
         # ---------------------------------------------------------
         top_toolbar = QHBoxLayout()
         top_toolbar.setContentsMargins(0, 0, 0, 0)
         
-        # ★ [핵심] 빈 공간(스프링)을 맨 앞에 둡니다. -> 모든 요소를 오른쪽으로 밀어버림
+        # 텍스트 정리 버튼 (왼쪽 상단 배치, 에디터 곡률 정렬 대응을 위해 5px 밀어줌)
+        top_toolbar.addSpacing(5)
+        btn_clean_text = QPushButton(" 텍스트 정리")
+        btn_clean_text.setFixedSize(110, 32)
+        btn_clean_text.setCursor(Qt.PointingHandCursor)
+        btn_clean_text.setIcon(get_colored_icon(config.ICON_CHECK, "#1F2937"))
+        btn_clean_text.setIconSize(QSize(14, 14))
+        btn_clean_text.setStyleSheet("""
+            QPushButton { 
+                border: 1px solid #D1D5DB; 
+                background-color: #ECFDF5; 
+                border-radius: 4px; 
+                color: #1F2937; 
+                font-size: 13px; 
+                font-weight: 600;
+            } 
+            QPushButton:hover { background-color: #D1FAE5; border-color: #A7F3D0; } 
+            QPushButton:pressed { background-color: #A7F3D0; }
+        """)
+        btn_clean_text.clicked.connect(self.clean_editor_text)
+        btn_clean_text.setToolTip("OCR 분석 결과에서 의미 없는 자모음 파편, 기호,\n외자 영문 등의 텍스트 노이즈를 정제합니다.")
+        top_toolbar.addWidget(btn_clean_text)
+        
+        # ★ [핵심] 빈 공간(스프링)을 둡니다. -> 모든 요소를 오른쪽으로 밀어버림
         top_toolbar.addStretch() 
         
         # [줌 컨트롤 그룹]
@@ -1361,17 +1397,19 @@ class WebtoonManager(QMainWindow):
 
         # [관용구 보기 버튼] 추가
         btn_view_idioms = QPushButton(" 관용구 보기")
-        btn_view_idioms.setFixedSize(115, 32)
+        btn_view_idioms.setFixedHeight(32)
         btn_view_idioms.setCursor(Qt.PointingHandCursor)
-        btn_view_idioms.setIcon(get_icon(config.ICON_IDIOM)) 
+        btn_view_idioms.setIcon(get_colored_icon(config.ICON_IDIOM, "#7F1D1D")) 
+        btn_view_idioms.setIconSize(QSize(16, 16))
         btn_view_idioms.setStyleSheet("""
             QPushButton { 
                 border: 1px solid #D1D5DB; 
                 background-color: #FDF2F2; 
                 border-radius: 4px; 
-                color: #EF4444; 
+                color: #7F1D1D; 
                 font-size: 13px; 
-                font-weight: 500;
+                font-weight: 600;
+                padding: 0 12px;
             } 
             QPushButton:hover { background-color: #FEE2E2; border-color: #FCA5A5; } 
             QPushButton:pressed { background-color: #FECACA; }
@@ -1522,7 +1560,7 @@ class WebtoonManager(QMainWindow):
                 border-radius: 4px; 
                 color: #2563EB; 
                 font-size: 13px; 
-                font-weight: 500;
+                font-weight: 600;
                 padding: 0 12px;
             } 
             QPushButton:hover { 
@@ -1553,7 +1591,7 @@ class WebtoonManager(QMainWindow):
                 border-radius: 4px; 
                 color: #374151; 
                 font-size: 13px; 
-                font-weight: 500;
+                font-weight: 600;
                 padding: 0 12px;
             } 
             QPushButton:hover { 
@@ -1687,7 +1725,7 @@ class WebtoonManager(QMainWindow):
                 border-radius: 4px; 
                 padding: 0 15px; 
                 font-size: 13px; 
-                font-weight: 500;
+                font-weight: 600;
                 font-family: 'Pretendard', sans-serif;
             } 
             QPushButton:hover { 
@@ -1702,8 +1740,8 @@ class WebtoonManager(QMainWindow):
 
         # 3. 관용구 보기 (스텝 3 추가)
         btn_view_idioms_step3 = QPushButton(" 관용구 보기")
-        btn_view_idioms_step3.setIcon(get_icon(config.ICON_IDIOM))
-        btn_view_idioms_step3.setFixedWidth(115)
+        btn_view_idioms_step3.setIcon(get_colored_icon(config.ICON_IDIOM, "#7F1D1D"))
+        btn_view_idioms_step3.setIconSize(QSize(16, 16))
         btn_view_idioms_step3.setFixedHeight(32)
         btn_view_idioms_step3.setCursor(Qt.PointingHandCursor)
         btn_view_idioms_step3.setStyleSheet("""
@@ -1711,9 +1749,10 @@ class WebtoonManager(QMainWindow):
                 border: 1px solid #D1D5DB; 
                 background-color: #FDF2F2; 
                 border-radius: 4px; 
-                color: #EF4444; 
+                color: #7F1D1D; 
                 font-size: 13px; 
-                font-weight: 500;
+                font-weight: 600;
+                padding: 0 12px;
             } 
             QPushButton:hover { background-color: #FEE2E2; border-color: #FCA5A5; } 
             QPushButton:pressed { background-color: #FECACA; }
@@ -1736,7 +1775,7 @@ class WebtoonManager(QMainWindow):
                 border-radius: 4px; 
                 color: #2563EB; 
                 font-size: 13px; 
-                font-weight: 500;
+                font-weight: 600;
                 padding: 0 12px;
             } 
             QPushButton:hover { 
@@ -1766,7 +1805,7 @@ class WebtoonManager(QMainWindow):
                 border-radius: 4px; 
                 color: #374151; 
                 font-size: 13px; 
-                font-weight: 500;
+                font-weight: 600;
                 padding: 0 12px;
             } 
             QPushButton:hover { 
@@ -1912,6 +1951,8 @@ class WebtoonManager(QMainWindow):
 
     def create_menu(self):
         menubar = self.menuBar()
+        app_font = QApplication.font()
+        menubar.setFont(app_font)
 
         # macOS 네이티브 메뉴바 사용 (번들 앱에서 About/Preferences 메뉴 연동 필수)
         # setNativeMenuBar(True)는 기본값이지만 번들 환경에서 명시적으로 선언해야 안정적으로 동작함
@@ -1919,6 +1960,7 @@ class WebtoonManager(QMainWindow):
         
         # 파일 메뉴
         file_menu = menubar.addMenu("파일(&F)")
+        file_menu.setFont(app_font)
         
         # 새 작업(심플 모드) 액션 추가
         self.action_new_simple = QAction("새 작업 (심플 모드)", self)
@@ -1946,6 +1988,7 @@ class WebtoonManager(QMainWindow):
 
         # 설정 메뉴
         settings_menu = menubar.addMenu("설정(&S)")
+        settings_menu.setFont(app_font)
 
         # [순서 변경] 관용구 설정을 맨 위로
         action_idiom = QAction("관용구(지문) 설정", self)
@@ -1962,6 +2005,7 @@ class WebtoonManager(QMainWindow):
 
         # 도움말 메뉴 추가
         help_menu = menubar.addMenu("도움말\u200b(&H)")
+        help_menu.setFont(app_font)
         help_menu.menuAction().setMenuRole(QAction.NoRole) # macOS의 넓은 검색창 생성 방지
         action_update_check = QAction("업데이트 확인", self)
         action_update_check.triggered.connect(lambda: self.check_for_updates(manual=True))
@@ -2040,21 +2084,72 @@ class WebtoonManager(QMainWindow):
                 self.idiom_viewer.refresh_list()
             self.toast.show_message("✅ 관용구 설정이 저장되었습니다.", 2000)
 
+    def move_window_safely(self, window, x, y):
+        """윈도우가 화면(모니터) 영역 밖으로 벗어나 보이지 않는 현상을 방지하고 화면 안쪽으로 가둡니다."""
+        screen = self.screen()
+        if not screen:
+            screen = QGuiApplication.primaryScreen()
+            
+        import sys
+        if screen:
+            screen_geom = screen.geometry()
+            # 창 크기가 로드되지 않았을 경우를 위한 폴백값 설정
+            w_width = window.width() if window.width() > 50 else 320
+            w_height = window.height() if window.height() > 50 else 450
+            
+            # X축 영역 내로 가두기
+            min_x = screen_geom.left()
+            max_x = screen_geom.right() - w_width
+            safe_x = max(min_x, min(x, max_x))
+            
+            # Y축 영역 내로 가두기 (윈도우 작업 표시줄 등 고려)
+            min_y = screen_geom.top()
+            max_y = screen_geom.bottom() - w_height
+            safe_y = max(min_y, min(y, max_y))
+            
+            if sys.platform == "darwin":
+                window.setGeometry(safe_x, safe_y, w_width, w_height)
+            else:
+                window.move(safe_x, safe_y)
+        else:
+            if sys.platform == "darwin":
+                window.setGeometry(x, y, window.width(), window.height())
+            else:
+                window.move(x, y)
+
     def toggle_idiom_viewer(self):
         """관용구 플로팅 뷰어를 토글합니다."""
+        geom = self.geometry()
         if not self.idiom_viewer:
             self.idiom_viewer = FloatingIdiomViewer(self)
             self.idiom_viewer.idiom_selected.connect(self.handle_idiom_viewer_select)
             
-            # 메인 윈도우 우측 상단 근처에 띄우기
-            geom = self.geometry()
-            self.idiom_viewer.move(geom.x() + geom.width() - 320, geom.y() + 100)
+            # 메인 윈도우 우측 상단 근처에 띄우기 (기본값 설정)
+            if self._idiom_relative_pos is None:
+                self._idiom_relative_pos = (geom.width() - 320, 100)
+                
+            if self._idiom_size is not None:
+                self.idiom_viewer.resize(self._idiom_size[0], self._idiom_size[1])
+                
+            dx, dy = self._idiom_relative_pos
+            import sys
+            if sys.platform == "darwin":
+                self.move_window_safely(self.idiom_viewer, self.geometry().x() + dx, self.geometry().y() + dy)
+            else:
+                self.move_window_safely(self.idiom_viewer, self.x() + dx, self.y() + dy)
             self.idiom_viewer.show()
         else:
             if self.idiom_viewer.isVisible():
                 self.idiom_viewer.hide()
             else:
                 self.idiom_viewer.refresh_list() # 열 때마다 리스트 갱신
+                if self._idiom_relative_pos is not None:
+                    dx, dy = self._idiom_relative_pos
+                    import sys
+                    if sys.platform == "darwin":
+                        self.move_window_safely(self.idiom_viewer, self.geometry().x() + dx, self.geometry().y() + dy)
+                    else:
+                        self.move_window_safely(self.idiom_viewer, self.x() + dx, self.y() + dy)
                 self.idiom_viewer.show()
                 self.idiom_viewer.raise_()
                 self.idiom_viewer.activateWindow()
@@ -2079,11 +2174,22 @@ class WebtoonManager(QMainWindow):
             self.toast.show_message("⚠️ 먼저 작품을 선택해주세요.")
             return
             
+        geom = self.geometry()
         if self.character_viewer is None:
             self.character_viewer = FloatingCharacterViewer(self, project_name=self.current_title)
-            # 메인 윈도우의 오른쪽에 위치시킴
-            geom = self.geometry()
-            self.character_viewer.move(geom.x() + geom.width() + 10, geom.y())
+            # 메인 윈도우의 오른쪽에 위치시킴 (기본값 설정)
+            if self._character_relative_pos is None:
+                self._character_relative_pos = (geom.width() + 10, 0)
+                
+            if self._character_size is not None:
+                self.character_viewer.resize(self._character_size[0], self._character_size[1])
+                
+            dx, dy = self._character_relative_pos
+            import sys
+            if sys.platform == "darwin":
+                self.move_window_safely(self.character_viewer, self.geometry().x() + dx, self.geometry().y() + dy)
+            else:
+                self.move_window_safely(self.character_viewer, self.x() + dx, self.y() + dy)
             self.character_viewer.show()
         else:
             if self.character_viewer.isVisible():
@@ -2091,6 +2197,13 @@ class WebtoonManager(QMainWindow):
             else:
                 # [수정] 열릴 때 현재 작품명을 이중 체크하여 완전히 최신 상태로 동기화합니다.
                 self.character_viewer.set_project_name(self.current_title)
+                if self._character_relative_pos is not None:
+                    dx, dy = self._character_relative_pos
+                    import sys
+                    if sys.platform == "darwin":
+                        self.move_window_safely(self.character_viewer, self.geometry().x() + dx, self.geometry().y() + dy)
+                    else:
+                        self.move_window_safely(self.character_viewer, self.x() + dx, self.y() + dy)
                 self.character_viewer.show()
                 self.character_viewer.raise_()
                 self.character_viewer.activateWindow()
@@ -2311,8 +2424,8 @@ class WebtoonManager(QMainWindow):
                 }
             """)
             self.clear_workspace()
-            self.load_images()
             self.load_data()
+            self.load_images()
             self.load_viewer_state() # 새 모드의 스크롤 위치 복구
             
             # [추가] 전체 모드에서 심플 모드로 전환 시, 기존 작업이 있다면 묻습니다.
@@ -2370,8 +2483,8 @@ class WebtoonManager(QMainWindow):
                 }
             """)
             self.clear_workspace()
-            self.load_images()
             self.load_data()
+            self.load_images()
             self.load_viewer_state() # 새 모드의 스크롤 위치 복구
             
             if show_toast:
@@ -2561,31 +2674,46 @@ class WebtoonManager(QMainWindow):
             
         self.current_episode = text
 
-        # 이미지 파일 존재 여부 사전 체크
-        has_images = False
-        _, i_path, _ = self.get_paths()
+        # 1. 경로 획득 및 파일 개수 / 대본 행 수 미리 세기
+        e_path, i_path, _ = self.get_paths()
+        files = []
         if i_path and os.path.exists(i_path):
-            files = [f for f in os.listdir(i_path) 
-                     if f.lower().endswith(('png','jpg','jpeg')) and not f.startswith('.')]
-            if files:
-                has_images = True
+            files = sorted([f for f in os.listdir(i_path) 
+                            if f.lower().endswith(('png','jpg','jpeg')) and not f.startswith('.')], 
+                           key=natural_sort_key)
         
-        if has_images:
-            # 회차 로딩 중 토스트 표시 및 UI 즉시 업데이트
-            self.toast.show_message("⏳ 회차 데이터를 불러오는 중...", 10000, fade_speed=0)
-            from PySide6.QtWidgets import QApplication
-            QApplication.processEvents()
+        script_rows_count = 0
+        if e_path:
+            s_csv = os.path.join(e_path, "script_data.csv")
+            if os.path.exists(s_csv) and os.path.getsize(s_csv) > 0:
+                try:
+                    import pandas as pd
+                    df_temp = pd.read_csv(s_csv, keep_default_na=False)
+                    script_rows_count = len(df_temp)
+                except Exception:
+                    pass
+
+        total_steps = script_rows_count + len(files)
+        if total_steps == 0:
+            total_steps = 1
         
-        self.load_images()
-        self.load_data()
+        # 2. 모달창 먼저 생성 및 노출 (전체 진행단계 범위로 설정)
+        from widgets import ModernProgressDialog
+        from PySide6.QtWidgets import QApplication
+        progress = ModernProgressDialog("⏳ 대본 데이터를 불러오고 있습니다...", None, 0, total_steps, self)
+        progress.show()
+        QApplication.processEvents()
+        
+        # 3. 텍스트 데이터 로드 (시작값 0)
+        self.load_data(progress_dialog=progress, start_val=0)
+        QApplication.processEvents()
+        
+        # 4. 이미지 로딩 수행 (시작값 script_rows_count)
+        self.load_images(progress_dialog=progress, start_val=script_rows_count)
         
         # [추가] 새 회차의 스크롤 위치 복구 및 API 호출수 불러오기
         self.load_viewer_state()
         self.load_api_count()
-
-        if has_images:
-            # 완료 토스트 메시지 표시
-            self.toast.show_message("✅ 회차가 로드되었습니다.", 1500)
 
     def save_viewer_state(self):
         """현재 웹툰 뷰어의 스크롤 위치(비율)를 파일로 저장합니다."""
@@ -2697,13 +2825,22 @@ class WebtoonManager(QMainWindow):
         processed_count = 0
         duplicate_count = 0
         
-        for fname in file_paths:
+        # 파일 복사 역시 대량이거나 대용량일 경우 오래 걸릴 수 있으므로 ModernProgressDialog 적용
+        from widgets import ModernProgressDialog
+        progress = ModernProgressDialog("⏳ 이미지를 추가하는 중...", None, 0, len(file_paths), self)
+        progress.show()
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+
+        for i, fname in enumerate(file_paths):
             base_name = os.path.basename(fname)
             dest_path = os.path.join(i_path, base_name)
             
             # 중복 체크
             if os.path.exists(dest_path):
                 duplicate_count += 1
+                progress.setValue(i + 1)
+                QApplication.processEvents()
                 continue
 
             if fname.lower().endswith(valid_extensions) and not base_name.startswith('.'):
@@ -2712,15 +2849,20 @@ class WebtoonManager(QMainWindow):
                     processed_count += 1
                 except Exception as e:
                     print(f"파일 복사 실패: {fname} ({e})")
+            
+            progress.setValue(i + 1)
+            QApplication.processEvents()
 
         if processed_count > 0:
-            self.load_images()
+            self.load_images(progress_dialog=progress)
             if duplicate_count > 0:
                 self.toast.show_message(f"✅ {processed_count}개 추가 (중복 {duplicate_count}개 제외)")
             else:
                 self.toast.show_message(f"✅ 이미지 {processed_count}장이 추가되었습니다!")
-        elif duplicate_count > 0:
-            self.toast.show_message("이미 추가한 파일입니다.")
+        else:
+            progress.close()
+            if duplicate_count > 0:
+                self.toast.show_message("이미 추가한 파일입니다.")
 
     def upload_images(self):
         # 마지막 저장 폴더 또는 바탕화면을 기본값으로 설정
@@ -2733,7 +2875,7 @@ class WebtoonManager(QMainWindow):
             config.update_last_save_dir(file_names[0])
             self.process_image_files(file_names)
 
-    def load_images(self):
+    def load_images(self, progress_dialog=None, start_val=0):
         # 1. 기존 위젯 및 리스트 청소
         while self.image_layout.count():
             child = self.image_layout.takeAt(0)
@@ -2747,6 +2889,8 @@ class WebtoonManager(QMainWindow):
             # 경로가 아예 없거나 프로젝트가 안 열렸을 때도 회색 배경이어야 합니다.
             self.update_viewer_background(False) # [추가 1]
             self.viewer_stack.setCurrentIndex(0)
+            if progress_dialog:
+                progress_dialog.close()
             return
 
         # 파일 목록 가져오기
@@ -2760,10 +2904,32 @@ class WebtoonManager(QMainWindow):
 
         if not has_images:
             self.viewer_stack.setCurrentIndex(0)
+            if progress_dialog:
+                progress_dialog.close()
         else:
             self.viewer_stack.setCurrentIndex(1)
             
-            for f in files:
+            # 스크롤바 바운싱/흔들림 방지: 로딩 루프 전후로 시그널 차단 및 0 고정
+            scrollbar = self.scroll_area.verticalScrollBar()
+            scrollbar.blockSignals(True)
+            scrollbar.setValue(0)
+            
+            # ModernProgressDialog로 비차단 로딩바 노출 (중단/취소버튼 없음 -> None)
+            if progress_dialog:
+                progress = progress_dialog
+                progress.setLabelText("⏳ 이미지를 로딩하고 있습니다...")
+                if start_val == 0:
+                    progress.progress_bar.setRange(0, len(files))
+                    progress.setValue(0)
+            else:
+                from widgets import ModernProgressDialog
+                progress = ModernProgressDialog("⏳ 이미지를 로딩하고 있습니다...", None, 0, len(files), self)
+                progress.show()
+            
+            from PySide6.QtWidgets import QApplication
+            QApplication.processEvents()
+            
+            for i, f in enumerate(files):
                 # (A) 중앙 뷰어에 이미지 추가
                 lbl_img = ResponsiveLabel(os.path.join(i_path, f))
                 self.image_layout.addWidget(lbl_img)
@@ -2772,6 +2938,16 @@ class WebtoonManager(QMainWindow):
                 item = QListWidgetItem(f" {f}")
                 item.setIcon(get_icon(config.ICON_FILE)) 
                 self.file_list_widget.addItem(item)
+                
+                # 진행도 업데이트
+                progress.setValue(start_val + i + 1)
+                QApplication.processEvents()
+                
+            progress.close()
+            
+            # 로딩 후 스크롤을 최상단(0)으로 확실히 유지하고 시그널 원복
+            scrollbar.setValue(0)
+            scrollbar.blockSignals(False)
 
         
 
@@ -2842,7 +3018,7 @@ class WebtoonManager(QMainWindow):
         
         # 3. 분석 시작 시 UI 상태 변경
         self.btn_start.setEnabled(False)
-        self.status_container.setVisible(True)
+        self.status_container.setVisible(False)  # 모달 진행창이 표시되므로 메인화면의 중복 진행바는 숨김 처리
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         
@@ -2851,10 +3027,21 @@ class WebtoonManager(QMainWindow):
         
         # 워커 생성 및 실행
         self.worker = OCRWorker(files, mode=analysis_mode, force_mode=force_mode)
+        
+        # ModernProgressDialog 생성 및 연결
+        from widgets import ModernProgressDialog
+        self.ocr_progress = ModernProgressDialog("⏳ 만화 대사 분석(OCR)을 시작합니다...", "중단", 0, 100, self)
+        self.ocr_progress.rejected.connect(self.cancel_ocr)
+        
+        # 워커의 진행 시그널을 다이얼로그와 메인 진행바에 연결
         self.worker.progress_val.connect(self.progress_bar.setValue)
+        self.worker.progress_val.connect(self.ocr_progress.setValue)
         self.worker.progress_text.connect(self.lbl_status.setText)
+        self.worker.progress_text.connect(self.ocr_progress.lbl_text.setText)
         self.worker.api_used.connect(self.increment_api_counter)
         self.worker.finished_ocr.connect(self.on_ocr_finished)
+        
+        self.ocr_progress.show()
         self.worker.start()
 
     def adjust_menu_position(self):
@@ -2988,6 +3175,15 @@ class WebtoonManager(QMainWindow):
             print(f"Error saving API count: {e}")
 
     def on_ocr_finished(self, lines):
+        # 1. 안전하게 시그널 연결 끊고 다이얼로그 닫기
+        if hasattr(self, 'ocr_progress') and self.ocr_progress:
+            try:
+                self.ocr_progress.rejected.disconnect(self.cancel_ocr)
+            except Exception:
+                pass
+            self.ocr_progress.close()
+            self.ocr_progress = None
+
         raw_text = "\n".join(lines)
         # [자동화] 텍스트를 보여주기 직전에 불필요한 번호 패턴([1], 1. 등)을 제거합니다.
         clean_text = re.sub(r'(?m)^(\[\d+\]|\d+\.)\s*', '', raw_text)
@@ -2999,6 +3195,34 @@ class WebtoonManager(QMainWindow):
         QTimer.singleShot(1500, lambda: self.status_container.setVisible(False))
         self.save_text_content()
         self.check_reanalyze.setChecked(False)
+        
+        # 완료 토스트 메시지 출력
+        self.toast.show_message("✅ 이미지 분석이 완료되었습니다.")
+
+    def cancel_ocr(self):
+        if hasattr(self, 'worker') and self.worker:
+            self.worker.stop()
+            self.worker.wait() # 스레드가 정상 종료될 때까지 대기
+        self.btn_start.setEnabled(True)
+        self.status_container.setVisible(False)
+        self.toast.show_message("🚫 이미지 분석이 중단되었습니다.")
+
+    def clean_editor_text(self):
+        text = self.text_editor.toPlainText()
+        cleaned = clean_ocr_text(text)
+        if text != cleaned:
+            from widgets import TextCleanDialog
+            dlg = TextCleanDialog(text, cleaned, self)
+            if dlg.exec() == QDialog.Accepted and dlg.result_text is not None:
+                # QTextCursor를 사용하여 Undo 스택에 변경 이력 기록
+                cursor = self.text_editor.textCursor()
+                cursor.beginEditBlock()
+                cursor.select(QTextCursor.Document)
+                cursor.insertText(dlg.result_text)
+                cursor.endEditBlock()
+                self.toast.show_message("✨ 텍스트 정리가 완료되었습니다.")
+        else:
+            self.toast.show_message("✨ 정리할 텍스트 노이즈가 없습니다.")
 
     def save_text_content(self):
         if not getattr(self, 'is_simple_mode', False) and not self.current_episode: return
@@ -3009,9 +3233,11 @@ class WebtoonManager(QMainWindow):
     def create_table_combo(self, items, current_text=""):
         combo = ClickableComboBox()
         
-        app_font = QApplication.font()
-        combo_font = QFont(app_font)
-        combo_font.setPointSize(11)
+        if sys.platform == "darwin":
+            combo_font = QFont("Pretendard", 14)
+        else:
+            combo_font = QFont("Pretendard", 11)
+        combo_font.setStyleStrategy(QFont.PreferAntialias)
         combo.setFont(combo_font)
         if combo.lineEdit():
             combo.lineEdit().setFont(combo_font)
@@ -3023,31 +3249,52 @@ class WebtoonManager(QMainWindow):
         else:
             combo.setCurrentIndex(-1)
         
-        f_family = app_font.family()
-        if f_family == "sans-serif" or not f_family:
-            f_family = "Pretendard"
+        f_family = "Pretendard"
 
-        combo.setStyleSheet(f"""
-            QComboBox {{
-                border: none;
-                border-radius: 0px;
-                background-color: transparent;
-                padding-left: 5px;
-                font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
-                font-size: 14px;
-            }}
-            QComboBox::drop-down {{
-                border: none;
-                background-color: transparent;
-                width: 20px;
-            }}
-            QComboBox QAbstractItemView {{
-                border: 1px solid #d1d5db;
-                background-color: white;
-                font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
-                font-size: 14px;
-            }}
-        """)
+        if sys.platform == "darwin":
+            combo.setStyleSheet(f"""
+                QComboBox {{
+                    border: none;
+                    border-radius: 0px;
+                    background-color: transparent;
+                    padding-left: 5px;
+                    font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
+                    font-size: 14pt;
+                }}
+                QComboBox::drop-down {{
+                    border: none;
+                    background-color: transparent;
+                    width: 20px;
+                }}
+                QComboBox QAbstractItemView {{
+                    border: 1px solid #d1d5db;
+                    background-color: white;
+                    font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
+                    font-size: 14pt;
+                }}
+            """)
+        else:
+            combo.setStyleSheet(f"""
+                QComboBox {{
+                    border: none;
+                    border-radius: 0px;
+                    background-color: transparent;
+                    padding-left: 5px;
+                    font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
+                    font-size: 14px;
+                }}
+                QComboBox::drop-down {{
+                    border: none;
+                    background-color: transparent;
+                    width: 20px;
+                }}
+                QComboBox QAbstractItemView {{
+                    border: 1px solid #d1d5db;
+                    background-color: white;
+                    font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
+                    font-size: 14px;
+                }}
+            """)
         line_edit = combo.lineEdit()
         if line_edit:
             line_edit.setTextMargins(0, 0, 0, 0)
@@ -3198,6 +3445,8 @@ class WebtoonManager(QMainWindow):
             return
 
         menu = QMenu(self)
+        app_font = QApplication.font()
+        menu.setFont(app_font)
         
         # 1. 캐릭터 추가 액션
         action_add = QAction("캐릭터 추가", self)
@@ -3209,6 +3458,7 @@ class WebtoonManager(QMainWindow):
         
         # 2. 정렬 서브메뉴
         sort_menu = menu.addMenu("정렬")
+        sort_menu.setFont(app_font)
         
         action_sort_role = QAction("배역 순", self)
         action_sort_role.triggered.connect(lambda: self.sort_characters("role"))
@@ -3567,6 +3817,7 @@ class WebtoonManager(QMainWindow):
 
     def show_script_context_menu(self, pos):
         menu = QMenu()
+        menu.setFont(QApplication.font())
         # [추가] 최상단에 실행취소 / 다시실행 추가 (아이콘 적용)
         if sys.platform == "darwin":
             undo_action = menu.addAction(get_icon(config.ICON_UNDO), "실행취소 (⌘Z)")
@@ -3579,7 +3830,7 @@ class WebtoonManager(QMainWindow):
         action_insert_above = menu.addAction(get_icon(config.ICON_ARROW_UP), "위에 행 추가")
         action_insert_below = menu.addAction(get_icon(config.ICON_ARROW_DOWN), "아래에 행 추가")
         menu.addSeparator()
-        merge_action = menu.addAction(get_icon(config.ICON_LINK), "내용 합치기 (텍스트 연결)")
+        merge_action = menu.addAction(get_icon(config.ICON_LINK), "셀 합치기")
         menu.addSeparator()
         delete_action = menu.addAction("행 삭제")
         delete_action.setIcon(get_icon(config.ICON_DELETE))
@@ -3735,7 +3986,7 @@ class WebtoonManager(QMainWindow):
         if hasattr(self, 'character_viewer') and self.character_viewer is not None and self.character_viewer.isVisible():
             self.character_viewer.load_current_episode_characters()
 
-    def load_data(self):
+    def load_data(self, progress_dialog=None, start_val=0):
         import pandas as pd
         e_path, _, s_path = self.get_paths()
         if not e_path or not s_path: return # 경로가 없으면 로드 중단
@@ -3785,7 +4036,8 @@ class WebtoonManager(QMainWindow):
             try:
                 if os.path.getsize(s_csv) > 0:
                     df = pd.read_csv(s_csv, keep_default_na=False)
-                    for _, row in df.iterrows():
+                    from PySide6.QtWidgets import QApplication
+                    for idx, row in df.iterrows():
                         r = self.table_script.rowCount()
                         self.table_script.insertRow(r)
                         
@@ -3795,6 +4047,11 @@ class WebtoonManager(QMainWindow):
                         
                         # 대사
                         self.table_script.setItem(r, 1, QTableWidgetItem(str(row.get('Line',''))))
+                        
+                        if progress_dialog:
+                            progress_dialog.setValue(start_val + idx + 1)
+                            if idx % 5 == 0:
+                                QApplication.processEvents()
             except Exception as e:
                 print(f"script_data.csv 로드 중 오류 발생: {e}")
         
@@ -3946,9 +4203,9 @@ class WebtoonManager(QMainWindow):
                     self._last_spellcheck_vscroll = 0
                 return
 
-        self.status_container.setVisible(True)
-        self.lbl_status.setText("AI가 맞춤법을 검사하고 있습니다...")
-        self.progress_bar.setRange(0, 0) 
+        from widgets import ModernProgressDialog
+        self.spellcheck_progress = ModernProgressDialog("⏳ AI가 맞춤법을 검사하고 있습니다...", None, 0, 0, self)
+        self.spellcheck_progress.show()
 
         self.ai_worker = SpellCheckWorker(text)
         self.ai_worker.finished.connect(self.on_spell_check_finished)
@@ -3956,9 +4213,9 @@ class WebtoonManager(QMainWindow):
         self.ai_worker.start()
 
     def on_spell_check_finished(self, corrected_text):
-        self.status_container.setVisible(False)
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(100)
+        if hasattr(self, 'spellcheck_progress') and self.spellcheck_progress:
+            self.spellcheck_progress.close()
+            self.spellcheck_progress = None
 
         original_text = self.text_editor.toPlainText()
         
@@ -3981,8 +4238,10 @@ class WebtoonManager(QMainWindow):
             self._last_spellcheck_vscroll = 0
 
     def on_spell_check_error(self, err_msg):
-         self.status_container.setVisible(False)
-         QMessageBox.critical(self, "오류", err_msg)
+        if hasattr(self, 'spellcheck_progress') and self.spellcheck_progress:
+            self.spellcheck_progress.close()
+            self.spellcheck_progress = None
+        QMessageBox.critical(self, "오류", err_msg)
 
     def toggle_sidebar(self):
         width = self.sidebar.width()
@@ -4385,8 +4644,8 @@ if __name__ == "__main__":
         font_family = "Pretendard"
         font = QFont("Pretendard", 10)
     
-    font.setStyleStrategy(QFont.PreferAntialias) 
-    font.setHintingPreference(QFont.PreferNoHinting)
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias) 
+    font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
     
     # 윈도우 렌더러 특성상 글자가 가늘게 파먹히며 깨지는 현상을 방지하기 위해 굵기를 한 단계(Medium) 상향 보정
     if platform.system() == "Windows":

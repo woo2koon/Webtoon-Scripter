@@ -53,7 +53,8 @@ class ExcelTextDelegate(QStyledItemDelegate):
 
         editor.setStyleSheet("""
             QLineEdit { 
-                border: 2px solid #FF5722; 
+                border: 2px solid #ff4b4b; 
+                border-radius: 0px;
                 padding: 0px; 
                 background-color: white;
                 font-family: 'Pretendard';
@@ -132,8 +133,9 @@ class SpreadsheetTable(QTableWidget):
                 padding-left: 5px; 
                 padding-right: 5px; 
                 font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
+                border-radius: 0px;
             }} 
-            QTableWidget::item:focus {{ border: 2px solid #1a73e8; }}
+            QTableWidget::item:focus {{ border: 2px solid #1a73e8; border-radius: 0px; }}
         """)
         
         self.drop_target_row = None
