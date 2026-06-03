@@ -86,6 +86,10 @@ ICON_AVATAR_UPLOAD = os.path.join(ASSETS_DIR, "avatar-upload.svg") # 아바타 �
 ICON_SPLIT = os.path.join(ASSETS_DIR, "separator-horizontal.svg") # 셀 나누기 아이콘 추가
 ICON_ZOOM_IN = os.path.join(ASSETS_DIR, "plus_icon.svg")
 ICON_ZOOM_OUT = os.path.join(ASSETS_DIR, "minus_icon.svg")
+ICON_COPY = os.path.join(ASSETS_DIR, "context_menu", "copy.svg")
+ICON_CUT = os.path.join(ASSETS_DIR, "context_menu", "cut.svg")
+ICON_PASTE = os.path.join(ASSETS_DIR, "context_menu", "paste.svg")
+ICON_SELECT_ALL = os.path.join(ASSETS_DIR, "context_menu", "select_all.svg")
 # =================================================================
 
 OCR_API_KEY = ""
@@ -118,6 +122,10 @@ IDIOM_VIEWER_SIZE = None
 CHARACTER_VIEWER_POS = None
 CHARACTER_VIEWER_SIZE = None
 
+# [메인 창 위치 및 크기 기억]
+MAIN_WINDOW_POS = None
+MAIN_WINDOW_SIZE = None
+
 MODERN_STYLE = f"""
     QWidget {{
         font-family: {FONT_FAMILY};
@@ -127,7 +135,7 @@ MODERN_STYLE = f"""
 """
 
 def load_settings():
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE
     IS_SIMPLE_MODE = False
     
     # 1. 일단 하드코딩된 키로 초기화
@@ -179,6 +187,8 @@ def load_settings():
                     IDIOM_VIEWER_SIZE = data.get("idiom_viewer_size", None)
                     CHARACTER_VIEWER_POS = data.get("character_viewer_pos", None)
                     CHARACTER_VIEWER_SIZE = data.get("character_viewer_size", None)
+                    MAIN_WINDOW_POS = data.get("main_window_pos", None)
+                    MAIN_WINDOW_SIZE = data.get("main_window_size", None)
                 
                 else:
                     # 구형 데이터 구조일 경우 처리
@@ -217,7 +227,7 @@ def load_settings():
         AI_API_KEY = OCR_API_KEY
 
 def save_settings(presets=None, active_name=None, is_simple_mode=None):
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE
     
     if presets is not None:
         API_PRESETS = presets
@@ -245,7 +255,9 @@ def save_settings(presets=None, active_name=None, is_simple_mode=None):
         "idiom_viewer_pos": IDIOM_VIEWER_POS,
         "idiom_viewer_size": IDIOM_VIEWER_SIZE,
         "character_viewer_pos": CHARACTER_VIEWER_POS,
-        "character_viewer_size": CHARACTER_VIEWER_SIZE
+        "character_viewer_size": CHARACTER_VIEWER_SIZE,
+        "main_window_pos": MAIN_WINDOW_POS,
+        "main_window_size": MAIN_WINDOW_SIZE
     }
     try:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
@@ -281,6 +293,12 @@ def update_character_viewer_geometry(pos, size):
     global CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE
     CHARACTER_VIEWER_POS = pos
     CHARACTER_VIEWER_SIZE = size
+    save_settings()
+
+def update_main_window_geometry(pos, size):
+    global MAIN_WINDOW_POS, MAIN_WINDOW_SIZE
+    MAIN_WINDOW_POS = pos
+    MAIN_WINDOW_SIZE = size
     save_settings()
 
 def get_global_characters_path(project_name):
@@ -383,7 +401,7 @@ QComboBox {
     border: 1px solid #d1d5db; 
     border-radius: 6px; 
     background-color: #ffffff; 
-    min-height: 38px; 
+    min-height: 34px; 
     padding-left: 12px; 
     color: #333; 
 }

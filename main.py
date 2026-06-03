@@ -48,7 +48,7 @@ restore_template()
 
 
 
-from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog
+from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog
 from update_worker import UpdateCheckWorker, UpdateDownloadWorker
 
 class GlobalScrollShortcutFilter(QObject):
@@ -94,118 +94,135 @@ class GlobalContextMenuFilter(QObject):
         try:
             # 1. Ctrl + Shift + Z 입력 시 다시 실행(Redo) 작동 처리
             if event.type() == QEvent.KeyPress:
-                if event.modifiers() == (Qt.ControlModifier | Qt.ShiftModifier) and event.key() == Qt.Key_Z:
-                    if hasattr(obj, 'redo') and hasattr(obj, 'isReadOnly') and not obj.isReadOnly():
-                        obj.redo()
+                target_editor = None
+                if hasattr(obj, 'redo'):
+                    target_editor = obj
+                elif obj.parent() and hasattr(obj.parent(), 'redo') and obj == obj.parent().viewport():
+                    target_editor = obj.parent()
+                
+                if target_editor and hasattr(target_editor, 'isReadOnly') and not target_editor.isReadOnly():
+                    if event.modifiers() == (Qt.ControlModifier | Qt.ShiftModifier) and event.key() == Qt.Key_Z:
+                        target_editor.redo()
                         return True
 
             # 2. 텍스트 입력 위젯(QLineEdit, QTextEdit, QPlainTextEdit, SmartTextEdit 등)에서 우클릭이 발생했을 때
-            elif event.type() == QEvent.ContextMenu and isinstance(obj, (QLineEdit, QTextEdit, QPlainTextEdit)):
-                menu = QMenu(obj)
-                menu.setFont(QApplication.font())
-                menu.setStyleSheet(config.MODERN_MENU_STYLE)
+            elif event.type() == QEvent.ContextMenu:
+                target_editor = None
+                if isinstance(obj, QLineEdit):
+                    target_editor = obj
+                elif isinstance(obj, (QTextEdit, QPlainTextEdit)):
+                    target_editor = obj
+                elif obj.parent() and isinstance(obj.parent(), (QTextEdit, QPlainTextEdit)) and obj == obj.parent().viewport():
+                    target_editor = obj.parent()
                 
-                import sys
-                is_mac = sys.platform == "darwin"
-                undo_shortcut = "⌘Z" if is_mac else "Ctrl+Z"
-                redo_shortcut = "⇧⌘Z" if is_mac else "Ctrl+Shift+Z"
-                split_shortcut = "Shift+Enter"
-                cut_shortcut = "⌘X" if is_mac else "Ctrl+X"
-                copy_shortcut = "⌘C" if is_mac else "Ctrl+C"
-                paste_shortcut = "⌘V" if is_mac else "Ctrl+V"
-                select_all_shortcut = "⌘A" if is_mac else "Ctrl+A"
-                
-                # 실행취소 / 다시실행 감지
-                can_undo = obj.isUndoAvailable() if hasattr(obj, 'isUndoAvailable') else True
-                can_redo = obj.isRedoAvailable() if hasattr(obj, 'isRedoAvailable') else True
-                
-                undo_action = QAction(get_icon(config.ICON_UNDO), f"되돌리기 ({undo_shortcut}) (&U)", obj)
-                undo_action.setEnabled(can_undo)
-                undo_action.triggered.connect(obj.undo)
-                menu.addAction(undo_action)
-                
-                redo_action = QAction(get_icon(config.ICON_REDO), f"다시 실행 ({redo_shortcut}) (&R)", obj)
-                redo_action.setEnabled(can_redo)
-                redo_action.triggered.connect(obj.redo)
-                menu.addAction(redo_action)
-                
-                menu.addSeparator()
-                
-                # 셀 나누기 (대본 시트 에디터인 경우에만 추가)
-                if obj.property("is_sheet_editor") == True:
-                    from utils import get_colored_icon
-                    split_action = QAction(get_colored_icon(config.ICON_SPLIT, "#333333"), f"셀 나누기 ({split_shortcut}) (&S)", menu)
+                if target_editor is not None:
+                    obj = target_editor  # 이후 로직에서 obj를 실제 에디터 객체로 대체하여 사용
                     
-                    def trigger_split():
-                        cursor_pos = obj.cursorPosition()
-                        full_text = obj.text()
-                        left_text = full_text[:cursor_pos]
-                        right_text = full_text[cursor_pos:]
-                        
-                        obj.setText(full_text)
-                        delegate = obj.property("delegate")
-                        if delegate:
-                            from PySide6.QtWidgets import QStyledItemDelegate
-                            delegate.commitData.emit(obj)
-                            delegate.closeEditor.emit(obj, QStyledItemDelegate.NoHint)
-                            
-                        row = obj.property("cell_row")
-                        main_win = obj.window()
-                        if main_win and hasattr(main_win, 'split_script_row'):
-                            QTimer.singleShot(50, lambda: main_win.split_script_row(row, left_text, right_text))
-                            
-                    split_action.triggered.connect(trigger_split)
-                    menu.addAction(split_action)
+                    menu = QMenu(obj)
+                    menu.setFont(QApplication.font())
+                    menu.setStyleSheet(config.MODERN_MENU_STYLE)
+                    
+                    import sys
+                    is_mac = sys.platform == "darwin"
+                    undo_shortcut = "⌘Z" if is_mac else "Ctrl+Z"
+                    redo_shortcut = "⇧⌘Z" if is_mac else "Ctrl+Shift+Z"
+                    split_shortcut = "Shift+Enter"
+                    cut_shortcut = "⌘X" if is_mac else "Ctrl+X"
+                    copy_shortcut = "⌘C" if is_mac else "Ctrl+C"
+                    paste_shortcut = "⌘V" if is_mac else "Ctrl+V"
+                    select_all_shortcut = "⌘A" if is_mac else "Ctrl+A"
+                    
+                    # 실행취소 / 다시실행 감지
+                    can_undo = obj.isUndoAvailable() if hasattr(obj, 'isUndoAvailable') else True
+                    can_redo = obj.isRedoAvailable() if hasattr(obj, 'isRedoAvailable') else True
+                    
+                    undo_action = QAction(get_icon(config.ICON_UNDO), f"되돌리기 ({undo_shortcut}) (&U)", obj)
+                    undo_action.setEnabled(can_undo)
+                    undo_action.triggered.connect(obj.undo)
+                    menu.addAction(undo_action)
+                    
+                    redo_action = QAction(get_icon(config.ICON_REDO), f"다시 실행 ({redo_shortcut}) (&R)", obj)
+                    redo_action.setEnabled(can_redo)
+                    redo_action.triggered.connect(obj.redo)
+                    menu.addAction(redo_action)
+                    
                     menu.addSeparator()
-                
-                # 선택 텍스트 여부 감지
-                has_selection = False
-                if hasattr(obj, 'hasSelectedText'):
-                    has_selection = obj.hasSelectedText()
-                elif hasattr(obj, 'textCursor'):
-                    has_selection = obj.textCursor().hasSelection()
                     
-                is_readonly = obj.isReadOnly() if hasattr(obj, 'isReadOnly') else False
-                
-                # 편집 동작
-                cut_action = QAction(f"잘라내기 ({cut_shortcut}) (&T)", obj)
-                cut_action.setEnabled(not is_readonly and has_selection)
-                cut_action.triggered.connect(obj.cut)
-                menu.addAction(cut_action)
-                
-                copy_action = QAction(f"복사 ({copy_shortcut}) (&C)", obj)
-                copy_action.setEnabled(has_selection)
-                copy_action.triggered.connect(obj.copy)
-                menu.addAction(copy_action)
-                
-                paste_action = QAction(f"붙여넣기 ({paste_shortcut}) (&P)", obj)
-                paste_action.setEnabled(not is_readonly and bool(QApplication.clipboard().text()))
-                paste_action.triggered.connect(obj.paste)
-                menu.addAction(paste_action)
-                
-                delete_action = QAction(get_icon(config.ICON_DELETE), "삭제 (&D)", obj)
-                delete_action.setEnabled(not is_readonly and has_selection)
-                if hasattr(obj, 'textCursor'):
-                    delete_action.triggered.connect(lambda: obj.textCursor().removeSelectedText())
-                else:
-                    def delete_selection():
-                        if hasattr(obj, 'hasSelectedText') and obj.hasSelectedText():
-                            start = obj.selectionStart()
-                            length = len(obj.selectedText())
-                            obj.setSelection(start, length)
-                            obj.insert("")
-                    delete_action.triggered.connect(delete_selection)
-                menu.addAction(delete_action)
-                
-                menu.addSeparator()
-                
-                # 모두 선택
-                select_all_action = QAction(f"모두 선택 ({select_all_shortcut}) (&A)", obj)
-                select_all_action.triggered.connect(obj.selectAll)
-                menu.addAction(select_all_action)
-                
-                menu.exec(event.globalPos())
-                return True
+                    # 셀 나누기 (대본 시트 에디터인 경우에만 추가)
+                    if obj.property("is_sheet_editor") == True:
+                        from utils import get_colored_icon
+                        split_action = QAction(get_colored_icon(config.ICON_SPLIT, "#333333"), f"셀 나누기 ({split_shortcut}) (&S)", menu)
+                        
+                        def trigger_split():
+                            cursor_pos = obj.cursorPosition()
+                            full_text = obj.text()
+                            left_text = full_text[:cursor_pos]
+                            right_text = full_text[cursor_pos:]
+                            
+                            obj.setText(full_text)
+                            delegate = obj.property("delegate")
+                            if delegate:
+                                from PySide6.QtWidgets import QStyledItemDelegate
+                                delegate.commitData.emit(obj)
+                                delegate.closeEditor.emit(obj, QStyledItemDelegate.NoHint)
+                                
+                            row = obj.property("cell_row")
+                            main_win = obj.window()
+                            if main_win and hasattr(main_win, 'split_script_row'):
+                                QTimer.singleShot(50, lambda: main_win.split_script_row(row, left_text, right_text))
+                                
+                        split_action.triggered.connect(trigger_split)
+                        menu.addAction(split_action)
+                        menu.addSeparator()
+                    
+                    # 선택 텍스트 여부 감지
+                    has_selection = False
+                    if hasattr(obj, 'hasSelectedText'):
+                        has_selection = obj.hasSelectedText()
+                    elif hasattr(obj, 'textCursor'):
+                        has_selection = obj.textCursor().hasSelection()
+                        
+                    is_readonly = obj.isReadOnly() if hasattr(obj, 'isReadOnly') else False
+                    
+                    # 편집 동작
+                    cut_action = QAction(get_icon(config.ICON_CUT), f"잘라내기 ({cut_shortcut}) (&T)", obj)
+                    cut_action.setEnabled(not is_readonly and has_selection)
+                    cut_action.triggered.connect(obj.cut)
+                    menu.addAction(cut_action)
+                    
+                    copy_action = QAction(get_icon(config.ICON_COPY), f"복사 ({copy_shortcut}) (&C)", obj)
+                    copy_action.setEnabled(has_selection)
+                    copy_action.triggered.connect(obj.copy)
+                    menu.addAction(copy_action)
+                    
+                    paste_action = QAction(get_icon(config.ICON_PASTE), f"붙여넣기 ({paste_shortcut}) (&P)", obj)
+                    paste_action.setEnabled(not is_readonly and bool(QApplication.clipboard().text()))
+                    paste_action.triggered.connect(obj.paste)
+                    menu.addAction(paste_action)
+                    
+                    delete_action = QAction(get_icon(config.ICON_DELETE), "삭제 (&D)", obj)
+                    delete_action.setEnabled(not is_readonly and has_selection)
+                    if hasattr(obj, 'textCursor'):
+                        delete_action.triggered.connect(lambda: obj.textCursor().removeSelectedText())
+                    else:
+                        def delete_selection():
+                            if hasattr(obj, 'hasSelectedText') and obj.hasSelectedText():
+                                start = obj.selectionStart()
+                                length = len(obj.selectedText())
+                                obj.setSelection(start, length)
+                                obj.insert("")
+                        delete_action.triggered.connect(delete_selection)
+                    menu.addAction(delete_action)
+                    
+                    menu.addSeparator()
+                    
+                    # 모두 선택
+                    select_all_action = QAction(get_icon(config.ICON_SELECT_ALL), f"모두 선택 ({select_all_shortcut}) (&A)", obj)
+                    select_all_action.triggered.connect(obj.selectAll)
+                    menu.addAction(select_all_action)
+                    
+                    menu.exec(event.globalPos())
+                    return True
         except Exception as e:
             print(f"GlobalContextMenuFilter error: {e}")
             
@@ -313,7 +330,15 @@ class WebtoonManager(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"Webtoon Scripter v{config.APP_VERSION}") 
-        self.resize(1600, 950)
+        
+        # 메인 창 위치 및 크기 복원
+        if getattr(config, 'MAIN_WINDOW_SIZE', None):
+            self.resize(config.MAIN_WINDOW_SIZE[0], config.MAIN_WINDOW_SIZE[1])
+        else:
+            self.resize(1600, 950)
+            
+        if getattr(config, 'MAIN_WINDOW_POS', None):
+            self.move(config.MAIN_WINDOW_POS[0], config.MAIN_WINDOW_POS[1])
         self.current_title = ""
         self.current_episode = ""
         self.is_simple_mode = False
@@ -769,6 +794,9 @@ class WebtoonManager(QMainWindow):
         lbl_p.setObjectName("LabelBold")
         body_layout.addWidget(lbl_p)
         
+        row_proj = QHBoxLayout()
+        row_proj.setSpacing(6)
+        
         self.combo_project = ClickableComboBox()
         self.combo_project.setView(QListView()) 
         self.combo_project.setItemDelegate(PopupItemDelegate())
@@ -779,17 +807,9 @@ class WebtoonManager(QMainWindow):
             font_pretendard = QFont("Pretendard", 11)
         font_pretendard.setStyleStrategy(QFont.PreferAntialias)
         self.combo_project.setFont(font_pretendard)
+        self.combo_project.setFixedHeight(36)
         self.combo_project.currentTextChanged.connect(self.on_project_change)
         self.combo_project.set_refresh_callback(self.get_project_list)
-        body_layout.addWidget(self.combo_project)
-        body_layout.addSpacing(-3) # 음수 간격으로 초밀착
-        
-        row_proj = QHBoxLayout()
-        row_proj.setSpacing(6)
-        self.input_new_project = QLineEdit()
-        self.input_new_project.setPlaceholderText("새 작품명")
-        self.input_new_project.setFixedHeight(36) 
-        self.input_new_project.setStyleSheet("border: 1px solid #D1D5DB; border-radius: 4px; padding-left: 10px; min-height: 34px; max-height: 34px;")
         
         btn_add_proj = QPushButton() 
         btn_add_proj.setFixedSize(36, 36)
@@ -798,27 +818,21 @@ class WebtoonManager(QMainWindow):
         btn_add_proj.setIconSize(QSize(20, 20))
         btn_add_proj.setStyleSheet("background-color: #FF5722; border-radius: 4px;")
         btn_add_proj.setCursor(Qt.PointingHandCursor)
+        btn_add_proj.setToolTip("새 작품 추가")
         btn_add_proj.clicked.connect(self.create_project)
         
-        row_proj.addWidget(self.input_new_project)
+        row_proj.addWidget(self.combo_project, 1)
         row_proj.addWidget(btn_add_proj)
         body_layout.addLayout(row_proj)
         
-        body_layout.addSpacing(4) # 간격 축소
-        
-        # [복구] 섹션 구분선 (선명도 강화)
-        line_mid = QFrame()
-        line_mid.setFrameShape(QFrame.HLine)
-        line_mid.setFrameShadow(QFrame.Plain)
-        line_mid.setFixedHeight(1)
-        line_mid.setStyleSheet("background-color: #D1D5DB; border: none;")
-        body_layout.addWidget(line_mid)
-        
-        body_layout.addSpacing(4) 
+        body_layout.addSpacing(12)
         
         lbl_e = QLabel("회차 선택")
         lbl_e.setObjectName("LabelBold")
         body_layout.addWidget(lbl_e)
+        
+        row_ep = QHBoxLayout()
+        row_ep.setSpacing(6)
         
         self.combo_episode = ClickableComboBox()
         self.combo_episode.setView(QListView())
@@ -830,32 +844,35 @@ class WebtoonManager(QMainWindow):
             font_pretendard = QFont("Pretendard", 11)
         font_pretendard.setStyleStrategy(QFont.PreferAntialias)
         self.combo_episode.setFont(font_pretendard)
+        self.combo_episode.setFixedHeight(36)
         self.combo_episode.currentTextChanged.connect(self.on_episode_change)
         self.combo_episode.set_refresh_callback(self.get_episode_list)
-        body_layout.addWidget(self.combo_episode)
-        body_layout.addSpacing(-3) 
         
-        row_ep = QHBoxLayout()
-        row_ep.setSpacing(6)
-        self.input_new_episode = QLineEdit()
-        self.input_new_episode.setPlaceholderText("새 회차명")
-        self.input_new_episode.setFixedHeight(36)
-        self.input_new_episode.setStyleSheet("border: 1px solid #D1D5DB; border-radius: 4px; padding-left: 10px; min-height: 34px; max-height: 34px;")
-
         btn_add_ep = QPushButton()
         btn_add_ep.setFixedSize(36, 36)
         if os.path.exists(plus_icon_path): btn_add_ep.setIcon(QIcon(plus_icon_path))
         btn_add_ep.setIconSize(QSize(20, 20))
         btn_add_ep.setStyleSheet("background-color: #FF5722; border-radius: 4px;")
         btn_add_ep.setCursor(Qt.PointingHandCursor)
+        btn_add_ep.setToolTip("새 회차 추가")
         btn_add_ep.clicked.connect(self.create_episode)
         
-        row_ep.addWidget(self.input_new_episode)
+        row_ep.addWidget(self.combo_episode, 1)
         row_ep.addWidget(btn_add_ep)
         body_layout.addLayout(row_ep)
         
-        body_layout.addSpacing(8) 
-        
+        body_layout.addSpacing(8)
+
+        # 섹션 구분선 (회차 선택 ~ 업로드 된 파일 사이)
+        line_mid = QFrame()
+        line_mid.setFrameShape(QFrame.HLine)
+        line_mid.setFrameShadow(QFrame.Plain)
+        line_mid.setFixedHeight(1)
+        line_mid.setStyleSheet("background-color: #D1D5DB; border: none;")
+        body_layout.addWidget(line_mid)
+
+        body_layout.addSpacing(8)
+
         files_title_container = QWidget()
         files_title_layout = QHBoxLayout(files_title_container)
         files_title_layout.setContentsMargins(0, 0, 0, 0)
@@ -2521,13 +2538,27 @@ class WebtoonManager(QMainWindow):
         self.clear_workspace()
 
     def create_project(self):
-        name = self.input_new_project.text().strip()
-        if name:
+        def project_validator(name):
+            project_path = os.path.join(PROJECTS_DIR, name)
+            if os.path.exists(project_path):
+                return False, "이미 존재하는 작품 이름입니다."
+            return True, ""
+
+        name, ok = CustomInputDialog.get_input(
+            self, 
+            "작품 추가", 
+            "새로 추가할 작품명을 입력하세요:",
+            placeholder_text="예: 여왕 쎄시아의 반바지",
+            validator=project_validator
+        )
+        if ok and name.strip():
+            name = name.strip()
+            project_path = os.path.join(PROJECTS_DIR, name)
             # [수정] projects 폴더 안에 새 작품 폴더를 만듭니다.
-            os.makedirs(os.path.join(PROJECTS_DIR, name), exist_ok=True)
+            os.makedirs(project_path, exist_ok=True)
             self.refresh_project_list()
             self.combo_project.setCurrentText(name)
-            self.input_new_project.clear()
+            self.toast.show_message(f"✅ '{name}' 작품이 추가되었습니다!", 2000)
 
     def on_project_change(self, text):
         if not text: return
@@ -2650,21 +2681,26 @@ class WebtoonManager(QMainWindow):
             self.toast.show_message("⚠️ 작품 등록을 먼저 진행해주세요!", 2000)
             return
 
-        name = self.input_new_episode.text().strip()
-        if not name:
-            self.toast.show_message("⚠️ 회차 이름을 입력해주세요.", 2000)
-            return
+        def episode_validator(name):
+            episode_path = os.path.join(PROJECTS_DIR, self.current_title, name)
+            if os.path.exists(episode_path):
+                return False, "이미 존재하는 회차 이름입니다."
+            return True, ""
 
-        episode_path = os.path.join(PROJECTS_DIR, self.current_title, name)
-        if os.path.exists(episode_path):
-            self.toast.show_message("⚠️ 이미 존재하는 회차 이름입니다.", 2000)
-            return
-
-        os.makedirs(episode_path, exist_ok=True)
-        self.refresh_episode_list()
-        self.combo_episode.setCurrentText(name)
-        self.input_new_episode.clear()
-        self.toast.show_message(f"✅ '{name}' 회차가 생성되었습니다!")
+        name, ok = CustomInputDialog.get_input(
+            self, 
+            "회차 추가", 
+            "새로 추가할 회차명을 입력하세요:",
+            placeholder_text="예: 1화",
+            validator=episode_validator
+        )
+        if ok and name.strip():
+            name = name.strip()
+            episode_path = os.path.join(PROJECTS_DIR, self.current_title, name)
+            os.makedirs(episode_path, exist_ok=True)
+            self.refresh_episode_list()
+            self.combo_episode.setCurrentText(name)
+            self.toast.show_message(f"✅ '{name}' 회차가 생성되었습니다!")
 
     def on_episode_change(self, text):
         if not text: return
@@ -2750,6 +2786,11 @@ class WebtoonManager(QMainWindow):
     def closeEvent(self, event):
         """프로그램 종료 시 현재 상태를 저장합니다."""
         self.save_viewer_state()
+        
+        # 메인 창 위치 및 크기 저장
+        pos = [self.pos().x(), self.pos().y()]
+        size = [self.width(), self.height()]
+        config.update_main_window_geometry(pos, size)
         
         # [신규 추가] 세션 API 호출량 전송 (0회보다 클 때만 백그라운드 전송)
         if hasattr(self, 'session_api_count') and self.session_api_count > 0:
@@ -3926,6 +3967,10 @@ class WebtoonManager(QMainWindow):
         else:
             rows_to_load = [("", line) for line in clean_lines]
 
+        # 가져오기 작업 이전 상태를 실행 취소(Undo) 스택에 저장합니다.
+        if hasattr(self.table_script, 'save_state_for_undo'):
+            self.table_script.save_state_for_undo()
+
         self.table_script.blockSignals(True)
         self.table_script.setRowCount(len(rows_to_load))
         char_list = self.get_character_list()
@@ -3939,10 +3984,6 @@ class WebtoonManager(QMainWindow):
         self.table_script.blockSignals(False)
         self.table_script.resizeRowsToContents() 
         self.save_script_data()
-
-        # 불러온 스크립트 데이터를 새로운 기준점으로 삼기 위해 실행취소 스택을 초기화합니다.
-        if hasattr(self.table_script, 'clear_undo_stack'):
-            self.table_script.clear_undo_stack()
 
     def save_script_data(self, *args):
         import pandas as pd
@@ -4195,7 +4236,11 @@ class WebtoonManager(QMainWindow):
                 self._last_spellcheck_vscroll = dlg.edit_new.verticalScrollBar().value()
                 
                 if dlg.result(): # Accepted
-                    self.text_editor.setText(dlg.result_text)
+                    cursor = self.text_editor.textCursor()
+                    cursor.select(QTextCursor.Document)
+                    cursor.beginEditBlock()
+                    cursor.insertText(dlg.result_text)
+                    cursor.endEditBlock()
                     self.save_text_content() 
                     self.toast.show_message("✅ 맞춤법 교정이 완료되었습니다!", 2000)
                     self._last_spellcheck_original = None
@@ -4229,7 +4274,11 @@ class WebtoonManager(QMainWindow):
         self._last_spellcheck_vscroll = dlg.edit_new.verticalScrollBar().value()
         
         if dlg.result(): # Accepted
-            self.text_editor.setText(dlg.result_text)
+            cursor = self.text_editor.textCursor()
+            cursor.select(QTextCursor.Document)
+            cursor.beginEditBlock()
+            cursor.insertText(dlg.result_text)
+            cursor.endEditBlock()
             self.save_text_content() 
             self.toast.show_message("✅ 맞춤법 교정이 완료되었습니다!", 2000)
             # 적용 시 캐시 초기화

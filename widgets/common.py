@@ -49,10 +49,11 @@ class ResponsiveLabel(QLabel):
 class ClickableComboBox(QComboBox):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFocusPolicy(Qt.StrongFocus) # [추가] 스크롤 시 자동 포커스(클릭되는 현상) 방지
+        self.setFocusPolicy(Qt.ClickFocus) # [수정] 스크롤 시 자동 포커스(클릭되는 현상) 방지하기 위해 ClickFocus로 설정
         self.setEditable(True) 
         self.lineEdit().setReadOnly(True)
         self.lineEdit().setCursor(Qt.ArrowCursor)
+        self.lineEdit().setFocusPolicy(Qt.ClickFocus) # [수정] 내부 입력창도 스크롤 시 포커스 방지
         self.lineEdit().installEventFilter(self)
         self.installEventFilter(self) # [추가] 자기 자신에게도 필터 설치
         self.setView(QListView())
@@ -220,6 +221,10 @@ class ClickableComboBox(QComboBox):
                     self._ignore_next_release = False
                 else:
                     self._toggle_popup()
+                return True
+
+            elif event.type() in (QEvent.MouseMove, QEvent.MouseButtonDblClick, QEvent.DragEnter, QEvent.DragMove, QEvent.DragLeave, QEvent.Drop):
+                # 드래그, 더블클릭 블록 지정 및 드래그 앤 드롭 동작 완전 차단
                 return True
                     
         return super().eventFilter(obj, event)
@@ -670,6 +675,9 @@ class SmartTextEdit(QTextEdit):
                 image_files = [f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
                 if image_files:
                     mw.process_image_files(image_files)
+        elif source.hasText():
+            # 웹 브라우저 등에서 복사한 서식(HTML, 스타일)이 포함된 Rich Text를 무시하고 순수 텍스트(Plain Text)로만 붙여넣기
+            self.insertPlainText(source.text())
         else:
             super().insertFromMimeData(source)
 

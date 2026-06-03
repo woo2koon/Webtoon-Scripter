@@ -3472,3 +3472,122 @@ class TextCleanDialog(SpellCheckDialog):
             self.result_text = self.result_text.strip()
 
 
+# =================================================================
+# 프리미엄 디자인 커스텀 입력 다이얼로그 (QInputDialog 대체용)
+# =================================================================
+class CustomInputDialog(QDialog):
+    def __init__(self, title, label_text, placeholder_text="", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.resize(360, 180)
+        self.validator = None
+        
+        self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
+        self.setStyleSheet("QDialog { background-color: #FFFFFF; }")
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(14)
+        
+        self.lbl_text = QLabel(label_text)
+        self.lbl_text.setStyleSheet("font-size: 14px; font-weight: 600; color: #1F2937; font-family: 'Pretendard';")
+        layout.addWidget(self.lbl_text)
+        
+        self.input_field = SingleClickLineEdit()
+        self.input_field.setPlaceholderText(placeholder_text)
+        self.input_field.setFixedHeight(38)
+        self.input_field.setStyleSheet("""
+            QLineEdit {
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                padding-left: 10px;
+                font-size: 13px;
+                color: #374151;
+                background-color: #F9FAFB;
+                font-family: 'Pretendard';
+            }
+            QLineEdit:focus {
+                border: 2px solid #FF5722;
+                background-color: white;
+            }
+        """)
+        layout.addWidget(self.input_field)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+        
+        self.btn_cancel = QPushButton("취소")
+        self.btn_cancel.setFixedHeight(38)
+        self.btn_cancel.setStyleSheet("""
+            QPushButton {
+                background-color: #F3F4F6;
+                color: #4B5563;
+                font-weight: bold;
+                border: 1px solid #E5E7EB;
+                border-radius: 6px;
+                font-family: 'Pretendard';
+            }
+            QPushButton:hover {
+                background-color: #E5E7EB;
+            }
+        """)
+        self.btn_cancel.clicked.connect(self.reject)
+        
+        self.btn_ok = QPushButton("확인")
+        self.btn_ok.setFixedHeight(38)
+        self.btn_ok.setStyleSheet("""
+            QPushButton {
+                background-color: #FF5722;
+                color: white;
+                font-weight: bold;
+                border: none;
+                border-radius: 6px;
+                font-family: 'Pretendard';
+            }
+            QPushButton:hover {
+                background-color: #F4511E;
+            }
+        """)
+        self.btn_ok.clicked.connect(self.on_accept)
+        
+        btn_layout.addWidget(self.btn_cancel)
+        btn_layout.addWidget(self.btn_ok)
+        layout.addLayout(btn_layout)
+        
+        self.input_field.returnPressed.connect(self.btn_ok.click)
+        
+    def get_text(self):
+        return self.input_field.text().strip()
+
+    def on_accept(self):
+        text = self.get_text()
+        if not text:
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: (
+                QMessageBox.warning(self, "경고", "이름을 입력해주세요."),
+                self.input_field.setFocus()
+            ))
+            return
+        if self.validator:
+            is_valid, err_msg = self.validator(text)
+            if not is_valid:
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(0, lambda: (
+                    QMessageBox.warning(self, "중복 경고", err_msg),
+                    self.input_field.setFocus()
+                ))
+                return
+        self.accept()
+
+    @classmethod
+    def get_input(cls, parent, title, label_text, placeholder_text="", validator=None):
+        dlg = cls(title, label_text, placeholder_text, parent)
+        dlg.validator = validator
+        # 활성화 시 포커스를 텍스트 필드로 자동 설정
+        dlg.input_field.setFocus()
+        if dlg.exec() == QDialog.Accepted:
+            return dlg.get_text(), True
+        return "", False
+
+
