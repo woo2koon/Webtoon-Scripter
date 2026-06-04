@@ -875,6 +875,111 @@ class DoubleClickableLabel(QLabel):
         super().mouseDoubleClickEvent(event)
 
 # =================================================================
+# TitleBarButton: SVG 아이콘 전용 프레임리스 버튼
+# =================================================================
+class TitleBarButton(QPushButton):
+    def __init__(self, svg_normal, svg_hover, hover_bg_color, parent=None):
+        super().__init__(parent)
+        self.svg_normal = svg_normal
+        self.svg_hover = svg_hover
+        self.hover_bg_color = hover_bg_color
+        
+        self.setFixedSize(24, 24)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: 12px;
+                padding: 0px;
+                margin: 0px;
+                min-width: 24px;
+                max-width: 24px;
+                min-height: 24px;
+                max-height: 24px;
+            }}
+            QPushButton:hover, QPushButton:focus {{
+                background-color: {self.hover_bg_color};
+                outline: none;
+            }}
+        """)
+        self.update_icon(False)
+
+    def update_icon(self, is_hover):
+        from PySide6.QtSvg import QSvgRenderer
+        from PySide6.QtCore import QByteArray, QRect
+        from PySide6.QtGui import QIcon, QPixmap, QPainter
+        
+        svg_content = self.svg_hover if (is_hover and self.svg_hover) else self.svg_normal
+        renderer = QSvgRenderer(QByteArray(svg_content.encode('utf-8')))
+        pixmap = QPixmap(24, 24)
+        pixmap.fill(Qt.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        renderer.render(painter, QRect(6, 6, 12, 12))
+        painter.end()
+        
+        self.setIcon(QIcon(pixmap))
+        self.setIconSize(QSize(24, 24))
+
+    def enterEvent(self, event):
+        self.update_icon(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.update_icon(False)
+        super().leaveEvent(event)
+
+    def showEvent(self, event):
+        self.update_icon(False)
+        super().showEvent(event)
+
+class MagnetToggleButton(TitleBarButton):
+    def __init__(self, is_sticky=True, parent=None):
+        self.is_sticky = is_sticky
+        self.svg_active_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>'
+        self.svg_active_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>'
+        self.svg_inactive_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M15 9.34V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H7.89"/><path d="m2 2 20 20"/><path d="M9 9v1.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h11"/></svg>'
+        self.svg_inactive_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M15 9.34V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H7.89"/><path d="m2 2 20 20"/><path d="M9 9v1.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h11"/></svg>'
+        
+        super().__init__(self.svg_active_normal, self.svg_active_hover, "#E5E7EB", parent)
+        self.update_magnet_state(is_sticky)
+
+    def update_magnet_state(self, is_sticky):
+        self.is_sticky = is_sticky
+        if self.is_sticky:
+            self.svg_normal = self.svg_active_normal
+            self.svg_hover = self.svg_active_hover
+            self.hover_bg_color = "#E0E7FF"
+            self.setToolTip("고정 모드 활성화됨 (메인 창과 함께 이동)")
+        else:
+            self.svg_normal = self.svg_inactive_normal
+            self.svg_hover = self.svg_inactive_hover
+            self.hover_bg_color = "#D1D5DB"
+            self.setToolTip("고정 모드 비활성화됨 (개별 이동)")
+        
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: 12px;
+                padding: 0px;
+                margin: 0px;
+                min-width: 24px;
+                max-width: 24px;
+                min-height: 24px;
+                max-height: 24px;
+            }}
+            QPushButton:hover, QPushButton:focus {{
+                background-color: {self.hover_bg_color};
+                outline: none;
+            }}
+        """)
+        self.update_icon(False)
+
+# =================================================================
 # 👤 캐릭터 도우미 플로팅 위젯 (FloatingCharacterViewer)
 # =================================================================
 class FloatingCharacterViewer(QDialog):
@@ -886,25 +991,34 @@ class FloatingCharacterViewer(QDialog):
         self.project_name = project_name
         self.avatar_size_all = config.AVATAR_SIZE_ALL
         self.avatar_size_current = config.AVATAR_SIZE_CURRENT
-        self.setWindowTitle("👤 캐릭터 도우미")
-        import sys
-        if sys.platform == "darwin":
-            self.setWindowFlags(Qt.Tool | Qt.WindowCloseButtonHint)
-        else:
-            self.setWindowFlags(Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
+        self.setWindowTitle("캐릭터 도우미")
+        self.is_sticky = True # 자석(Sticky) 모드 활성화 상태
+        
+        # 프레임리스 윈도우 및 투명 배경 설정
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
         self.resize(340, 520)
         
         self.init_ui()
         self.load_data()
+        
+        # 8방향 리사이즈 및 타이틀바 드래그 이동 등록
+        from .window_resizer import FramelessWindowResizer
+        self.resizer = FramelessWindowResizer(self, self.title_bar)
+
+    def toggle_sticky(self):
+        self.is_sticky = not self.is_sticky
+        self.btn_magnet.update_magnet_state(self.is_sticky)
+        if self.is_sticky:
+            parent = self.parent()
+            if parent and hasattr(parent, 'geometry'):
+                pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+                parent._character_relative_pos = pos
 
     def hideEvent(self, event):
         parent = self.parent()
         if parent and hasattr(parent, 'geometry'):
-            import sys
-            if sys.platform == "darwin":
-                pos = (self.geometry().x() - parent.geometry().x(), self.geometry().y() - parent.geometry().y())
-            else:
-                pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+            pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
             size = (self.width(), self.height())
             parent._character_relative_pos = pos
             parent._character_size = size
@@ -914,11 +1028,7 @@ class FloatingCharacterViewer(QDialog):
     def closeEvent(self, event):
         parent = self.parent()
         if parent and hasattr(parent, 'geometry'):
-            import sys
-            if sys.platform == "darwin":
-                pos = (self.geometry().x() - parent.geometry().x(), self.geometry().y() - parent.geometry().y())
-            else:
-                pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+            pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
             size = (self.width(), self.height())
             parent._character_relative_pos = pos
             parent._character_size = size
@@ -928,14 +1038,11 @@ class FloatingCharacterViewer(QDialog):
     def moveEvent(self, event):
         parent = self.parent()
         if parent and hasattr(parent, 'geometry') and self.isVisible():
-            import sys
-            if sys.platform == "darwin":
-                pos = (self.geometry().x() - parent.geometry().x(), self.geometry().y() - parent.geometry().y())
-            else:
+            if not getattr(self, '_is_moving_by_parent', False):
                 pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
-            parent._character_relative_pos = pos
-            size = parent._character_size if parent._character_size else (self.width(), self.height())
-            config.update_character_viewer_geometry(pos, size)
+                parent._character_relative_pos = pos
+                size = parent._character_size if parent._character_size else (self.width(), self.height())
+                config.update_character_viewer_geometry(pos, size)
         super().moveEvent(event)
 
     def resizeEvent(self, event):
@@ -943,21 +1050,87 @@ class FloatingCharacterViewer(QDialog):
         if parent and hasattr(parent, 'geometry') and self.isVisible():
             size = (self.width(), self.height())
             parent._character_size = size
-            import sys
-            if sys.platform == "darwin":
-                pos = (self.geometry().x() - parent.geometry().x(), self.geometry().y() - parent.geometry().y())
-            else:
-                pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+            pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
             parent._character_relative_pos = pos
             config.update_character_viewer_geometry(pos, size)
-        super().resizeEvent(event)
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 1))
+        super().paintEvent(event)
 
     def init_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 10, 8, 10)
-        layout.setSpacing(8)
+        # 1. 커스텀 타이틀바 생성
+        self.title_bar = QFrame()
+        self.title_bar.setObjectName("TitleBar")
+        self.title_bar.setFixedHeight(34)
+        self.title_bar.setStyleSheet("""
+            QFrame#TitleBar {
+                background-color: #FFFFFF;
+                border-top-left-radius: 7px;
+                border-top-right-radius: 7px;
+                border-bottom: 1px solid #E5E7EB;
+            }
+        """)
+        title_layout = QHBoxLayout(self.title_bar)
+        title_layout.setContentsMargins(12, 0, 12, 0)
+        title_layout.setSpacing(6)
         
+        # Title icon using SVG
+        lbl_icon = QLabel()
+        lbl_icon.setFixedSize(14, 14)
+        lbl_icon.setStyleSheet("background: transparent; border: none;")
+        pixmap = get_colored_pixmap(config.ICON_USER, "#1F2937", 14, 14)
+        lbl_icon.setPixmap(pixmap)
+        title_layout.addWidget(lbl_icon)
+        
+        lbl_title = QLabel("캐릭터 도우미")
+        lbl_title.setStyleSheet("color: #1F2937; font-weight: 600; font-size: 13px; background: transparent; border: none; font-family: 'Pretendard';")
+        title_layout.addWidget(lbl_title)
+        
+        title_layout.addStretch()
+        
+        # 자석 토글 버튼 추가
+        self.btn_magnet = MagnetToggleButton(self.is_sticky)
+        self.btn_magnet.clicked.connect(self.toggle_sticky)
+        title_layout.addWidget(self.btn_magnet)
+        
+        # SVG 정의
+        svg_close_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+        svg_close_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+        
+        # 닫기 버튼
+        btn_close = TitleBarButton(svg_close_normal, svg_close_hover, "#EF4444")
+        btn_close.clicked.connect(self.close)
+        title_layout.addWidget(btn_close)
+        
+        # 2. 메인 외곽 프레임
+        self.main_frame = QFrame(self)
+        self.main_frame.setObjectName("MainFrame")
+        self.main_frame.setStyleSheet("""
+            QFrame#MainFrame {
+                background-color: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 8px;
+            }
+        """)
+        
+        main_layout = QVBoxLayout(self.main_frame)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        main_layout.addWidget(self.title_bar)
+        
+        # 3. 내부 탭 영역
         self.tabs = QTabWidget()
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(10, 10, 10, 10)
+        content_layout.setSpacing(8)
+        content_layout.addWidget(self.tabs)
+        main_layout.addLayout(content_layout)
+        
+        # 4. 다이얼로그 본체 레이아웃
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(6, 6, 6, 6)
+        outer_layout.addWidget(self.main_frame)
         
         # 탭바 우측 코너에 배치할 줌 컨트롤러 위젯
         zoom_widget = QWidget()
@@ -1131,25 +1304,6 @@ class FloatingCharacterViewer(QDialog):
         
         self.tabs.addTab(self.tab_current, "현재 회차 등장인물")
         self.tabs.currentChanged.connect(self.on_tab_changed)
-        
-        layout.addWidget(self.tabs)
-        
-        self.btn_close = QPushButton("닫기")
-        self.btn_close.setStyleSheet("""
-            QPushButton {
-                background-color: #212529;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 24px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #000000;
-            }
-        """)
-        self.btn_close.clicked.connect(self.close)
-        layout.addWidget(self.btn_close)
         
     def _list_stylesheet(self):
         return """
@@ -1382,7 +1536,7 @@ class GlobalCharacterSettingsDialog(QDialog):
     def __init__(self, parent=None, project_name=""):
         super().__init__(parent)
         self.project_name = project_name
-        self.setWindowTitle("👥 캐릭터 관리")
+        self.setWindowTitle("캐릭터 관리")
         self.resize(580, 710)
         self.selected_color = "#3B82F6"
         self.editing_name = None
@@ -1432,7 +1586,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         lbl_title_icon.setPixmap(title_pix)
         
         title_lbl = QLabel("캐릭터 추가 / 수정")
-        title_lbl.setStyleSheet("font-size: 15px; font-weight: 600; color: #111827; border: none; background: transparent; padding: 0px;")
+        title_lbl.setStyleSheet("font-size: 15px; font-weight: 600; color: #111827; border: none; background: transparent; padding: 0px; font-family: 'Pretendard';")
         
         title_container_layout.addWidget(lbl_title_icon)
         title_container_layout.addWidget(title_lbl)
@@ -1484,7 +1638,7 @@ class GlobalCharacterSettingsDialog(QDialog):
                 color: #3B82F6;
             }
         """)
-        self.btn_change_avatar.clicked.connect(self.select_profile_image)
+        self.btn_change_avatar.clicked.connect(self.show_avatar_register_menu)
         
         self.btn_delete_avatar = QPushButton("삭제")
         self.btn_delete_avatar.setCursor(Qt.PointingHandCursor)
@@ -1528,7 +1682,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         dropdown_layout.setContentsMargins(0, 0, 0, 0)
         dropdown_layout.setSpacing(0)
         
-        self.combo_role = QComboBox()
+        self.combo_role = ClickableComboBox()
         self.combo_role.addItems(["주연", "조연", "단역"])
         self.combo_role.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
         self.combo_role.setFixedWidth(78)
@@ -1540,7 +1694,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         age_layout.setSpacing(13)
         lbl_age = QLabel("연령")
         lbl_age.setStyleSheet("font-weight: 500; color: #374151; border: none;")
-        self.combo_age = QComboBox()
+        self.combo_age = ClickableComboBox()
         self.combo_age.addItems(config.AGE_OPTIONS)
         self.combo_age.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
         self.combo_age.setFixedWidth(78)
@@ -1554,7 +1708,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         gender_layout.setSpacing(13)
         lbl_gender = QLabel("성별")
         lbl_gender.setStyleSheet("font-weight: 500; color: #374151; border: none;")
-        self.combo_gender = QComboBox()
+        self.combo_gender = ClickableComboBox()
         self.combo_gender.addItems(config.GENDER_OPTIONS)
         self.combo_gender.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
         self.combo_gender.setFixedWidth(78)
@@ -1642,7 +1796,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         lbl_list_icon.setPixmap(list_pix)
         
         list_title = QLabel("등록된 캐릭터 목록")
-        list_title.setStyleSheet("font-size: 15px; font-weight: 600; color: #111827; border: none; background: transparent; padding: 0px;")
+        list_title.setStyleSheet("font-size: 15px; font-weight: 600; color: #111827; border: none; background: transparent; padding: 0px; font-family: 'Pretendard';")
         
         list_header_layout.addWidget(lbl_list_icon)
         list_header_layout.addWidget(list_title)
@@ -1882,6 +2036,90 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.lbl_avatar.setPixmap(default_pix)
         if img_path is None:
             self.temp_image_path = None
+
+    def show_avatar_register_menu(self):
+        menu = QMenu(self)
+        menu.setWindowFlags(menu.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        menu.setAttribute(Qt.WA_TranslucentBackground)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                padding: 4px;
+            }
+            QMenu::item {
+                font-family: 'Pretendard';
+                font-size: 12px;
+                color: #374151;
+                padding: 5px 12px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #F3F4F6;
+                color: #111827;
+            }
+        """)
+        action_file = menu.addAction("파일 추가...")
+        action_capture = menu.addAction("웹툰 뷰어에서 캡처")
+        
+        # 버튼 바로 아래에 메뉴가 나타나도록 위치 계산
+        btn_pos = self.btn_change_avatar.mapToGlobal(QPoint(0, self.btn_change_avatar.height()))
+        selected_action = menu.exec(btn_pos)
+        
+        if selected_action == action_file:
+            self.select_profile_image()
+        elif selected_action == action_capture:
+            self.capture_from_webtoon()
+
+    def capture_from_webtoon(self):
+        main_win = None
+        for widget in QApplication.topLevelWidgets():
+            if hasattr(widget, 'scroll_area') and widget.scroll_area:
+                main_win = widget
+                break
+                
+        if not main_win or not hasattr(main_win, 'scroll_area') or not main_win.scroll_area:
+            QMessageBox.warning(self, "경고", "메인 화면의 웹툰 뷰어를 찾을 수 없습니다.")
+            return
+            
+        viewport = main_win.scroll_area.viewport()
+        if not viewport:
+            QMessageBox.warning(self, "경고", "웹툰 뷰포트 영역을 획득할 수 없습니다.")
+            return
+            
+        self.hide()
+        
+        self.capture_overlay = WebtoonCaptureOverlay(viewport, main_win)
+        
+        def on_captured(pixmap):
+            self.show()
+            if pixmap and not pixmap.isNull():
+                import tempfile
+                import uuid
+                temp_dir = tempfile.gettempdir()
+                temp_captured_path = os.path.join(temp_dir, f"capture_{uuid.uuid4().hex[:8]}.png")
+                pixmap.save(temp_captured_path, "PNG")
+                
+                crop_dlg = ImageCropDialog(temp_captured_path, self)
+                if crop_dlg.exec() == QDialog.Accepted:
+                    cropped_pixmap = crop_dlg.cropped_pixmap
+                    if cropped_pixmap and not cropped_pixmap.isNull():
+                        temp_crop_path = os.path.join(temp_dir, f"crop_{uuid.uuid4().hex[:8]}.png")
+                        cropped_pixmap.save(temp_crop_path, "PNG")
+                        
+                        self.temp_image_path = temp_crop_path
+                        self.temp_orig_image_path = temp_captured_path
+                        self.temp_crop_rect = crop_dlg.crop_rect_coords
+                        
+                        self.set_avatar_pixmap(temp_crop_path)
+                        self.update_avatar_buttons()
+                        
+        def on_cancelled():
+            self.show()
+            
+        self.capture_overlay.capture_completed.connect(on_captured)
+        self.capture_overlay.capture_cancelled.connect(on_cancelled)
 
     def select_profile_image(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -2880,7 +3118,7 @@ class ImageCropDialog(QDialog):
     """인물 사진 등록 시, 얼굴 영역만 1:1 정사각형 비율로 정밀 드래그 지정하는 모던 크롭/선택 다이얼로그"""
     def __init__(self, file_path, parent=None, initial_crop_rect=None):
         super().__init__(parent)
-        self.setWindowTitle("👤 프로필 이미지 표시 영역 지정 (1:1)")
+        self.setWindowTitle("프로필 이미지 표시 영역 지정 (1:1)")
         self.setWindowFlags(Qt.Window | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
         self.setStyleSheet("background-color: #FFFFFF;")
         
@@ -3175,4 +3413,104 @@ class ProfileImageOverwriteDialog(QDialog):
     def get_avatar_placeholder(self, w=150, h=150, radius=12):
         """150x150 크기의 부드럽고 보기 좋은 기본 아바타 플레이스홀더를 동적으로 생성"""
         return get_default_avatar_pixmap(w, h, radius)
+
+
+# =================================================================
+# 📸 웹툰 뷰어 화면 캡처 오버레이 위젯 (WebtoonCaptureOverlay)
+# =================================================================
+class WebtoonCaptureOverlay(QWidget):
+    capture_completed = Signal(QPixmap)
+    capture_cancelled = Signal()
+
+    def __init__(self, viewport_widget, parent=None):
+        super().__init__(parent)
+        self.viewport = viewport_widget
+        
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        
+        global_pos = self.viewport.mapToGlobal(QPoint(0, 0))
+        self.setGeometry(global_pos.x(), global_pos.y(), self.viewport.width(), self.viewport.height())
+        
+        self.start_pos = None
+        self.end_pos = None
+        self.is_dragging = False
+        
+        self.setCursor(Qt.CrossCursor)
+        self.setMouseTracking(True)
+        self.show()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 100))
+        
+        if self.is_dragging and self.start_pos and self.end_pos:
+            rect = QRect(self.start_pos, self.end_pos).normalized()
+            
+            painter.setCompositionMode(QPainter.CompositionMode_Clear)
+            painter.fillRect(rect, Qt.transparent)
+            
+            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+            pen = QPen(QColor("#3B82F6"), 2, Qt.DashLine)
+            painter.setPen(pen)
+            painter.drawRect(rect)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.start_pos = event.pos()
+            self.end_pos = self.start_pos
+            self.is_dragging = True
+            self.update()
+            event.accept()
+        elif event.button() == Qt.RightButton:
+            self.capture_cancelled.emit()
+            self.close()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self.is_dragging:
+            self.end_pos = event.pos()
+            self.end_pos.setX(max(0, min(self.end_pos.x(), self.width())))
+            self.end_pos.setY(max(0, min(self.end_pos.y(), self.height())))
+            self.update()
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self.is_dragging:
+            self.is_dragging = False
+            self.end_pos = event.pos()
+            self.end_pos.setX(max(0, min(self.end_pos.x(), self.width())))
+            self.end_pos.setY(max(0, min(self.end_pos.y(), self.height())))
+            
+            rect = QRect(self.start_pos, self.end_pos).normalized()
+            if rect.width() > 10 and rect.height() > 10:
+                captured_pixmap = self.viewport.grab(rect)
+                self.capture_completed.emit(captured_pixmap)
+            else:
+                self.capture_cancelled.emit()
+            self.close()
+            event.accept()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.capture_cancelled.emit()
+            self.close()
+            event.accept()
+
+    def wheelEvent(self, event):
+        if self.viewport:
+            scroll_area = self.viewport.parent()
+            if scroll_area and hasattr(scroll_area, 'verticalScrollBar'):
+                vbar = scroll_area.verticalScrollBar()
+                if vbar:
+                    delta = event.angleDelta().y()
+                    # QWheelEvent는 기본적으로 120 단위의 delta값을 가짐
+                    new_value = vbar.value() - int(delta)
+                    vbar.setValue(new_value)
+                    event.accept()
+                    return
+        super().wheelEvent(event)
+
 

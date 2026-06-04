@@ -76,6 +76,7 @@ class ClickableComboBox(QComboBox):
         self.view().setFont(combo_font)
         self.view().setTextElideMode(Qt.TextElideMode.ElideRight)
             
+        self.setItemDelegate(PopupItemDelegate())
         self.refresh_callback = None 
         self._popup_hidden_recently = False
 
@@ -100,6 +101,10 @@ class ClickableComboBox(QComboBox):
                     QListView {
                         font-family: 'Pretendard';
                         font-size: 14px;
+                        background-color: #FFFFFF;
+                        border: 1px solid #D1D5DB;
+                        border-radius: 6px;
+                        padding: 4px;
                     }
                     QListView::item {
                         font-family: 'Pretendard';
@@ -111,6 +116,10 @@ class ClickableComboBox(QComboBox):
                     QListView {
                         font-family: 'Pretendard';
                         font-size: 15px;
+                        background-color: #FFFFFF;
+                        border: 1px solid #D1D5DB;
+                        border-radius: 6px;
+                        padding: 4px;
                     }
                     QListView::item {
                         font-family: 'Pretendard';
@@ -731,27 +740,36 @@ class ToastMessage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         
         self.bg_frame = QFrame()
+        self.bg_frame.setFrameShape(QFrame.NoFrame)
         self.bg_frame.setStyleSheet("""
             QFrame {
                 background-color: #282C34;
                 border-radius: 18px;
+                border: none;
             }
         """)
-        frame_layout = QVBoxLayout(self.bg_frame)
-        frame_layout.setContentsMargins(0, 0, 0, 0)
+        frame_layout = QHBoxLayout(self.bg_frame)
+        frame_layout.setContentsMargins(18, 11, 18, 11)
+        frame_layout.setSpacing(8)
+        
+        self.lbl_icon = QLabel()
+        self.lbl_icon.setFixedSize(18, 18)
+        self.lbl_icon.setStyleSheet("background: transparent; border: none;")
+        self.lbl_icon.hide()
         
         self.lbl_text = QLabel()
-        self.lbl_text.setAlignment(Qt.AlignCenter)
         self.lbl_text.setStyleSheet("""
             QLabel {
                 color: white;
-                padding: 10px 18px;
                 font-size: 14px;
                 font-weight: bold;
                 font-family: 'Pretendard';
                 background: transparent;
+                border: none;
             }
         """)
+        
+        frame_layout.addWidget(self.lbl_icon)
         frame_layout.addWidget(self.lbl_text)
         layout.addWidget(self.bg_frame)
         
@@ -771,7 +789,74 @@ class ToastMessage(QWidget):
         self.timer.stop()
         self.anim.stop()
         
-        self.lbl_text.setText(text)
+        # 이모지 검출 및 텍스트 정제
+        clean_text = text
+        emoji = ""
+        for char in ["✅", "🗑️", "✨", "⚠️", "❌", "📄", "👥", "⏳", "📶", "🔄", "🚫", "🏢", "📊", "⚡"]:
+            if clean_text.startswith(char):
+                emoji = char
+                clean_text = clean_text[len(char):].strip()
+                break
+                
+        # 매칭되는 아이콘 표시
+        if emoji:
+            icon_path = ""
+            icon_color = "#FFFFFF"
+            if emoji == "✅":
+                icon_path = config.ICON_SUCCESS
+                icon_color = "#10B981" # 성공: 녹색
+            elif emoji == "🗑️":
+                icon_path = config.ICON_DELETE
+                icon_color = "#EF4444" # 삭제: 빨간색
+            elif emoji == "✨":
+                icon_path = config.ICON_INFO
+                icon_color = "#F59E0B" # 정보: 오렌지
+            elif emoji == "⚠️":
+                icon_path = config.ICON_WARNING
+                icon_color = "#FBBF24" # 경고: 노란색
+            elif emoji == "❌":
+                icon_path = config.ICON_WARNING
+                icon_color = "#EF4444" # 에러: 빨간색
+            elif emoji == "📄":
+                icon_path = config.ICON_FILE
+                icon_color = "#3B82F6" # 파일: 파란색
+            elif emoji == "👥":
+                icon_path = config.ICON_USER
+                icon_color = "#8B5CF6" # 캐릭터/사용자: 보라색
+            elif emoji == "⏳":
+                icon_path = config.ICON_REFRESH
+                icon_color = "#9CA3AF" # 로딩/대기: 회색
+            elif emoji == "📶":
+                icon_path = config.ICON_ARROW_UP
+                icon_color = "#3B82F6" # 정렬: 파란색
+            elif emoji == "🔄":
+                icon_path = config.ICON_REFRESH
+                icon_color = "#3B82F6" # 새로고침/업데이트: 파란색
+            elif emoji == "🚫":
+                icon_path = config.ICON_WARNING
+                icon_color = "#EF4444" # 중지/금지: 빨간색
+            elif emoji == "🏢":
+                icon_path = config.ICON_SETTINGS_COG
+                icon_color = "#3B82F6" # 전체 모드: 파란색
+            elif emoji == "📊":
+                icon_path = config.ICON_EXCEL
+                icon_color = "#10B981" # 엑셀: 녹색
+            elif emoji == "⚡":
+                icon_path = config.ICON_INFO
+                icon_color = "#FBBF24" # 빠른처리/캐시: 노란색
+                
+            if icon_path:
+                pix = get_colored_pixmap(icon_path, icon_color, 18, 18)
+                self.lbl_icon.setPixmap(pix)
+                self.lbl_icon.show()
+            else:
+                self.lbl_icon.hide()
+        else:
+            self.lbl_icon.hide()
+            
+        self.lbl_text.setText(clean_text)
+        
+        # 크기 자동 조절
         self.lbl_text.adjustSize()
         self.bg_frame.adjustSize()
         self.adjustSize()
@@ -900,6 +985,35 @@ class SingleClickLineEdit(QLineEdit):
         super().mousePressEvent(event)
 
 # =================================================================
+# 회전하는 SVG 로딩 아이콘 라벨
+# =================================================================
+class SpinningIconLabel(QLabel):
+    def __init__(self, icon_path, color="#FF5722", size=22, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(size, size)
+        self.pixmap = get_colored_pixmap(icon_path, color, size, size)
+        self.angle = 0
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.rotate)
+        self.timer.start(30)
+
+    def rotate(self):
+        self.angle = (self.angle + 8) % 360
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        
+        # 중심점 기준 회전
+        painter.translate(self.width() / 2, self.height() / 2)
+        painter.rotate(self.angle)
+        painter.translate(-self.width() / 2, -self.height() / 2)
+        
+        painter.drawPixmap(self.rect(), self.pixmap)
+
+# =================================================================
 # 프리미엄 디자인 커스텀 로딩 다이얼로그
 # =================================================================
 class ModernProgressDialog(QDialog):
@@ -954,8 +1068,24 @@ class ModernProgressDialog(QDialog):
             body_layout.setContentsMargins(24, 24, 24, 24)
         body_layout.setSpacing(16)
         
-        # 로딩 메시지
-        self.lbl_text = QLabel(label_text, self.body)
+        # 로딩 메시지와 회전 아이콘을 정렬할 가로 레이아웃
+        text_layout = QHBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(12)
+        text_layout.setAlignment(Qt.AlignVCenter)
+        
+        # 로딩 스피너 추가 (config.ICON_REFRESH를 이용해 회전)
+        self.spinner = SpinningIconLabel(config.ICON_REFRESH, color="#FF5722", size=22, parent=self.body)
+        text_layout.addWidget(self.spinner)
+        
+        # 텍스트에서 이모지 제거
+        clean_text = label_text
+        if clean_text.startswith("⏳"):
+            clean_text = clean_text[1:].strip()
+        elif clean_text.startswith("⌛"):
+            clean_text = clean_text[1:].strip()
+            
+        self.lbl_text = QLabel(clean_text, self.body)
         self.lbl_text.setStyleSheet("""
             font-family: 'Pretendard';
             font-size: 14px;
@@ -965,7 +1095,9 @@ class ModernProgressDialog(QDialog):
             border: none;
         """)
         self.lbl_text.setWordWrap(True)
-        body_layout.addWidget(self.lbl_text)
+        text_layout.addWidget(self.lbl_text, 1)
+        
+        body_layout.addLayout(text_layout)
         
         # 프로그레스바
         from PySide6.QtWidgets import QProgressBar
@@ -1050,7 +1182,12 @@ class ModernProgressDialog(QDialog):
         QApplication.processEvents()
         
     def setLabelText(self, text):
-        self.lbl_text.setText(text)
+        clean_text = text
+        if clean_text.startswith("⏳"):
+            clean_text = clean_text[1:].strip()
+        elif clean_text.startswith("⌛"):
+            clean_text = clean_text[1:].strip()
+        self.lbl_text.setText(clean_text)
         QApplication.processEvents()
         
     def wasCanceled(self):

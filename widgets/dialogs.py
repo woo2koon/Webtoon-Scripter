@@ -1,4 +1,5 @@
 # widgets/dialogs.py
+import sys
 import os
 import re
 import difflib
@@ -11,7 +12,7 @@ from PySide6.QtWidgets import (
     QComboBox, QFrame, QListWidget, QListWidgetItem, QWidget, QListView,
     QInputDialog, QMessageBox, QAbstractItemView, QApplication, QStackedWidget,
     QFileDialog, QCheckBox, QMenu, QScrollArea, QGraphicsOpacityEffect, QTextEdit,
-    QProgressBar, QGraphicsDropShadowEffect, QTableWidget, QTableWidgetItem, QHeaderView
+    QProgressBar, QGraphicsDropShadowEffect, QTableWidget, QTableWidgetItem, QHeaderView, QGridLayout
 )
 from PySide6.QtCore import Qt, Signal, QPoint, QSize, QMimeData, QByteArray, QTimer, QEvent, QPropertyAnimation, QEasingCurve, QRect
 from PySide6.QtGui import (
@@ -21,7 +22,7 @@ from PySide6.QtGui import (
 
 import config
 from config import PROJECTS_DIR
-from utils import get_icon, get_colored_icon, open_path
+from utils import get_icon, get_colored_icon, get_colored_pixmap, open_path
 from .common import PopupItemDelegate, SingleClickLineEdit
 from .character import GlobalCharacterSettingsDialog
 
@@ -866,6 +867,111 @@ class IdiomSettingsDialog(QDialog):
         self.accept()
 
 # =================================================================
+# TitleBarButton: SVG 아이콘 전용 프레임런스 버튼
+# =================================================================
+class TitleBarButton(QPushButton):
+    def __init__(self, svg_normal, svg_hover, hover_bg_color, parent=None):
+        super().__init__(parent)
+        self.svg_normal = svg_normal
+        self.svg_hover = svg_hover
+        self.hover_bg_color = hover_bg_color
+        
+        self.setFixedSize(24, 24)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: 12px;
+                padding: 0px;
+                margin: 0px;
+                min-width: 24px;
+                max-width: 24px;
+                min-height: 24px;
+                max-height: 24px;
+            }}
+            QPushButton:hover, QPushButton:focus {{
+                background-color: {self.hover_bg_color};
+                outline: none;
+            }}
+        """)
+        self.update_icon(False)
+
+    def update_icon(self, is_hover):
+        from PySide6.QtSvg import QSvgRenderer
+        from PySide6.QtCore import QByteArray, QRect
+        from PySide6.QtGui import QIcon, QPixmap, QPainter
+        
+        svg_content = self.svg_hover if (is_hover and self.svg_hover) else self.svg_normal
+        renderer = QSvgRenderer(QByteArray(svg_content.encode('utf-8')))
+        pixmap = QPixmap(24, 24)
+        pixmap.fill(Qt.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        renderer.render(painter, QRect(6, 6, 12, 12))
+        painter.end()
+        
+        self.setIcon(QIcon(pixmap))
+        self.setIconSize(QSize(24, 24))
+
+    def enterEvent(self, event):
+        self.update_icon(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.update_icon(False)
+        super().leaveEvent(event)
+
+    def showEvent(self, event):
+        self.update_icon(False)
+        super().showEvent(event)
+
+class MagnetToggleButton(TitleBarButton):
+    def __init__(self, is_sticky=True, parent=None):
+        self.is_sticky = is_sticky
+        self.svg_active_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>'
+        self.svg_active_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>'
+        self.svg_inactive_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M15 9.34V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H7.89"/><path d="m2 2 20 20"/><path d="M9 9v1.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h11"/></svg>'
+        self.svg_inactive_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M15 9.34V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H7.89"/><path d="m2 2 20 20"/><path d="M9 9v1.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h11"/></svg>'
+        
+        super().__init__(self.svg_active_normal, self.svg_active_hover, "#E5E7EB", parent)
+        self.update_magnet_state(is_sticky)
+
+    def update_magnet_state(self, is_sticky):
+        self.is_sticky = is_sticky
+        if self.is_sticky:
+            self.svg_normal = self.svg_active_normal
+            self.svg_hover = self.svg_active_hover
+            self.hover_bg_color = "#E0E7FF"
+            self.setToolTip("고정 모드 활성화됨 (메인 창과 함께 이동)")
+        else:
+            self.svg_normal = self.svg_inactive_normal
+            self.svg_hover = self.svg_inactive_hover
+            self.hover_bg_color = "#D1D5DB"
+            self.setToolTip("고정 모드 비활성화됨 (개별 이동)")
+        
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: 12px;
+                padding: 0px;
+                margin: 0px;
+                min-width: 24px;
+                max-width: 24px;
+                min-height: 24px;
+                max-height: 24px;
+            }}
+            QPushButton:hover, QPushButton:focus {{
+                background-color: {self.hover_bg_color};
+                outline: none;
+            }}
+        """)
+        self.update_icon(False)
+
+# =================================================================
 # 관용구 플로팅 뷰어 (FloatingIdiomViewer)
 # =================================================================
 class FloatingIdiomViewer(QDialog):
@@ -874,23 +980,33 @@ class FloatingIdiomViewer(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("관용구 도우미")
-        import sys
-        if sys.platform == "darwin":
-            self.setWindowFlags(Qt.Tool | Qt.WindowCloseButtonHint)
-        else:
-            self.setWindowFlags(Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
+        self.is_sticky = True # 자석(Sticky) 모드 활성화 상태
+        
+        # 프레임리스 윈도우 및 투명 배경 설정
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
         self.resize(300, 450)
+        
         self.init_ui()
         self.refresh_list()
+        
+        # 8방향 리사이즈 및 타이틀바 드래그 이동 등록
+        from .window_resizer import FramelessWindowResizer
+        self.resizer = FramelessWindowResizer(self, self.title_bar)
+
+    def toggle_sticky(self):
+        self.is_sticky = not self.is_sticky
+        self.btn_magnet.update_magnet_state(self.is_sticky)
+        if self.is_sticky:
+            parent = self.parent()
+            if parent and hasattr(parent, 'geometry'):
+                pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+                parent._idiom_relative_pos = pos
 
     def hideEvent(self, event):
         parent = self.parent()
         if parent and hasattr(parent, 'geometry'):
-            import sys
-            if sys.platform == "darwin":
-                pos = (self.geometry().x() - parent.geometry().x(), self.geometry().y() - parent.geometry().y())
-            else:
-                pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+            pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
             size = (self.width(), self.height())
             parent._idiom_relative_pos = pos
             parent._idiom_size = size
@@ -900,22 +1016,110 @@ class FloatingIdiomViewer(QDialog):
     def closeEvent(self, event):
         parent = self.parent()
         if parent and hasattr(parent, 'geometry'):
-            import sys
-            if sys.platform == "darwin":
-                pos = (self.geometry().x() - parent.geometry().x(), self.geometry().y() - parent.geometry().y())
-            else:
-                pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+            pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
             size = (self.width(), self.height())
             parent._idiom_relative_pos = pos
             parent._idiom_size = size
             config.update_idiom_viewer_geometry(pos, size)
         super().closeEvent(event)
 
-    def init_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(10)
+    def moveEvent(self, event):
+        parent = self.parent()
+        if parent and hasattr(parent, 'geometry') and self.isVisible():
+            if not getattr(self, '_is_moving_by_parent', False):
+                pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+                parent._idiom_relative_pos = pos
+                size = parent._idiom_size if parent._idiom_size else (self.width(), self.height())
+                config.update_idiom_viewer_geometry(pos, size)
+        super().moveEvent(event)
 
+    def resizeEvent(self, event):
+        parent = self.parent()
+        if parent and hasattr(parent, 'geometry') and self.isVisible():
+            size = (self.width(), self.height())
+            parent._idiom_size = size
+            pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+            parent._idiom_relative_pos = pos
+            config.update_idiom_viewer_geometry(pos, size)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 1))
+        super().paintEvent(event)
+
+    def init_ui(self):
+        # 1. 커스텀 타이틀바 생성
+        self.title_bar = QFrame()
+        self.title_bar.setObjectName("TitleBar")
+        self.title_bar.setFixedHeight(34)
+        self.title_bar.setStyleSheet("""
+            QFrame#TitleBar {
+                background-color: #FFFFFF;
+                border-top-left-radius: 7px;
+                border-top-right-radius: 7px;
+                border-bottom: 1px solid #E5E7EB;
+            }
+        """)
+        title_layout = QHBoxLayout(self.title_bar)
+        title_layout.setContentsMargins(12, 0, 12, 0)
+        title_layout.setSpacing(6)
+        
+        # Title icon using SVG
+        lbl_icon = QLabel()
+        lbl_icon.setFixedSize(14, 14)
+        lbl_icon.setStyleSheet("background: transparent; border: none;")
+        pixmap = get_colored_pixmap(config.ICON_IDIOM, "#1F2937", 14, 14)
+        lbl_icon.setPixmap(pixmap)
+        title_layout.addWidget(lbl_icon)
+        
+        lbl_title = QLabel("관용구 도우미")
+        lbl_title.setStyleSheet("color: #1F2937; font-weight: 600; font-size: 13px; background: transparent; border: none; font-family: 'Pretendard';")
+        title_layout.addWidget(lbl_title)
+        
+        title_layout.addStretch()
+        
+        # 자석 토글 버튼 추가
+        self.btn_magnet = MagnetToggleButton(self.is_sticky)
+        self.btn_magnet.clicked.connect(self.toggle_sticky)
+        title_layout.addWidget(self.btn_magnet)
+        
+        # SVG 정의
+        svg_close_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+        svg_close_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+        
+        # 닫기 버튼
+        btn_close = TitleBarButton(svg_close_normal, svg_close_hover, "#EF4444")
+        btn_close.clicked.connect(self.close)
+        title_layout.addWidget(btn_close)
+        
+        # 2. 메인 외곽 프레임
+        self.main_frame = QFrame(self)
+        self.main_frame.setObjectName("MainFrame")
+        self.main_frame.setStyleSheet("""
+            QFrame#MainFrame {
+                background-color: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 8px;
+            }
+        """)
+        
+        main_layout = QVBoxLayout(self.main_frame)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        main_layout.addWidget(self.title_bar)
+        
+        # 3. 내부 컨텐츠 영역
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(15, 15, 15, 15)
+        content_layout.setSpacing(10)
+        main_layout.addLayout(content_layout)
+        
+        # 4. 다이얼로그 본체 레이아웃
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(6, 6, 6, 6)
+        outer_layout.addWidget(self.main_frame)
+        
+        # 이하 기존 search_bar 등 위젯 생성은 content_layout에 추가
         self.search_bar = SingleClickLineEdit()
         self.search_bar.setPlaceholderText("🔍 관용구 검색...")
         self.search_bar.setFixedHeight(36)
@@ -935,7 +1139,7 @@ class FloatingIdiomViewer(QDialog):
             }
         """ + "\n" + config.MODERN_MENU_STYLE)
         self.search_bar.textChanged.connect(self.filter_list)
-        layout.addWidget(self.search_bar)
+        content_layout.addWidget(self.search_bar)
 
         self.list_widget = QListWidget()
         self.list_widget.itemDoubleClicked.connect(self.on_item_clicked)
@@ -962,11 +1166,11 @@ class FloatingIdiomViewer(QDialog):
                 border: none;
             }
         """)
-        layout.addWidget(self.list_widget)
+        content_layout.addWidget(self.list_widget)
 
         lbl_info = QLabel(f"💡 단축키({config.MODIFIER_NAME}+키) 혹은 더블 클릭하면 자동 삽입됩니다.")
         lbl_info.setStyleSheet("color: #6B7280; font-size: 11px; font-family: 'Pretendard';")
-        layout.addWidget(lbl_info)
+        content_layout.addWidget(lbl_info)
 
     def refresh_list(self):
         self.list_widget.clear()
@@ -3257,7 +3461,7 @@ class AboutDialog(QDialog):
                 background-color: transparent;
             }
             QPushButton:hover {
-                background-color: #e5e7eb;
+                background-color: #EF4444;
             }
         """)
         btn_close_top.clicked.connect(self.close)
@@ -3589,5 +3793,206 @@ class CustomInputDialog(QDialog):
         if dlg.exec() == QDialog.Accepted:
             return dlg.get_text(), True
         return "", False
+
+
+# =================================================================
+# ⌨️ 단축키 도움말 다이얼로그 (ShortcutHelpDialog)
+# =================================================================
+class ShortcutHelpDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("단축키 도움말")
+        self.setModal(True)
+        self.resize(460, 520)
+        self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
+        self.setStyleSheet("QDialog { background-color: #FFFFFF; }")
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        # Title / Description Layout with SVG Icon
+        title_layout = QHBoxLayout()
+        title_layout.setSpacing(8)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        
+        lbl_title_icon = QLabel()
+        lbl_title_icon.setFixedSize(20, 20)
+        lbl_title_icon.setPixmap(get_colored_pixmap(config.ICON_KEYBOARD, "#4F46E5", 20, 20))
+        title_layout.addWidget(lbl_title_icon)
+        
+        title_lbl = QLabel("단축키 도움말")
+        title_lbl.setStyleSheet("font-size: 18px; font-weight: bold; color: #111827; font-family: 'Pretendard';")
+        title_layout.addWidget(title_lbl)
+        title_layout.addStretch()
+        
+        layout.addLayout(title_layout)
+
+        desc_lbl = QLabel("Webtoon Scripter에서 제공하는 단축키 목록입니다.\n단축키를 활용하여 작업 시간을 획기적으로 줄여보세요.")
+        desc_lbl.setStyleSheet("font-size: 13px; color: #6B7280; font-family: 'Pretendard'; line-height: 140%;")
+        layout.addWidget(desc_lbl)
+
+        # Scroll Area for shortcuts list
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                background-color: #FAFAFA;
+            }
+        """)
+
+        container = QWidget()
+        container.setStyleSheet("background-color: transparent;")
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(16, 16, 16, 16)
+        container_layout.setSpacing(20)
+        container_layout.setAlignment(Qt.AlignTop)
+
+        # OS 판단에 따른 단축키 이름 매핑 함수
+        is_mac = sys.platform == "darwin"
+        ctrl_key = "⌘" if is_mac else "Ctrl"
+        alt_key = "⌥" if is_mac else "Alt"
+        shift_key = "⇧" if is_mac else "Shift"
+
+        # Shortcut Groups with SVG Icons and Colors
+        groups = [
+            ("화면 및 도구 토글", config.ICON_MENU, "#3B82F6", [
+                (f"{ctrl_key} + B", "사이드바 열기 / 닫기"),
+                (f"{ctrl_key} + J", "관용구 도우미 창 토글"),
+                (f"{ctrl_key} + K", "캐릭터 도우미 창 토글"),
+                (f"{ctrl_key} + N", "새 작업 (심플 모드)"),
+            ]),
+            ("대본 표(테이블) 편집", config.ICON_EXCEL, "#10B981", [
+                (f"{ctrl_key} + Z", "실행 취소 (Undo)"),
+                (f"{ctrl_key} + {shift_key} + Z", "다시 실행 (Redo)"),
+                (f"{ctrl_key} + C", "선택한 셀 내용 복사"),
+                (f"{ctrl_key} + V", "선택한 셀 내용 붙여넣기"),
+                ("Delete / Backspace", "선택 내용 지우기"),
+                ("Enter / Return", "텍스트 확정 후 아래쪽 셀로 이동"),
+                (f"{shift_key} + Enter", "현재 커서 위치에서 행 분리 (셀 나누기)"),
+                (f"{ctrl_key} + M", "선택한 2개 이상의 셀(행) 합치기 (셀 병합)"),
+            ]),
+            ("웹툰 뷰어 스크롤 및 이동", config.ICON_MOVE_VERTICAL, "#6B7280", [
+                (f"Home, {ctrl_key} + ↑", "스크롤 최상단으로 이동"),
+                (f"End, {ctrl_key} + ↓", "스크롤 최하단으로 이동"),
+            ]),
+            ("관용구 자동 입력", config.ICON_LIBRARY, "#F59E0B", [
+                (f"{alt_key} + [숫자]", "지정된 관용구 삽입"),
+            ])
+        ]
+
+        for group_title, icon_path, icon_color, items in groups:
+            group_box = QFrame()
+            group_box.setStyleSheet("QFrame { background-color: transparent; border: none; }")
+            group_layout = QVBoxLayout(group_box)
+            group_layout.setContentsMargins(0, 0, 0, 0)
+            group_layout.setSpacing(8)
+
+            header_layout = QHBoxLayout()
+            header_layout.setContentsMargins(0, 0, 0, 0)
+            header_layout.setSpacing(6)
+
+            lbl_grp_icon = QLabel()
+            lbl_grp_icon.setFixedSize(14, 14)
+            lbl_grp_icon.setPixmap(get_colored_pixmap(icon_path, icon_color, 14, 14))
+            header_layout.addWidget(lbl_grp_icon)
+
+            lbl_group_title = QLabel(group_title)
+            lbl_group_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #4B5563; font-family: 'Pretendard';")
+            header_layout.addWidget(lbl_group_title)
+            header_layout.addStretch()
+
+            header_widget = QWidget()
+            header_widget.setStyleSheet("QWidget { border-bottom: 1px solid #E5E7EB; background: transparent; }")
+            header_w_layout = QVBoxLayout(header_widget)
+            header_w_layout.setContentsMargins(0, 0, 0, 4)
+            header_w_layout.addLayout(header_layout)
+
+            group_layout.addWidget(header_widget)
+
+            grid = QGridLayout()
+            grid.setSpacing(8)
+            grid.setColumnStretch(0, 1) # 설명이 왼쪽에 와서 더 넓은 공간 할당
+            grid.setColumnStretch(1, 0) # 단축키 배지는 오른쪽에 붙음
+
+            for row_idx, (keys, action_desc) in enumerate(items):
+                lbl_desc = QLabel(action_desc)
+                lbl_desc.setStyleSheet("font-size: 13px; color: #374151; font-family: 'Pretendard';")
+                grid.addWidget(lbl_desc, row_idx, 0, Qt.AlignLeft | Qt.AlignVCenter)
+
+                # 단축키 키 조합을 위한 배지 레이아웃
+                badge_widget = QWidget()
+                badge_widget.setStyleSheet("background: transparent; border: none;")
+                badge_layout = QHBoxLayout(badge_widget)
+                badge_layout.setContentsMargins(0, 0, 0, 0)
+                badge_layout.setSpacing(4)
+
+                key_groups = keys.split(", ")
+                for g_idx, key_group in enumerate(key_groups):
+                    parts = key_group.split(" + ")
+                    for p_idx, part in enumerate(parts):
+                        part_lbl = QLabel(part)
+                        part_lbl.setStyleSheet("""
+                            QLabel {
+                                background-color: #F3F4F6;
+                                color: #374151;
+                                border: 1px solid #E5E7EB;
+                                border-radius: 4px;
+                                padding: 3px 6px;
+                                font-size: 11px;
+                                font-weight: bold;
+                                font-family: 'Pretendard', sans-serif;
+                            }
+                        """)
+                        badge_layout.addWidget(part_lbl)
+                        if p_idx < len(parts) - 1:
+                            plus_lbl = QLabel("+")
+                            plus_lbl.setStyleSheet("color: #9CA3AF; font-size: 11px; font-weight: bold;")
+                            badge_layout.addWidget(plus_lbl)
+                    
+                    if g_idx < len(key_groups) - 1:
+                        or_lbl = QLabel("/")
+                        or_lbl.setStyleSheet("color: #9CA3AF; font-size: 11px; font-weight: bold; margin-left: 4px; margin-right: 4px;")
+                        badge_layout.addWidget(or_lbl)
+
+                grid.addWidget(badge_widget, row_idx, 1, Qt.AlignRight | Qt.AlignVCenter)
+
+            group_layout.addLayout(grid)
+            container_layout.addWidget(group_box)
+
+        scroll_area.setWidget(container)
+        layout.addWidget(scroll_area)
+
+        # Close button at the bottom
+        btn_close = QPushButton("닫기")
+        btn_close.setFixedHeight(38)
+        btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.setStyleSheet("""
+            QPushButton {
+                background-color: #1F2937;
+                color: white;
+                font-weight: bold;
+                border: none;
+                border-radius: 6px;
+                font-family: 'Pretendard';
+            }
+            QPushButton:hover {
+                background-color: #111827;
+            }
+        """)
+        btn_close.clicked.connect(self.accept)
+        layout.addWidget(btn_close)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.accept()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
 
 

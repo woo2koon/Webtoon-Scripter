@@ -48,7 +48,7 @@ restore_template()
 
 
 
-from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog
+from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog, ShortcutHelpDialog
 from update_worker import UpdateCheckWorker, UpdateDownloadWorker
 
 class GlobalScrollShortcutFilter(QObject):
@@ -355,10 +355,16 @@ class WebtoonManager(QMainWindow):
         self._idiom_size = config.IDIOM_VIEWER_SIZE
         self._character_relative_pos = config.CHARACTER_VIEWER_POS
         self._character_size = config.CHARACTER_VIEWER_SIZE
+        self._in_snap_logic = False
         self.last_active_editor = None # [추가] 관용구 스마트 삽입용 활성 에디터 기록 변수
         # About 다이얼로그 강한 참조 (GC 방지: 빌드 앱에서 로컬 변수는 즉시 해제될 수 있음)
         self.about_dialog = None
         self.init_ui()
+        # [추가] 애플리케이션 및 메인 윈도우의 아이콘을 슬레이트(영화) 아이콘으로 설정
+        app_icon_path = config.ICON_MOVIE
+        if os.path.exists(app_icon_path):
+            self.setWindowIcon(QIcon(app_icon_path))
+            QApplication.setWindowIcon(QIcon(app_icon_path))
         self.update_zoom_style()
         self.refresh_project_list()
         self.idiom_shortcuts = []
@@ -366,6 +372,8 @@ class WebtoonManager(QMainWindow):
         
         # [추가] 전역 포커스 변경 감지 장치를 통해 마지막으로 텍스트를 타이핑하던 에디터를 추적
         QApplication.instance().focusChanged.connect(self.on_focus_changed)
+        # [추가] 애플리케이션 활성/비활성 상태 변화에 맞춰 도우미 창 숨김 및 복원
+        QApplication.instance().applicationStateChanged.connect(self.on_application_state_changed)
 
         self.sidebar_anim = QPropertyAnimation(self.sidebar, b"maximumWidth")
         self.sidebar_anim.setDuration(300)
@@ -381,6 +389,9 @@ class WebtoonManager(QMainWindow):
         self.shortcut_idiom_viewer.activated.connect(self.toggle_idiom_viewer)
         self.shortcut_character_viewer = QShortcut(QKeySequence("Ctrl+K"), self)
         self.shortcut_character_viewer.activated.connect(self.toggle_character_viewer)
+        # [추가] 셀 합치기 단축키 등록 (Ctrl+M)
+        self.shortcut_merge = QShortcut(QKeySequence("Ctrl+M"), self)
+        self.shortcut_merge.activated.connect(self.merge_selected_rows)
 
         # 뷰어 맨 위/아래 이동 단축키 (TKL 대응: Cmd+Up/Down on Mac, Ctrl+Up/Down on Win)
         self.scroll_shortcut_filter = GlobalScrollShortcutFilter(self)
@@ -461,6 +472,44 @@ class WebtoonManager(QMainWindow):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        
+        helpers = []
+        if hasattr(self, 'character_viewer') and self.character_viewer and self.character_viewer.isVisible():
+            helpers.append((self.character_viewer, '_character_relative_pos'))
+        if hasattr(self, 'idiom_viewer') and self.idiom_viewer and self.idiom_viewer.isVisible():
+            helpers.append((self.idiom_viewer, '_idiom_relative_pos'))
+            
+        # 메인 창의 크기 변화량 계산
+        delta_w = 0
+        delta_h = 0
+        old_w = event.oldSize().width()
+        old_h = event.oldSize().height()
+        if old_w > 0:
+            delta_w = self.width() - old_w
+        if old_h > 0:
+            delta_h = self.height() - old_h
+        
+        # 자석 모드 도우미 창 동시 이동 (메인 창 크기가 변경될 때 원래 지정한 간격 유지)
+        for helper, rel_pos_attr in helpers:
+            if getattr(helper, 'is_sticky', False):
+                rel_pos = getattr(self, rel_pos_attr, None)
+                if rel_pos:
+                    new_rel = list(rel_pos)
+                    # 메인 창의 중앙보다 우측에 위치한 경우, 가로 변화량만큼 상대 좌표 보정하여 간격 유지
+                    if old_w > 0 and new_rel[0] > old_w / 2:
+                        new_rel[0] += delta_w
+                    # 메인 창의 중앙보다 하단에 위치한 경우, 세로 변화량만큼 상대 좌표 보정하여 간격 유지
+                    if old_h > 0 and new_rel[1] > old_h / 2:
+                        new_rel[1] += delta_h
+                        
+                    rel_pos = tuple(new_rel)
+                    setattr(self, rel_pos_attr, rel_pos)
+                    
+                    helper._is_moving_by_parent = True
+                    helper.move(self.x() + rel_pos[0], self.y() + rel_pos[1])
+                    helper.repaint()
+                    helper._is_moving_by_parent = False
+
         if hasattr(self, 'overlay'):
             self.overlay.setGeometry(self.rect()) 
             self.overlay.raise_()
@@ -2033,6 +2082,11 @@ class WebtoonManager(QMainWindow):
         action_migration.triggered.connect(self.migrate_old_projects)
         help_menu.addAction(action_migration)
 
+        # [신설] 단축키 도움말 기능 추가
+        action_shortcut_help = QAction("단축키 도움말(&K)", self)
+        action_shortcut_help.triggered.connect(self.open_shortcut_help_dialog)
+        help_menu.addAction(action_shortcut_help)
+
         help_menu.addSeparator()
 
         # macOS About 메뉴 바인딩:
@@ -2088,6 +2142,11 @@ class WebtoonManager(QMainWindow):
         self.about_dialog.show()
         self.about_dialog.raise_()
         self.about_dialog.activateWindow()
+
+    def open_shortcut_help_dialog(self):
+        """단축키 도움말 다이얼로그를 띄웁니다."""
+        dlg = ShortcutHelpDialog(self)
+        dlg.exec()
 
     def open_settings_dialog(self):
         dlg = SettingsDialog(self)
@@ -2149,11 +2208,7 @@ class WebtoonManager(QMainWindow):
                 self.idiom_viewer.resize(self._idiom_size[0], self._idiom_size[1])
                 
             dx, dy = self._idiom_relative_pos
-            import sys
-            if sys.platform == "darwin":
-                self.move_window_safely(self.idiom_viewer, self.geometry().x() + dx, self.geometry().y() + dy)
-            else:
-                self.move_window_safely(self.idiom_viewer, self.x() + dx, self.y() + dy)
+            self.move_window_safely(self.idiom_viewer, self.x() + dx, self.y() + dy)
             self.idiom_viewer.show()
         else:
             if self.idiom_viewer.isVisible():
@@ -2162,11 +2217,7 @@ class WebtoonManager(QMainWindow):
                 self.idiom_viewer.refresh_list() # 열 때마다 리스트 갱신
                 if self._idiom_relative_pos is not None:
                     dx, dy = self._idiom_relative_pos
-                    import sys
-                    if sys.platform == "darwin":
-                        self.move_window_safely(self.idiom_viewer, self.geometry().x() + dx, self.geometry().y() + dy)
-                    else:
-                        self.move_window_safely(self.idiom_viewer, self.x() + dx, self.y() + dy)
+                    self.move_window_safely(self.idiom_viewer, self.x() + dx, self.y() + dy)
                 self.idiom_viewer.show()
                 self.idiom_viewer.raise_()
                 self.idiom_viewer.activateWindow()
@@ -2202,11 +2253,7 @@ class WebtoonManager(QMainWindow):
                 self.character_viewer.resize(self._character_size[0], self._character_size[1])
                 
             dx, dy = self._character_relative_pos
-            import sys
-            if sys.platform == "darwin":
-                self.move_window_safely(self.character_viewer, self.geometry().x() + dx, self.geometry().y() + dy)
-            else:
-                self.move_window_safely(self.character_viewer, self.x() + dx, self.y() + dy)
+            self.move_window_safely(self.character_viewer, self.x() + dx, self.y() + dy)
             self.character_viewer.show()
         else:
             if self.character_viewer.isVisible():
@@ -2216,11 +2263,7 @@ class WebtoonManager(QMainWindow):
                 self.character_viewer.set_project_name(self.current_title)
                 if self._character_relative_pos is not None:
                     dx, dy = self._character_relative_pos
-                    import sys
-                    if sys.platform == "darwin":
-                        self.move_window_safely(self.character_viewer, self.geometry().x() + dx, self.geometry().y() + dy)
-                    else:
-                        self.move_window_safely(self.character_viewer, self.x() + dx, self.y() + dy)
+                    self.move_window_safely(self.character_viewer, self.x() + dx, self.y() + dy)
                 self.character_viewer.show()
                 self.character_viewer.raise_()
                 self.character_viewer.activateWindow()
@@ -2783,6 +2826,56 @@ class WebtoonManager(QMainWindow):
         except Exception as e:
             print(f"DEBUG: 스크롤 위치 로드 실패 -> {e}")
 
+    def nativeEvent(self, eventType, message):
+        if eventType == b"windows_generic_MSG":
+            import ctypes
+            from ctypes import wintypes
+            msg = wintypes.MSG.from_address(int(message))
+            # WM_NCACTIVATE = 0x0086 (제목 표시줄 활성화 렌더링 지시 메시지)
+            if msg.message == 0x0086:
+                helper_active = False
+                if hasattr(self, 'character_viewer') and self.character_viewer and self.character_viewer.isVisible():
+                    helper_active = True
+                if hasattr(self, 'idiom_viewer') and self.idiom_viewer and self.idiom_viewer.isVisible():
+                    helper_active = True
+                
+                # 도우미 창이 띄워져 있다면 메인창 포커스가 빠져도 활성 상태 스타일(Active) 강제 렌더링
+                if helper_active:
+                    user32 = ctypes.windll.user32
+                    res = user32.DefWindowProcW(msg.hWnd, msg.message, 1, msg.lParam)
+                    return True, res
+        return super().nativeEvent(eventType, message)
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        
+        if getattr(self, '_in_snap_logic', False):
+            return
+            
+        self._in_snap_logic = True
+        try:
+            helpers = []
+            if hasattr(self, 'character_viewer') and self.character_viewer and self.character_viewer.isVisible():
+                helpers.append((self.character_viewer, '_character_relative_pos'))
+            if hasattr(self, 'idiom_viewer') and self.idiom_viewer and self.idiom_viewer.isVisible():
+                helpers.append((self.idiom_viewer, '_idiom_relative_pos'))
+                
+            m_geo = self.frameGeometry()
+            
+            SNAP_THRESHOLD = 12
+            
+            # 자석 모드 도우미 창 동시 이동
+            for helper, rel_pos_attr in helpers:
+                if getattr(helper, 'is_sticky', False):
+                    rel_pos = getattr(self, rel_pos_attr, None)
+                    if rel_pos:
+                        helper._is_moving_by_parent = True
+                        helper.move(self.x() + rel_pos[0], self.y() + rel_pos[1])
+                        helper.repaint()
+                        helper._is_moving_by_parent = False
+        finally:
+            self._in_snap_logic = False
+
     def closeEvent(self, event):
         """프로그램 종료 시 현재 상태를 저장합니다."""
         self.save_viewer_state()
@@ -2798,6 +2891,48 @@ class WebtoonManager(QMainWindow):
             threading.Thread(target=self.send_usage_telemetry_bg, args=(count_to_send,)).start()
             
         super().closeEvent(event)
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.WindowStateChange:
+            # 최소화/복원 상태에 맞춘 도우미 창 숨김 및 노출 처리
+            if self.isMinimized():
+                if hasattr(self, 'character_viewer') and self.character_viewer:
+                    # 이미 숨겨진 상태가 아닐 때만 원래 가시성 상태를 기록
+                    if not getattr(self, '_character_viewer_was_visible', False):
+                        self._character_viewer_was_visible = self.character_viewer.isVisible()
+                    if self.character_viewer.isVisible():
+                        self.character_viewer.hide()
+                if hasattr(self, 'idiom_viewer') and self.idiom_viewer:
+                    if not getattr(self, '_idiom_viewer_was_visible', False):
+                        self._idiom_viewer_was_visible = self.idiom_viewer.isVisible()
+                    if self.idiom_viewer.isVisible():
+                        self.idiom_viewer.hide()
+            elif not self.isMinimized() and (event.oldState() & Qt.WindowMinimized):
+                # 최소화 상태에서 복원(Restore)될 때만 다시 노출
+                if hasattr(self, 'character_viewer') and self.character_viewer and getattr(self, '_character_viewer_was_visible', False):
+                    self.character_viewer.show()
+                if hasattr(self, 'idiom_viewer') and self.idiom_viewer and getattr(self, '_idiom_viewer_was_visible', False):
+                    self.idiom_viewer.show()
+                    
+        super().changeEvent(event)
+
+    def on_application_state_changed(self, state):
+        if state == Qt.ApplicationActive:
+            # 앱이 활성화(포그라운드)되면 원래 켜져 있던 도우미 창들을 복원
+            if hasattr(self, 'character_viewer') and self.character_viewer and getattr(self, '_character_viewer_was_visible', False):
+                self.character_viewer.show()
+            if hasattr(self, 'idiom_viewer') and self.idiom_viewer and getattr(self, '_idiom_viewer_was_visible', False):
+                self.idiom_viewer.show()
+        else:
+            # 앱이 비활성화(백그라운드 / 다른 앱 포커스 등)되면 도우미 창들을 숨김
+            if hasattr(self, 'character_viewer') and self.character_viewer:
+                self._character_viewer_was_visible = self.character_viewer.isVisible()
+                if self._character_viewer_was_visible:
+                    self.character_viewer.hide()
+            if hasattr(self, 'idiom_viewer') and self.idiom_viewer:
+                self._idiom_viewer_was_visible = self.idiom_viewer.isVisible()
+                if self._idiom_viewer_was_visible:
+                    self.idiom_viewer.hide()
 
     def send_usage_telemetry_bg(self, count):
         form_url = "https://docs.google.com/forms/d/e/1FAIpQLSdxr9XETDAnsujmZF5GbEYrJfeGUU7PwuQoAFLd3I126SZ0AQ/formResponse"
@@ -3945,20 +4080,40 @@ class WebtoonManager(QMainWindow):
             self.insert_script_row_at(bottom_row + 1)
             
         elif action == merge_action:
-            if len(rows) < 2:
+            self.merge_selected_rows()
+
+    def merge_selected_rows(self):
+        """선택된 2개 이상의 셀(행)을 하나로 합칩니다 (단축키 Ctrl+M / Cmd+M 연동)."""
+        if getattr(self, 'is_simple_mode', False):
+            return
+            
+        selected_ranges = self.table_script.selectedRanges()
+        if not selected_ranges: return
+        
+        rows = set()
+        for r in selected_ranges:
+            for i in range(r.topRow(), r.bottomRow() + 1):
+                rows.add(i)
+        rows = sorted(list(rows))
+        
+        if len(rows) < 2:
+            if hasattr(self, 'toast'):
+                self.toast.show_message("⚠️ 합칠 행을 2개 이상 선택해주세요.", 1500)
+            else:
                 QMessageBox.warning(self, "알림", "합칠 행을 2개 이상 선택해주세요.")
-                return
-            self.table_script.save_state_for_undo() # [추가] 상태 백업
-            combined_text = []
-            for r in rows:
-                item = self.table_script.item(r, 1) 
-                if item and item.text().strip():
-                    combined_text.append(item.text().strip())
-            full_text = " ".join(combined_text)
-            self.table_script.setItem(rows[0], 1, QTableWidgetItem(full_text))
-            for r in reversed(rows[1:]):
-                self.table_script.removeRow(r)
-            self.save_script_data()
+            return
+            
+        self.table_script.save_state_for_undo()
+        combined_text = []
+        for r in rows:
+            item = self.table_script.item(r, 1) 
+            if item and item.text().strip():
+                combined_text.append(item.text().strip())
+        full_text = " ".join(combined_text)
+        self.table_script.setItem(rows[0], 1, QTableWidgetItem(full_text))
+        for r in reversed(rows[1:]):
+            self.table_script.removeRow(r)
+        self.save_script_data()
 
     def add_script_row(self):
         self.table_script.save_state_for_undo() # [추가] 상태 백업

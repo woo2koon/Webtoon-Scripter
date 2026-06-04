@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <mask id="ocr-text-mask">
+      <rect x="0" y="0" width="100" height="100" fill="white" />
+      <text x="50" y="58" font-family="'Arial Black', 'Pretendard', sans-serif" font-weight="900" font-size="33" text-anchor="middle" fill="black" letter-spacing="-1">OCR</text>
+    </mask>
+  </defs>
+  <!-- Top Bar -->
+  <rect x="0" y="5" width="100" height="15" rx="7.5" fill="#FF8A00" />
+  
+  <!-- Middle Speech Bubble with Mask (OCR text cut out) -->
+  <path d="M0,32 C0,28 4,25 9,25 L91,25 C96,25 100,28 100,32 L100,58 C100,62 96,65 91,65 L88,65 L94,77 C95.5,80 92,81.5 90,80 L76,71 L9,71 C4,71 0,68 0,64 Z" fill="#FF8A00" mask="url(#ocr-text-mask)" />
+  
+  <!-- Bottom Bar -->
+  <rect x="0" y="80" width="100" height="15" rx="7.5" fill="#FF8A00" />
+</svg>
