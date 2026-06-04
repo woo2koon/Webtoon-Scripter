@@ -10,6 +10,10 @@ from PySide6.QtGui import QPainter, QColor, QPen, QKeySequence, QFont
 
 import config
 
+class UndoStateList(list):
+    """list를 상속받아 동적 속성(auto_added_chars 등) 부여가 가능하도록 만든 상태 리스트 클래스"""
+    pass
+
 class SheetCellLineEdit(QLineEdit):
     def __init__(self, parent=None, delegate=None, index=None):
         super().__init__(parent)
@@ -148,7 +152,7 @@ class SpreadsheetTable(QTableWidget):
         self.redo_stack.clear()
 
     def get_table_state(self):
-        state = []
+        state = UndoStateList()
         try:
             for r in range(self.rowCount()):
                 combo_text = ""
@@ -237,6 +241,14 @@ class SpreadsheetTable(QTableWidget):
                 if len(previous_state) == 0 and len(current_state) > 3:
                     self.undo_stack.append(previous_state)  # 스택에 다시 넣어 원복
                     return
+                
+                # [실행취소 시 스텝 2 자동 추가된 캐릭터 연동 삭제]
+                auto_chars = getattr(previous_state, "auto_added_chars", [])
+                if auto_chars:
+                    mw = self.window()
+                    if mw and hasattr(mw, 'remove_character_card_only'):
+                        for char_name in auto_chars:
+                            mw.remove_character_card_only(char_name)
                     
                 self.redo_stack.append(current_state)
                 self.restore_table_state(previous_state)

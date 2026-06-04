@@ -3375,6 +3375,14 @@ class WebtoonManager(QMainWindow):
         # 2. 존재하지 않는 신규 이름인 경우 스텝 2 목록에 추가 (글로벌 DB 매칭 정보 또는 미지정 값 적용)
         self.add_character_card(name=name, age=age, gender=gender, role=role)
         
+        # [안전장치] 실행 취소(Undo) 시 자동으로 추가된 캐릭터 정보를 되돌리기 위해 undo_stack의 최근 상태에 기록
+        if hasattr(self, 'table_script') and self.table_script.undo_stack:
+            last_state = self.table_script.undo_stack[-1]
+            if not hasattr(last_state, "auto_added_chars"):
+                last_state.auto_added_chars = []
+            if name not in last_state.auto_added_chars:
+                last_state.auto_added_chars.append(name)
+        
         # 3. 변경된 스텝 2 목록을 character_info.csv 파일에 즉시 저장
         self.save_char_data()
         
@@ -3383,6 +3391,29 @@ class WebtoonManager(QMainWindow):
         
         # 5. 하단에 세련된 토스트 메시지 출력
         self.toast.show_message(f"👥 새 캐릭터 '{name}'이 추가되었습니다.", 1500)
+
+    def remove_character_card_only(self, name):
+        """실행취소(Undo) 시 스텝 3 테이블 데이터는 놔두고, 스텝 2 카드 목록 및 로컬 DB에서만 캐릭터를 삭제합니다."""
+        name = name.strip()
+        if not name:
+            return
+            
+        target_widget = None
+        for i in range(self.char_layout.count()):
+            w = self.char_layout.itemAt(i).widget()
+            if isinstance(w, CharacterRow):
+                if w.input_name.text().strip() == name:
+                    target_widget = w
+                    break
+                    
+        if target_widget:
+            self.char_layout.removeWidget(target_widget)
+            target_widget.hide()
+            target_widget.deleteLater()
+            
+            # 동기적으로 즉시 파일 저장 및 콤보박스 목록을 갱신합니다.
+            self.save_char_data()
+            self.refresh_all_table_combos()
 
     def refresh_all_table_combos(self):
         """스프레드시트 내의 모든 역할 행 콤보박스의 캐릭터 리스트 풀을 실시간 갱신합니다."""

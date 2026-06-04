@@ -90,6 +90,9 @@ ICON_COPY = os.path.join(ASSETS_DIR, "context_menu", "copy.svg")
 ICON_CUT = os.path.join(ASSETS_DIR, "context_menu", "cut.svg")
 ICON_PASTE = os.path.join(ASSETS_DIR, "context_menu", "paste.svg")
 ICON_SELECT_ALL = os.path.join(ASSETS_DIR, "context_menu", "select_all.svg")
+ICON_SUCCESS = os.path.join(ASSETS_DIR, "check.svg")
+ICON_INFO = os.path.join(ASSETS_DIR, "info.svg")
+ICON_WARNING = os.path.join(ASSETS_DIR, "warning.svg")
 # =================================================================
 
 OCR_API_KEY = ""
@@ -420,9 +423,9 @@ QComboBox::down-arrow {
     width: 12px; 
     height: 12px; 
 }
-QComboBox QAbstractItemView { font-family: 'Pretendard'; font-size: 15px; border: 1px solid #9CA3AF; border-radius: 8px; background-color: white; selection-background-color: #ffd7d7; selection-color: #ff4b4b; outline: none; padding: 2px; }
-QComboBox QAbstractItemView::item { font-family: 'Pretendard'; font-size: 15px; min-height: 30px; padding: 5px; margin: 1px; border-radius: 5px; }
-QComboBox QAbstractItemView::item:hover { background-color: #fff5f5; }
+QComboBox QAbstractItemView { font-family: 'Pretendard'; font-size: 15px; border: 1px solid #9CA3AF; border-radius: 8px; background-color: white; selection-background-color: #ffecec; selection-color: #ff4b4b; outline: none; padding: 2px; }
+QComboBox QAbstractItemView::item { font-family: 'Pretendard'; font-size: 15px; min-height: 28px; padding: 3px 5px; margin: 1px; border-radius: 5px; }
+QComboBox QAbstractItemView::item:hover { background-color: #ffecec; color: #ff4b4b; }
 QTableWidget { border: 1px solid #d1d5db; gridline-color: #d0d0d0; font-family: 'Pretendard', 'AppleGothic'; font-size: 10pt; selection-background-color: #e8f0fe; selection-color: black; }
 QTableWidget::item { border-radius: 0px; }
 QTableWidget::item:selected { border: 2px solid #ff4b4b; background-color: #e8f0fe; color: black; border-radius: 0px; }

@@ -332,10 +332,14 @@ class CharacterRow(QFrame):
                 QComboBox QAbstractItemView::item {{ 
                     font-family: 'Pretendard'; 
                     font-size: 14pt;
-                    min-height: 35px; 
-                    padding: 5px; 
+                    min-height: 28px; 
+                    padding: 3px 5px; 
                     margin: 2px 0px; 
                     border-radius: 4px;
+                }}
+                QComboBox QAbstractItemView::item:hover {{
+                    background-color: #ffecec;
+                    color: #ff4b4b;
                 }}
             """
         else:
@@ -364,10 +368,14 @@ class CharacterRow(QFrame):
                     padding: 4px; 
                 }}
                 QComboBox QAbstractItemView::item {{ 
-                    min-height: 35px; 
-                    padding: 5px; 
+                    min-height: 28px; 
+                    padding: 3px 5px; 
                     margin: 2px 0px; 
                     border-radius: 4px;
+                }}
+                QComboBox QAbstractItemView::item:hover {{
+                    background-color: #ffecec;
+                    color: #ff4b4b;
                 }}
             """
 
