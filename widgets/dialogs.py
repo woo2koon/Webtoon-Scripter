@@ -981,6 +981,7 @@ class FloatingIdiomViewer(QDialog):
         super().__init__(parent)
         self.setWindowTitle("관용구 도우미")
         self.is_sticky = True # 자석(Sticky) 모드 활성화 상태
+        self.show_help = False # 사용 안내 토글 상태 (기본값: 숨김)
         
         # 프레임리스 윈도우 및 투명 배경 설정
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
@@ -1002,6 +1003,11 @@ class FloatingIdiomViewer(QDialog):
             if parent and hasattr(parent, 'geometry'):
                 pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
                 parent._idiom_relative_pos = pos
+
+    def toggle_help(self):
+        self.show_help = not self.show_help
+        if hasattr(self, 'lbl_info') and self.lbl_info:
+            self.lbl_info.setVisible(self.show_help)
 
     def hideEvent(self, event):
         parent = self.parent()
@@ -1082,6 +1088,14 @@ class FloatingIdiomViewer(QDialog):
         self.btn_magnet = MagnetToggleButton(self.is_sticky)
         self.btn_magnet.clicked.connect(self.toggle_sticky)
         title_layout.addWidget(self.btn_magnet)
+        
+        # 도움말 (?) 버튼 추가
+        svg_help_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+        svg_help_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FF5722" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+        self.btn_help = TitleBarButton(svg_help_normal, svg_help_hover, "#E5E7EB")
+        self.btn_help.setToolTip("사용 안내 토글")
+        self.btn_help.clicked.connect(self.toggle_help)
+        title_layout.addWidget(self.btn_help)
         
         # SVG 정의
         svg_close_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
@@ -1168,9 +1182,10 @@ class FloatingIdiomViewer(QDialog):
         """)
         content_layout.addWidget(self.list_widget)
 
-        lbl_info = QLabel(f"💡 단축키({config.MODIFIER_NAME}+키) 혹은 더블 클릭하면 자동 삽입됩니다.")
-        lbl_info.setStyleSheet("color: #6B7280; font-size: 11px; font-family: 'Pretendard';")
-        content_layout.addWidget(lbl_info)
+        self.lbl_info = QLabel(f"💡 단축키({config.MODIFIER_NAME}+키) 혹은 더블 클릭하면 자동 삽입됩니다.")
+        self.lbl_info.setStyleSheet("color: #6B7280; font-size: 11px; font-family: 'Pretendard';")
+        self.lbl_info.setVisible(self.show_help)
+        content_layout.addWidget(self.lbl_info)
 
     def refresh_list(self):
         self.list_widget.clear()

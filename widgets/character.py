@@ -993,6 +993,7 @@ class FloatingCharacterViewer(QDialog):
         self.avatar_size_current = config.AVATAR_SIZE_CURRENT
         self.setWindowTitle("캐릭터 도우미")
         self.is_sticky = True # 자석(Sticky) 모드 활성화 상태
+        self.show_help = False # 사용 안내 토글 상태 (기본값: 숨김)
         
         # 프레임리스 윈도우 및 투명 배경 설정
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
@@ -1014,6 +1015,13 @@ class FloatingCharacterViewer(QDialog):
             if parent and hasattr(parent, 'geometry'):
                 pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
                 parent._character_relative_pos = pos
+
+    def toggle_help(self):
+        self.show_help = not self.show_help
+        if hasattr(self, 'info_label') and self.info_label:
+            self.info_label.setVisible(self.show_help)
+        if hasattr(self, 'current_info') and self.current_info:
+            self.current_info.setVisible(self.show_help)
 
     def hideEvent(self, event):
         parent = self.parent()
@@ -1093,6 +1101,14 @@ class FloatingCharacterViewer(QDialog):
         self.btn_magnet = MagnetToggleButton(self.is_sticky)
         self.btn_magnet.clicked.connect(self.toggle_sticky)
         title_layout.addWidget(self.btn_magnet)
+        
+        # 도움말 (?) 버튼 추가
+        svg_help_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+        svg_help_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FF4B4B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+        self.btn_help = TitleBarButton(svg_help_normal, svg_help_hover, "#E5E7EB")
+        self.btn_help.setToolTip("사용 안내 토글")
+        self.btn_help.clicked.connect(self.toggle_help)
+        title_layout.addWidget(self.btn_help)
         
         # SVG 정의
         svg_close_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
@@ -1244,9 +1260,10 @@ class FloatingCharacterViewer(QDialog):
         all_layout.setContentsMargins(8, 8, 8, 8)
         all_layout.setSpacing(8)
         
-        info_label = QLabel("💡 사용 안내\n• Step 2: 더블클릭 또는 드래그로 캐릭터 추가\n• Step 3: 대본 캐릭터 셀로 드래그하여 역할 배정")
-        info_label.setStyleSheet("font-size: 11px; color: #6B7280; font-weight: 500; line-height: 140%;")
-        all_layout.addWidget(info_label)
+        self.info_label = QLabel("💡 사용 안내\n• Step 2: 더블클릭 또는 드래그로 캐릭터 추가\n• Step 3: 대본 캐릭터 셀로 드래그하여 역할 배정")
+        self.info_label.setStyleSheet("font-size: 11px; color: #6B7280; font-weight: 500; line-height: 140%;")
+        self.info_label.setVisible(self.show_help)
+        all_layout.addWidget(self.info_label)
         
         search_layout = QHBoxLayout()
         search_layout.setContentsMargins(0, 0, 0, 0)
@@ -1293,9 +1310,10 @@ class FloatingCharacterViewer(QDialog):
         current_layout.setContentsMargins(8, 8, 8, 8)
         current_layout.setSpacing(8)
         
-        current_info = QLabel("💡 사용 안내\n• 자동 등록: 대본 캐릭터 셀에 배정된 인물이 자동으로 노출됩니다.\n• 빠른 입력: 등장 비중이 높은 인물을 빠르게 드래그하여 입력합니다.")
-        current_info.setStyleSheet("font-size: 11px; color: #6B7280; font-weight: 500; line-height: 140%;")
-        current_layout.addWidget(current_info)
+        self.current_info = QLabel("💡 사용 안내\n• 자동 등록: 대본 캐릭터 셀에 배정된 인물이 자동으로 노출됩니다.\n• 빠른 입력: 등장 비중이 높은 인물을 빠르게 드래그하여 입력합니다.")
+        self.current_info.setStyleSheet("font-size: 11px; color: #6B7280; font-weight: 500; line-height: 140%;")
+        self.current_info.setVisible(self.show_help)
+        current_layout.addWidget(self.current_info)
         
         self.list_widget_current = DraggableCharacterListWidget(self)
         self.list_widget_current.setStyleSheet(self._list_stylesheet())
