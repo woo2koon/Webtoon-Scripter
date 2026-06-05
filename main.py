@@ -372,8 +372,6 @@ class WebtoonManager(QMainWindow):
         
         # [추가] 전역 포커스 변경 감지 장치를 통해 마지막으로 텍스트를 타이핑하던 에디터를 추적
         QApplication.instance().focusChanged.connect(self.on_focus_changed)
-        # [추가] 애플리케이션 활성/비활성 상태 변화에 맞춰 도우미 창 숨김 및 복원
-        QApplication.instance().applicationStateChanged.connect(self.on_application_state_changed)
 
         self.sidebar_anim = QPropertyAnimation(self.sidebar, b"maximumWidth")
         self.sidebar_anim.setDuration(300)
@@ -2916,23 +2914,7 @@ class WebtoonManager(QMainWindow):
                     
         super().changeEvent(event)
 
-    def on_application_state_changed(self, state):
-        if state == Qt.ApplicationActive:
-            # 앱이 활성화(포그라운드)되면 원래 켜져 있던 도우미 창들을 복원
-            if hasattr(self, 'character_viewer') and self.character_viewer and getattr(self, '_character_viewer_was_visible', False):
-                self.character_viewer.show()
-            if hasattr(self, 'idiom_viewer') and self.idiom_viewer and getattr(self, '_idiom_viewer_was_visible', False):
-                self.idiom_viewer.show()
-        else:
-            # 앱이 비활성화(백그라운드 / 다른 앱 포커스 등)되면 도우미 창들을 숨김
-            if hasattr(self, 'character_viewer') and self.character_viewer:
-                self._character_viewer_was_visible = self.character_viewer.isVisible()
-                if self._character_viewer_was_visible:
-                    self.character_viewer.hide()
-            if hasattr(self, 'idiom_viewer') and self.idiom_viewer:
-                self._idiom_viewer_was_visible = self.idiom_viewer.isVisible()
-                if self._idiom_viewer_was_visible:
-                    self.idiom_viewer.hide()
+
 
     def send_usage_telemetry_bg(self, count):
         form_url = "https://docs.google.com/forms/d/e/1FAIpQLSdxr9XETDAnsujmZF5GbEYrJfeGUU7PwuQoAFLd3I126SZ0AQ/formResponse"

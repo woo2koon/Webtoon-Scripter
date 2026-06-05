@@ -152,13 +152,12 @@ class FramelessWindowResizer(QObject):
                 direction = self._get_resize_direction(local_pos)
                 if direction:
                     self.resize_direction = direction
-                    self._update_cursor(direction)
-                    if obj != self.window:
-                        # 자식 위젯의 기본 커서로 덮어씌워지는 현상을 방지
-                        self.window.setCursor(self.window.cursor())
+                    self._update_cursor(direction, obj)
                 else:
                     # 크기 조절 영역을 벗어났으면 즉시 커서 복원
                     self.window.unsetCursor()
+                    if obj != self.window:
+                        obj.unsetCursor()
                     self.resize_direction = None
 
         # 마우스 클릭: 크기 조절 작동 시작
@@ -337,13 +336,20 @@ class FramelessWindowResizer(QObject):
                     self.is_resizing = False
                     self.resize_direction = None
                     self.window.unsetCursor()
+                    if obj != self.window:
+                        obj.unsetCursor()
                     event.accept()
                     return True
 
         elif event.type() == QEvent.Leave:
-            if obj == self.window and not self.is_resizing:
-                self.window.unsetCursor()
-                self.resize_direction = None
+            if not self.is_resizing:
+                global_pos = QCursor.pos()
+                global_rect = QRect(self.window.mapToGlobal(QPoint(0, 0)), self.window.size())
+                if not global_rect.contains(global_pos):
+                    self.window.unsetCursor()
+                    if obj != self.window:
+                        obj.unsetCursor()
+                    self.resize_direction = None
 
         return super().eventFilter(obj, event)
 
@@ -357,6 +363,10 @@ class FramelessWindowResizer(QObject):
         x = pos.x()
         y = pos.y()
         
+        # 창 경계를 완전히 벗어난 경우는 조절 방향 없음 (음수 및 창 크기 초과 영역 배제)
+        if x < 0 or y < 0 or x >= w or y >= h:
+            return None
+            
         # 1. 4개 모서리(Corner) 판정 우선
         top_corner = y < cw
         bottom_corner = y > (h - cw)
@@ -385,17 +395,22 @@ class FramelessWindowResizer(QObject):
         
         return None
 
-    def _update_cursor(self, direction):
+    def _update_cursor(self, direction, target_widget=None):
         """방향에 적합한 커서 모양 적용"""
         if not direction:
             self.window.unsetCursor()
+            if target_widget and target_widget != self.window:
+                target_widget.unsetCursor()
             return
             
-        if direction in ("TL", "BR"):
-            self.window.setCursor(Qt.SizeFDiagCursor)
-        elif direction in ("TR", "BL"):
-            self.window.setCursor(Qt.SizeBDiagCursor)
-        elif direction in ("T", "B"):
-            self.window.setCursor(Qt.SizeVerCursor)
-        elif direction in ("L", "R"):
-            self.window.setCursor(Qt.SizeHorCursor)
+        cursor_map = {
+            "TL": Qt.SizeFDiagCursor, "BR": Qt.SizeFDiagCursor,
+            "TR": Qt.SizeBDiagCursor, "BL": Qt.SizeBDiagCursor,
+            "T": Qt.SizeVerCursor, "B": Qt.SizeVerCursor,
+            "L": Qt.SizeHorCursor, "R": Qt.SizeHorCursor
+        }
+        cursor = cursor_map.get(direction)
+        if cursor:
+            self.window.setCursor(cursor)
+            if target_widget and target_widget != self.window:
+                target_widget.setCursor(cursor)

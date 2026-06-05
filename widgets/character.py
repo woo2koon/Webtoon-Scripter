@@ -1680,12 +1680,12 @@ class GlobalCharacterSettingsDialog(QDialog):
         
         dropdown_layout = QHBoxLayout()
         dropdown_layout.setContentsMargins(0, 0, 0, 0)
-        dropdown_layout.setSpacing(0)
+        dropdown_layout.setSpacing(12)
         
         self.combo_role = ClickableComboBox()
         self.combo_role.addItems(["주연", "조연", "단역"])
         self.combo_role.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
-        self.combo_role.setFixedWidth(78)
+        self.combo_role.setFixedWidth(90)
         
         age_widget = QWidget()
         age_widget.setStyleSheet("background: transparent; border: none;")
@@ -1697,7 +1697,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.combo_age = ClickableComboBox()
         self.combo_age.addItems(config.AGE_OPTIONS)
         self.combo_age.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
-        self.combo_age.setFixedWidth(78)
+        self.combo_age.setFixedWidth(90)
         age_layout.addWidget(lbl_age)
         age_layout.addWidget(self.combo_age)
         
@@ -1711,7 +1711,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.combo_gender = ClickableComboBox()
         self.combo_gender.addItems(config.GENDER_OPTIONS)
         self.combo_gender.setStyleSheet("background-color: white; border: 1px solid #D1D5DB; border-radius: 4px; padding: 4px; min-height: 28px;")
-        self.combo_gender.setFixedWidth(78)
+        self.combo_gender.setFixedWidth(90)
         gender_layout.addWidget(lbl_gender)
         gender_layout.addWidget(self.combo_gender)
         
@@ -2039,20 +2039,22 @@ class GlobalCharacterSettingsDialog(QDialog):
 
     def show_avatar_register_menu(self):
         menu = QMenu(self)
+        menu.setFont(QApplication.font())
         menu.setWindowFlags(menu.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
         menu.setAttribute(Qt.WA_TranslucentBackground)
         menu.setStyleSheet("""
             QMenu {
+                font-family: 'Pretendard', sans-serif;
                 background-color: #FFFFFF;
                 border: 1px solid #D1D5DB;
                 border-radius: 6px;
                 padding: 4px;
             }
             QMenu::item {
-                font-family: 'Pretendard';
-                font-size: 12px;
+                font-family: 'Pretendard', sans-serif;
+                font-size: 13px;
                 color: #374151;
-                padding: 5px 12px;
+                padding: 6px 14px;
                 border-radius: 4px;
             }
             QMenu::item:selected {
@@ -2205,14 +2207,16 @@ class GlobalCharacterSettingsDialog(QDialog):
         menu.setFont(QApplication.font())
         menu.setStyleSheet("""
             QMenu {
+                font-family: 'Pretendard', sans-serif;
                 background-color: #FFFFFF;
                 border: 1px solid #E5E7EB;
                 border-radius: 6px;
                 padding: 4px 0px;
             }
             QMenu::item {
+                font-family: 'Pretendard', sans-serif;
                 padding: 6px 20px;
-                font-size: 14px;
+                font-size: 13px;
                 color: #374151;
             }
             QMenu::item:selected {
@@ -3465,8 +3469,9 @@ class WebtoonCaptureOverlay(QWidget):
             self.update()
             event.accept()
         elif event.button() == Qt.RightButton:
-            self.capture_cancelled.emit()
+            self.hide()
             self.close()
+            self.capture_cancelled.emit()
             event.accept()
 
     def mouseMoveEvent(self, event):
@@ -3485,18 +3490,24 @@ class WebtoonCaptureOverlay(QWidget):
             self.end_pos.setY(max(0, min(self.end_pos.y(), self.height())))
             
             rect = QRect(self.start_pos, self.end_pos).normalized()
+            captured_pixmap = None
             if rect.width() > 10 and rect.height() > 10:
                 captured_pixmap = self.viewport.grab(rect)
+                
+            self.hide()
+            self.close()
+            
+            if captured_pixmap:
                 self.capture_completed.emit(captured_pixmap)
             else:
                 self.capture_cancelled.emit()
-            self.close()
             event.accept()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
-            self.capture_cancelled.emit()
+            self.hide()
             self.close()
+            self.capture_cancelled.emit()
             event.accept()
 
     def wheelEvent(self, event):
