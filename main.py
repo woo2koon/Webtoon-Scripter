@@ -88,6 +88,20 @@ class GlobalScrollShortcutFilter(QObject):
                 print(f"Error in GlobalScrollShortcutFilter: {e}")
         return False
 
+class TabBarDragFilter(QObject):
+    def __init__(self, tabbar):
+        super().__init__(tabbar)
+        self.tabbar = tabbar
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.MouseButtonPress:
+            idx = self.tabbar.tabAt(event.pos())
+            if idx == 0:
+                self.tabbar.setMovable(False)
+            else:
+                self.tabbar.setMovable(True)
+        return False
+
 class GlobalContextMenuFilter(QObject):
     def eventFilter(self, obj, event):
         if not isinstance(obj, QObject):
@@ -1430,6 +1444,10 @@ class WebtoonManager(QMainWindow):
         splitter.addWidget(self.viewer_stack)
 
         self.tabs = QTabWidget()
+        self.tabs.setMovable(True)
+        self.tabs.tabBar().tabMoved.connect(self.on_tab_moved)
+        self.tabbar_filter = TabBarDragFilter(self.tabs.tabBar())
+        self.tabs.tabBar().installEventFilter(self.tabbar_filter)
 
         # [수정] 탭 스타일 (QTabWidget::tab-bar를 사용한 강제 이동)
         self.tabs.setStyleSheet("""
@@ -2150,8 +2168,18 @@ class WebtoonManager(QMainWindow):
         self.tabs.currentChanged.connect(self.on_tab_changed_refresh_headers)
 
     def on_tab_changed_refresh_headers(self, index):
-        for idx, header in enumerate(self.tab_headers):
-            header.set_selected(idx == index)
+        for idx in range(self.tabs.count()):
+            header = self.tabs.tabBar().tabButton(idx, QTabBar.LeftSide)
+            if isinstance(header, CustomTabHeader):
+                header.set_selected(idx == index)
+
+    def on_tab_moved(self, from_idx, to_idx):
+        # Step 1 (Index 0)은 첫 번째 자리에 무조건 고정되어 있어야 합니다.
+        if from_idx == 0 or to_idx == 0:
+            self.tabs.tabBar().blockSignals(True)
+            self.tabs.tabBar().moveTab(to_idx, from_idx)
+            self.tabs.tabBar().blockSignals(False)
+            return
 
 
 
@@ -4358,8 +4386,11 @@ class WebtoonManager(QMainWindow):
                     break
                     
         # 커스텀 탭 헤더 경고 상태 업데이트
-        if hasattr(self, 'tab_headers') and len(self.tab_headers) > 1:
-            self.tab_headers[1].set_warning(has_warning)
+        for idx in range(self.tabs.count()):
+            header = self.tabs.tabBar().tabButton(idx, QTabBar.LeftSide)
+            if isinstance(header, CustomTabHeader) and "Step 2" in header.text:
+                header.set_warning(has_warning)
+                break
             
 
 
