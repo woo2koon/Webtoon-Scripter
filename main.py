@@ -2698,16 +2698,14 @@ class WebtoonManager(QMainWindow):
                     color: #888888;
                     font-size: 17px;
                     font-weight: 600;
-                    padding: 10px 15px;
-                    border-bottom: 3px solid transparent;
-                    margin-right: 5px;
+                    padding: 0px;
+                    margin-right: 8px;
                     font-family: 'Pretendard';
                 }
                 
                 /* 4. 선택된 탭 */
                 QTabBar::tab:selected {
                     color: #FF5722;
-                    border-bottom: 3px solid #FF5722;
                 }
                 
                 QTabBar::tab:hover {
