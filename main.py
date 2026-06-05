@@ -4334,64 +4334,6 @@ class WebtoonManager(QMainWindow):
         df = pd.DataFrame(rows)
         df.to_csv(os.path.join(e_path, "character_info.csv"), index=False, encoding='utf-8-sig')
         
-        # [추가] 글로벌 캐릭터 DB 동기화 검사 및 자동 등록
-        if self.current_title:
-            global_chars = config.load_global_characters(self.current_title)
-            global_updated = False
-            
-            for i in range(self.char_layout.count()):
-                widget = self.char_layout.itemAt(i).widget()
-                if isinstance(widget, CharacterRow):
-                    name = widget.input_name.text().strip()
-                    role = widget.combo_role.currentText().strip()
-                    age = widget.combo_age.currentText().strip()
-                    gender = widget.combo_gender.currentText().strip()
-                    
-                    # 안전장치: 역할, 연령, 성별 정보가 모두 입력된 경우에만 글로벌 DB에 등록/업데이트 진행
-                    if name and role and age and gender:
-                        # 글로벌 DB에서 기존 캐릭터 탐색
-                        for c in global_chars:
-                            if c.get("name", "").strip() == name:
-                                # 비어있는 필드가 있거나 값이 다르면 글로벌 DB 데이터 갱신
-                                if (not c.get("role") or not c.get("age") or not c.get("gender") or 
-                                    c.get("role") != role or c.get("age") != age or c.get("gender") != gender):
-                                    c["role"] = role
-                                    c["age"] = age
-                                    c["gender"] = gender
-                                    global_updated = True
-                                break
-                        else:
-                            # 글로벌 DB에 없는 경우 신규 등록
-                            import random
-                            r = random.randint(150, 240)
-                            g = random.randint(150, 240)
-                            b = random.randint(150, 240)
-                            color_hex = f"#{r:02X}{g:02X}{b:02X}"
-                            
-                            new_char = {
-                                "name": name,
-                                "role": role,
-                                "age": age,
-                                "gender": gender,
-                                "color": color_hex,
-                                "image_path": "",
-                                "memo": ""
-                            }
-                            global_chars.append(new_char)
-                            global_updated = True
-                        
-                        # 카드 위젯의 등록 상태(버튼 비활성화 및 등록됨 표시)를 실시간 업데이트
-                        widget.check_registered_status()
-            
-            if global_updated:
-                config.save_global_characters(self.current_title, global_chars)
-                # 메인 윈도우 캐릭터 목록 새로고침
-                if hasattr(self, 'get_character_list'):
-                    self.get_character_list()
-                # 캐릭터 도우미 전체 목록 새로고침
-                if hasattr(self, 'character_viewer') and self.character_viewer is not None and self.character_viewer.isVisible():
-                    self.character_viewer.load_data()
-        
         # [추가] 실시간 캐릭터 도우미 "현재 회차" 탭 동기화
         if hasattr(self, 'character_viewer') and self.character_viewer is not None and self.character_viewer.isVisible():
             self.character_viewer.load_current_episode_characters()

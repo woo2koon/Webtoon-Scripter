@@ -363,11 +363,11 @@ class PopupItemDelegate(QStyledItemDelegate):
         is_hover = bool(option.state & QStyle.State_MouseOver)
         
         if is_selected:
-            bg_color = QColor("#ffd7d7")
-            text_color = QColor("#ff4b4b")
+            bg_color = QColor("#fff0f0") # 연한 분홍 배경
+            text_color = QColor("#111827") # 고대비 어두운 텍스트
         elif is_hover:
-            bg_color = QColor("#fff5f5")
-            text_color = QColor("#ff4b4b")
+            bg_color = QColor("#fff8f8") # 더 연한 호버 배경
+            text_color = QColor("#111827") # 고대비 어두운 텍스트
         else:
             bg_color = QColor("#ffffff")
             text_color = QColor("#333333")

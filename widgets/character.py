@@ -324,8 +324,8 @@ class CharacterRow(QFrame):
                     background-color: white; 
                     border: 1px solid #9CA3AF; 
                     border-radius: 8px; 
-                    selection-background-color: #ffecec; 
-                    selection-color: #ff4b4b; 
+                    selection-background-color: #fff0f0; 
+                    selection-color: #111827; 
                     outline: none; 
                     padding: 4px; 
                 }}
@@ -338,8 +338,8 @@ class CharacterRow(QFrame):
                     border-radius: 4px;
                 }}
                 QComboBox QAbstractItemView::item:hover {{
-                    background-color: #ffecec;
-                    color: #ff4b4b;
+                    background-color: #fff0f0;
+                    color: #111827;
                 }}
             """
         else:
@@ -362,8 +362,8 @@ class CharacterRow(QFrame):
                     background-color: white; 
                     border: 1px solid #9CA3AF; 
                     border-radius: 8px; 
-                    selection-background-color: #ffecec; 
-                    selection-color: #ff4b4b; 
+                    selection-background-color: #fff0f0; 
+                    selection-color: #111827; 
                     outline: none; 
                     padding: 4px; 
                 }}
@@ -374,8 +374,8 @@ class CharacterRow(QFrame):
                     border-radius: 4px;
                 }}
                 QComboBox QAbstractItemView::item:hover {{
-                    background-color: #ffecec;
-                    color: #ff4b4b;
+                    background-color: #fff0f0;
+                    color: #111827;
                 }}
             """
 
@@ -448,6 +448,9 @@ class CharacterRow(QFrame):
         self.last_valid_name = name.strip()
         self.input_name.textChanged.connect(self.check_registered_status)
         self.input_name.editingFinished.connect(self.validate_name)
+        self.combo_role.currentTextChanged.connect(self.update_register_button_on_combo_change)
+        self.combo_age.currentTextChanged.connect(self.update_register_button_on_combo_change)
+        self.combo_gender.currentTextChanged.connect(self.update_register_button_on_combo_change)
         self.check_registered_status()
 
     def validate_name(self):
@@ -545,23 +548,79 @@ class CharacterRow(QFrame):
             self.btn_register.setEnabled(True)
             self.btn_register.setText("등록")
 
+    def update_register_button_on_combo_change(self):
+        name = self.input_name.text().strip()
+        if not name or not self.project_name:
+            return
+            
+        chars = config.load_global_characters(self.project_name)
+        match_char = next((c for c in chars if c.get("name", "").strip() == name), None)
+        
+        if match_char:
+            role = self.combo_role.currentText().strip()
+            age = self.combo_age.currentText().strip()
+            gender = self.combo_gender.currentText().strip()
+            
+            # 하나라도 값이 다르면 업데이트 활성화
+            if (match_char.get("role", "").strip() != role or 
+                match_char.get("age", "").strip() != age or 
+                match_char.get("gender", "").strip() != gender):
+                self.btn_register.setEnabled(True)
+                self.btn_register.setText("업데이트")
+            else:
+                self.btn_register.setEnabled(False)
+                self.btn_register.setText("등록됨")
+        else:
+            self.btn_register.setEnabled(True)
+            self.btn_register.setText("등록")
+
     def register_character(self):
         name = self.input_name.text().strip()
         if not name or not self.project_name: return
         
         chars = config.load_global_characters(self.project_name)
-        exists = any(c.get("name", "") == name for c in chars)
-        if not exists:
-            role = self.combo_role.currentText() or "단역"
-            age = self.combo_age.currentText() or "미상"
-            gender = self.combo_gender.currentText() or "미상"
+        
+        match_char = None
+        for c in chars:
+            if c.get("name", "").strip() == name:
+                match_char = c
+                break
+                
+        role = self.combo_role.currentText() or "단역"
+        age = self.combo_age.currentText() or "미상"
+        gender = self.combo_gender.currentText() or "미상"
+        
+        if match_char:
+            # 기존 캐릭터 업데이트
+            match_char["role"] = role
+            match_char["age"] = age
+            match_char["gender"] = gender
+            config.save_global_characters(self.project_name, chars)
+            
+            self.check_registered_status()
+            
+            mw = self.window()
+            if mw:
+                if hasattr(mw, 'get_character_list'):
+                    mw.get_character_list()
+                if hasattr(mw, 'character_viewer') and mw.character_viewer and mw.character_viewer.isVisible():
+                    mw.character_viewer.load_data()
+                if hasattr(mw, 'toast'):
+                    mw.toast.show_message(f"✅ '{name}' 역할정보가 업데이트되었습니다.", 1500)
+        else:
+            # 신규 캐릭터 등록
+            import random
+            r = random.randint(150, 240)
+            g = random.randint(150, 240)
+            b = random.randint(150, 240)
+            color_hex = f"#{r:02X}{g:02X}{b:02X}"
             
             new_char = {
                 "name": name,
                 "role": role,
                 "age": age,
                 "gender": gender,
-                "color": "#3B82F6",
+                "color": color_hex,
                 "image_path": "",
                 "memo": ""
             }
@@ -1702,7 +1761,8 @@ class FloatingCharacterViewer(QDialog):
         config.save_global_characters(self.project_name, chars)
         
         self.load_data()
-        self.search_bar.clear()
+        # Keep search query so the newly added character is displayed in the filtered list
+        # self.search_bar.clear()
         
         for widget in QApplication.topLevelWidgets():
             if widget.__class__.__name__ == 'GlobalCharacterSettingsDialog':
