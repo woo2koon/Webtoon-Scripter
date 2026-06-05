@@ -95,7 +95,7 @@ class TabBarDragFilter(QObject):
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.MouseButtonPress:
-            idx = self.tabbar.tabAt(event.pos())
+            idx = self.tabbar.tabAt(event.position().toPoint())
             if idx == 0:
                 self.tabbar.setMovable(False)
             else:
@@ -437,6 +437,20 @@ class CustomTabHeader(QWidget):
                 margin: 0px;
             }}
         """)
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.is_selected:
+            from PySide6.QtGui import QPainter, QPen, QColor
+            from PySide6.QtCore import Qt
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            # 3px 두께의 주황색 밑줄을 그립니다. (하단에서 2px 띄우고 선 두께 3px 적용)
+            pen = QPen(QColor("#FF5722"), 3)
+            painter.setPen(pen)
+            painter.drawLine(0, self.height() - 2, self.width(), self.height() - 2)
+            painter.end()
         
         svg_path = os.path.join(config.ASSETS_DIR, "warning.svg")
         if os.path.exists(svg_path):
@@ -1469,7 +1483,6 @@ class WebtoonManager(QMainWindow):
                 font-size: 17px;
                 font-weight: 600;
                 padding: 0px;
-                border-bottom: 3px solid transparent;
                 margin-right: 8px;
                 font-family: 'Pretendard';
             }
@@ -1477,7 +1490,6 @@ class WebtoonManager(QMainWindow):
             /* 4. 선택된 탭 */
             QTabBar::tab:selected {
                 color: #FF5722;
-                border-bottom: 3px solid #FF5722;
             }
             
             QTabBar::tab:hover {
