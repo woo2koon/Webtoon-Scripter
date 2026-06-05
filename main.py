@@ -437,20 +437,6 @@ class CustomTabHeader(QWidget):
                 margin: 0px;
             }}
         """)
-        self.update()
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if self.is_selected:
-            from PySide6.QtGui import QPainter, QPen, QColor
-            from PySide6.QtCore import Qt
-            painter = QPainter(self)
-            painter.setRenderHint(QPainter.Antialiasing, True)
-            # 3px 두께의 주황색 밑줄을 그립니다. (하단에서 2px 띄우고 선 두께 3px 적용)
-            pen = QPen(QColor("#FF5722"), 3)
-            painter.setPen(pen)
-            painter.drawLine(0, self.height() - 2, self.width(), self.height() - 2)
-            painter.end()
         
         svg_path = os.path.join(config.ASSETS_DIR, "warning.svg")
         if os.path.exists(svg_path):
@@ -475,6 +461,21 @@ class CustomTabHeader(QWidget):
                 self.lbl_icon.setPixmap(pixmap)
             except Exception as e:
                 print(f"경고 아이콘 SVG 색상 렌더링 중 오류 발생: {e}")
+                
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.is_selected:
+            from PySide6.QtGui import QPainter, QPen, QColor
+            from PySide6.QtCore import Qt
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            # 3px 두께의 주황색 밑줄을 그립니다. (하단에서 2px 띄우고 선 두께 3px 적용)
+            pen = QPen(QColor("#FF5722"), 3)
+            painter.setPen(pen)
+            painter.drawLine(0, self.height() - 2, self.width(), self.height() - 2)
+            painter.end()
 
 class WebtoonManager(QMainWindow):
     def __init__(self):
