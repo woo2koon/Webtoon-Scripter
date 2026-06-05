@@ -17,7 +17,7 @@ from widgets import ProjectManagementDialog, HoverIconButton
 
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QPushButton, QComboBox, 
-                               QLineEdit, QTextEdit, QPlainTextEdit, QTabWidget, QSplitter, 
+                               QLineEdit, QTextEdit, QPlainTextEdit, QTabWidget, QTabBar, QSplitter, 
                                QTableWidget, QTableWidgetItem, QHeaderView, 
                                QFileDialog, QMessageBox, QProgressBar, QFrame, 
                                QMenu, QListWidgetItem, QListWidget, QListView, 
@@ -83,8 +83,9 @@ class GlobalScrollShortcutFilter(QObject):
                                 self.main_window.scroll_to_bottom()
                             return True
         except Exception as e:
-            # 이벤트 필터 내에서의 예외가 앱 전체를 죽이지 않도록 차단
-            print(f"Error in GlobalScrollShortcutFilter: {e}")
+            # 수명이 다한 C++ 객체(이미 삭제된 위젯 등)로 인해 발생하는 예외는 출력을 생략하여 터미널을 깨끗하게 유지합니다.
+            if "already deleted" not in str(e):
+                print(f"Error in GlobalScrollShortcutFilter: {e}")
         return False
 
 class GlobalContextMenuFilter(QObject):
@@ -224,7 +225,8 @@ class GlobalContextMenuFilter(QObject):
                     menu.exec(event.globalPos())
                     return True
         except Exception as e:
-            print(f"GlobalContextMenuFilter error: {e}")
+            if "already deleted" not in str(e):
+                print(f"GlobalContextMenuFilter error: {e}")
             
         return super().eventFilter(obj, event)
 
@@ -325,6 +327,126 @@ class AlwaysUpComboBox(QComboBox):
         if popup:
             point = self.mapToGlobal(QPoint(0, 0))
             popup.move(point.x(), point.y() - popup.height() - 2)
+
+
+
+class CustomTabHeader(QWidget):
+    def __init__(self, text, has_warning=False, is_selected=False, parent=None):
+        super().__init__(parent)
+        self.text = text
+        self.has_warning = has_warning
+        self.is_selected = is_selected
+        self.is_hovered = False
+        self.init_ui()
+        
+    def init_ui(self):
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(15, 10, 15, 10)
+        layout.setSpacing(5) # 아이콘과 텍스트 사이 간격을 5px로 조밀하게 설정
+        layout.setAlignment(Qt.AlignCenter)
+        
+        self.lbl_icon = QLabel()
+        self.lbl_icon.setFixedSize(14, 18)
+        self.lbl_icon.setAlignment(Qt.AlignCenter)
+        self.lbl_icon.setStyleSheet("background: transparent; border: none; margin: 0px; padding: 0px;")
+        self.lbl_icon.setVisible(self.has_warning)
+        
+        self.lbl_text = QLabel(self.text)
+        self.lbl_text.setAlignment(Qt.AlignCenter)
+        
+        layout.addWidget(self.lbl_icon)
+        layout.addWidget(self.lbl_text)
+        
+        self.update_style()
+        
+    def set_selected(self, selected):
+        self.is_selected = selected
+        self.update_style()
+        
+    def set_warning(self, has_warning):
+        self.has_warning = has_warning
+        self.lbl_icon.setVisible(has_warning)
+        if has_warning:
+            self.lbl_icon.setFixedWidth(14)
+            self.layout().setSpacing(5)
+            tip_msg = "일부 캐릭터 정보(역할, 연령, 성별)가 누락되었습니다."
+        else:
+            self.lbl_icon.setFixedWidth(0)
+            self.layout().setSpacing(0)
+            tip_msg = ""
+            
+        self.setToolTip(tip_msg)
+        self.lbl_icon.setToolTip(tip_msg)
+        self.lbl_text.setToolTip(tip_msg)
+        
+        self.adjustSize()
+        self.updateGeometry()
+        
+        # QTabBar가 내부 크기 캐시를 갱신하도록 강제 유도
+        tabbar = self.parentWidget()
+        if tabbar and isinstance(tabbar, QTabBar):
+            for idx in range(tabbar.count()):
+                if tabbar.tabButton(idx, QTabBar.LeftSide) == self:
+                    tabbar.setTabText(idx, " ")
+                    tabbar.setTabText(idx, "")
+                    break
+            tabbar.updateGeometry()
+            tabbar.update()
+        
+    def enterEvent(self, event):
+        self.is_hovered = True
+        self.update_style()
+        super().enterEvent(event)
+        
+    def leaveEvent(self, event):
+        self.is_hovered = False
+        self.update_style()
+        super().leaveEvent(event)
+        
+    def update_style(self):
+        if self.is_selected:
+            color = "#FF5722"
+        elif self.is_hovered:
+            color = "#FF8A65"
+        else:
+            color = "#888888"
+            
+        self.lbl_text.setStyleSheet(f"""
+            QLabel {{
+                font-size: 17px;
+                font-weight: 600;
+                color: {color};
+                font-family: 'Pretendard';
+                background: transparent;
+                border: none;
+                padding: 0px;
+                margin: 0px;
+            }}
+        """)
+        
+        svg_path = os.path.join(config.ASSETS_DIR, "warning.svg")
+        if os.path.exists(svg_path):
+            from PySide6.QtSvg import QSvgRenderer
+            from PySide6.QtCore import QByteArray, QRect
+            from PySide6.QtGui import QPixmap, QPainter
+            try:
+                with open(svg_path, 'r', encoding='utf-8') as f:
+                    svg_data = f.read()
+                new_svg = svg_data.replace('currentColor', color).replace('#000000', color)
+                renderer = QSvgRenderer(QByteArray(new_svg.encode('utf-8')))
+                
+                # 높이 18px 중 3px을 위에 여백으로 남기고 14x14 크기로 렌더링하여 잘림 방지 및 3px 내림 효과
+                pixmap = QPixmap(14, 18)
+                pixmap.fill(Qt.transparent)
+                
+                painter = QPainter(pixmap)
+                painter.setRenderHint(QPainter.Antialiasing, True)
+                renderer.render(painter, QRect(0, 3, 14, 14))
+                painter.end()
+                
+                self.lbl_icon.setPixmap(pixmap)
+            except Exception as e:
+                print(f"경고 아이콘 SVG 색상 렌더링 중 오류 발생: {e}")
 
 class WebtoonManager(QMainWindow):
     def __init__(self):
@@ -1328,9 +1450,9 @@ class WebtoonManager(QMainWindow):
                 color: #888888;
                 font-size: 17px;
                 font-weight: 600;
-                padding: 10px 15px;
+                padding: 0px;
                 border-bottom: 3px solid transparent;
-                margin-right: 5px;
+                margin-right: 8px;
                 font-family: 'Pretendard';
             }
             
@@ -2006,11 +2128,32 @@ class WebtoonManager(QMainWindow):
 
         self.btn_toggle.raise_()
 
+        self.init_tab_headers()
         self.load_images()
 
     def update_viewer_background(self, has_images):
         bg_color = "white" if has_images else "#F9FAFB"
         self.viewer_stack.setStyleSheet(f"#ViewerStack {{ background-color: {bg_color}; border-radius: 8px; border: 1px solid #D1D5DB; padding: 1px; }}")
+
+    def init_tab_headers(self):
+        self.tab_headers = []
+        tab_names = ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"]
+        
+        self.tabs.blockSignals(True)
+        for idx in range(self.tabs.count()):
+            self.tabs.setTabText(idx, "")
+            header = CustomTabHeader(tab_names[idx], is_selected=(idx == self.tabs.currentIndex()), parent=self)
+            self.tabs.tabBar().setTabButton(idx, QTabBar.LeftSide, header)
+            self.tab_headers.append(header)
+        self.tabs.blockSignals(False)
+        
+        self.tabs.currentChanged.connect(self.on_tab_changed_refresh_headers)
+
+    def on_tab_changed_refresh_headers(self, index):
+        for idx, header in enumerate(self.tab_headers):
+            header.set_selected(idx == index)
+
+
 
 
     def create_menu(self):
@@ -4191,9 +4334,92 @@ class WebtoonManager(QMainWindow):
         df = pd.DataFrame(rows)
         df.to_csv(os.path.join(e_path, "character_info.csv"), index=False, encoding='utf-8-sig')
         
+        # [추가] 글로벌 캐릭터 DB 동기화 검사 및 자동 등록
+        if self.current_title:
+            global_chars = config.load_global_characters(self.current_title)
+            global_updated = False
+            
+            for i in range(self.char_layout.count()):
+                widget = self.char_layout.itemAt(i).widget()
+                if isinstance(widget, CharacterRow):
+                    name = widget.input_name.text().strip()
+                    role = widget.combo_role.currentText().strip()
+                    age = widget.combo_age.currentText().strip()
+                    gender = widget.combo_gender.currentText().strip()
+                    
+                    # 안전장치: 역할, 연령, 성별 정보가 모두 입력된 경우에만 글로벌 DB에 등록/업데이트 진행
+                    if name and role and age and gender:
+                        # 글로벌 DB에서 기존 캐릭터 탐색
+                        for c in global_chars:
+                            if c.get("name", "").strip() == name:
+                                # 비어있는 필드가 있거나 값이 다르면 글로벌 DB 데이터 갱신
+                                if (not c.get("role") or not c.get("age") or not c.get("gender") or 
+                                    c.get("role") != role or c.get("age") != age or c.get("gender") != gender):
+                                    c["role"] = role
+                                    c["age"] = age
+                                    c["gender"] = gender
+                                    global_updated = True
+                                break
+                        else:
+                            # 글로벌 DB에 없는 경우 신규 등록
+                            import random
+                            r = random.randint(150, 240)
+                            g = random.randint(150, 240)
+                            b = random.randint(150, 240)
+                            color_hex = f"#{r:02X}{g:02X}{b:02X}"
+                            
+                            new_char = {
+                                "name": name,
+                                "role": role,
+                                "age": age,
+                                "gender": gender,
+                                "color": color_hex,
+                                "image_path": "",
+                                "memo": ""
+                            }
+                            global_chars.append(new_char)
+                            global_updated = True
+                        
+                        # 카드 위젯의 등록 상태(버튼 비활성화 및 등록됨 표시)를 실시간 업데이트
+                        widget.check_registered_status()
+            
+            if global_updated:
+                config.save_global_characters(self.current_title, global_chars)
+                # 메인 윈도우 캐릭터 목록 새로고침
+                if hasattr(self, 'get_character_list'):
+                    self.get_character_list()
+                # 캐릭터 도우미 전체 목록 새로고침
+                if hasattr(self, 'character_viewer') and self.character_viewer is not None and self.character_viewer.isVisible():
+                    self.character_viewer.load_data()
+        
         # [추가] 실시간 캐릭터 도우미 "현재 회차" 탭 동기화
         if hasattr(self, 'character_viewer') and self.character_viewer is not None and self.character_viewer.isVisible():
             self.character_viewer.load_current_episode_characters()
+            
+        # [추가] 탭 경고 업데이트
+        self.update_tab_warning_status()
+
+    def update_tab_warning_status(self):
+        """스텝 2 캐릭터 카드 중 정보(역할, 나이, 성별)가 누락된 카드가 있으면 탭 이름 왼쪽에 노란색 경고 아이콘(SVG)을 표시합니다."""
+        if not hasattr(self, 'char_layout') or not self.char_layout:
+            return
+            
+        has_warning = False
+        for i in range(self.char_layout.count()):
+            widget = self.char_layout.itemAt(i).widget()
+            if widget and widget.__class__.__name__ == 'CharacterRow':
+                role = widget.combo_role.currentText().strip()
+                age = widget.combo_age.currentText().strip()
+                gender = widget.combo_gender.currentText().strip()
+                if not role or not age or not gender:
+                    has_warning = True
+                    break
+                    
+        # 커스텀 탭 헤더 경고 상태 업데이트
+        if hasattr(self, 'tab_headers') and len(self.tab_headers) > 1:
+            self.tab_headers[1].set_warning(has_warning)
+            
+
 
     def load_data(self, progress_dialog=None, start_val=0):
         import pandas as pd
@@ -4266,6 +4492,7 @@ class WebtoonManager(QMainWindow):
         
         self.table_script.blockSignals(False)
         self.table_script.resizeRowsToContents()
+        self.update_tab_warning_status()
 
     def export_excel(self):
         from excel_handler import export_to_excel

@@ -1,5 +1,4 @@
-# widgets/window_resizer.py
-from PySide6.QtCore import Qt, QObject, QPoint, QRect, QEvent
+from PySide6.QtCore import Qt, QObject, QPoint, QRect, QEvent, QTimer
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QWidget
 
@@ -27,13 +26,34 @@ class FramelessWindowResizer(QObject):
             self.titlebar_widget.installEventFilter(self)
             
         self.window.installEventFilter(self)
+        
+        # 자식 위젯들에 마우스 트래킹 및 이벤트 필터 연결
+        self._install_filter_on_children()
+
     def _install_filter_on_children(self):
         from PySide6.QtWidgets import QWidget
         for child in self.window.findChildren(QWidget):
+            child.removeEventFilter(self)
+            child.installEventFilter(self)
+            child.setMouseTracking(True)
+
+    def _install_filter_on_child_recursive(self, parent_widget):
+        from PySide6.QtWidgets import QWidget
+        parent_widget.removeEventFilter(self)
+        parent_widget.installEventFilter(self)
+        parent_widget.setMouseTracking(True)
+        for child in parent_widget.findChildren(QWidget):
+            child.removeEventFilter(self)
             child.installEventFilter(self)
             child.setMouseTracking(True)
 
     def eventFilter(self, obj, event):
+        # 0. 동적으로 위젯이 추가되는 경우 이벤트 필터 등록 처리
+        if event.type() == QEvent.ChildAdded:
+            child = event.child()
+            if isinstance(child, QWidget):
+                QTimer.singleShot(0, lambda c=child: self._install_filter_on_child_recursive(c))
+
         # 1. 타이틀바 드래그를 통한 창 이동 처리 (크기 조절 중이 아닐 때만 작동)
         if not self.is_resizing and self.titlebar_widget:
             is_titlebar_event = (obj == self.titlebar_widget) or (hasattr(self.titlebar_widget, 'isAncestorOf') and self.titlebar_widget.isAncestorOf(obj))

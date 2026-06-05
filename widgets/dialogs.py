@@ -910,7 +910,7 @@ class TitleBarButton(QPushButton):
         
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.Antialiasing, True)
-        renderer.render(painter, QRect(6, 6, 12, 12))
+        renderer.render(painter, QRect(4, 4, 16, 16))
         painter.end()
         
         self.setIcon(QIcon(pixmap))
@@ -919,6 +919,13 @@ class TitleBarButton(QPushButton):
     def enterEvent(self, event):
         self.update_icon(True)
         super().enterEvent(event)
+        if self.toolTip():
+            from PySide6.QtGui import QHelpEvent, QCursor
+            from PySide6.QtCore import QEvent, QPoint
+            from PySide6.QtWidgets import QApplication
+            
+            help_event = QHelpEvent(QEvent.ToolTip, QPoint(0, 0), QCursor.pos())
+            QApplication.sendEvent(self, help_event)
 
     def leaveEvent(self, event):
         self.update_icon(False)
@@ -1004,10 +1011,6 @@ class FloatingIdiomViewer(QDialog):
                 pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
                 parent._idiom_relative_pos = pos
 
-    def toggle_help(self):
-        self.show_help = not self.show_help
-        if hasattr(self, 'lbl_info') and self.lbl_info:
-            self.lbl_info.setVisible(self.show_help)
 
     def hideEvent(self, event):
         parent = self.parent()
@@ -1090,11 +1093,17 @@ class FloatingIdiomViewer(QDialog):
         title_layout.addWidget(self.btn_magnet)
         
         # 도움말 (?) 버튼 추가
-        svg_help_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
-        svg_help_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FF5722" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+        svg_help_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>'
+        svg_help_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FF5722" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>'
         self.btn_help = TitleBarButton(svg_help_normal, svg_help_hover, "#E5E7EB")
-        self.btn_help.setToolTip("사용 안내 토글")
-        self.btn_help.clicked.connect(self.toggle_help)
+        
+        is_mac = sys.platform == "darwin"
+        shortcut_key = "⌥" if is_mac else "Alt"
+        help_text = f"""<div style='line-height: 150%;'>
+<b style='color: #FF5722;'>💡 관용구 도우미 사용 안내</b><br>
+• <b>빠른 입력</b>: 단축키({shortcut_key}+숫자) 혹은 더블 클릭으로 본문에 자동 삽입
+</div>"""
+        self.btn_help.setToolTip(help_text)
         title_layout.addWidget(self.btn_help)
         
         # SVG 정의
@@ -1182,10 +1191,7 @@ class FloatingIdiomViewer(QDialog):
         """)
         content_layout.addWidget(self.list_widget)
 
-        self.lbl_info = QLabel(f"💡 단축키({config.MODIFIER_NAME}+키) 혹은 더블 클릭하면 자동 삽입됩니다.")
-        self.lbl_info.setStyleSheet("color: #6B7280; font-size: 11px; font-family: 'Pretendard';")
-        self.lbl_info.setVisible(self.show_help)
-        content_layout.addWidget(self.lbl_info)
+
 
     def refresh_list(self):
         self.list_widget.clear()

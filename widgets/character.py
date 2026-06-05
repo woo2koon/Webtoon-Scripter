@@ -588,9 +588,45 @@ class CharacterRow(QFrame):
 class DraggableCharacterListWidget(QListWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.viewer = parent
         self.setDragEnabled(True)
         self.setVerticalScrollMode(QListWidget.ScrollPerItem)
         self._wheel_accumulator = 0
+        
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_context_menu)
+        
+    def show_context_menu(self, pos):
+        item = self.itemAt(pos)
+        if not item:
+            return
+            
+        char_info = item.data(Qt.UserRole)
+        if not char_info:
+            return
+            
+        menu = QMenu(self)
+        menu.setFont(QApplication.font())
+        menu.setStyleSheet(config.MODERN_MENU_STYLE)
+        
+        action_edit = QAction(get_icon(config.ICON_USER), "캐릭터 정보 수정", self)
+        
+        def trigger_edit():
+            viewer = self.viewer
+            if not viewer:
+                return
+            dialog = GlobalCharacterSettingsDialog(viewer, project_name=viewer.project_name, edit_char_name=char_info.get("name"))
+            if dialog.exec() == QDialog.Accepted:
+                viewer.load_data()
+                # Also synchronize the main window
+                main_win = viewer.parent()
+                if main_win and hasattr(main_win, 'load_characters'):
+                    main_win.load_characters()
+                    
+        action_edit.triggered.connect(trigger_edit)
+        menu.addAction(action_edit)
+        
+        menu.exec(self.mapToGlobal(pos))
         
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
@@ -813,11 +849,49 @@ class CharacterListItemWidget(QWidget):
         self.lbl_item_avatar.setStyleSheet("border: none; background: transparent;")
         self.item_layout.addWidget(self.lbl_item_avatar, 0, Qt.AlignVCenter)
         
+        name_container = QWidget()
+        name_container.setStyleSheet("background: transparent; border: none;")
+        name_layout = QHBoxLayout(name_container)
+        name_layout.setContentsMargins(0, 0, 0, 0)
+        name_layout.setSpacing(6)
+        
         self.lbl_name = QLabel(self.char.get("name", ""))
         self.lbl_name.setStyleSheet("font-size: 16px; font-weight: 600; color: #1F2937; background: transparent;")
-        self.item_layout.addWidget(self.lbl_name, 1, Qt.AlignVCenter)
+        name_layout.addWidget(self.lbl_name)
         
-        role = self.char.get("role", "단역")
+        # 역할, 성별, 나이 정보 중 하나라도 비어있는지 확인하여 경고 표시 및 툴팁 구성
+        missing_fields = []
+        if not self.char.get("role", "").strip():
+            missing_fields.append("역할")
+        if not self.char.get("gender", "").strip():
+            missing_fields.append("성별")
+        if not self.char.get("age", "").strip():
+            missing_fields.append("연령")
+            
+        if missing_fields:
+            from PySide6.QtSvg import QSvgRenderer
+            from PySide6.QtCore import QByteArray, QRect
+            self.lbl_warn = QLabel()
+            self.lbl_warn.setFixedSize(16, 16)
+            self.lbl_warn.setStyleSheet("background: transparent; border: none;")
+            fields_str = ", ".join(missing_fields)
+            self.lbl_warn.setToolTip(f"캐릭터 정보({fields_str})가 없습니다.")
+            
+            svg_alert = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>'
+            renderer = QSvgRenderer(QByteArray(svg_alert.encode('utf-8')))
+            pixmap = QPixmap(16, 16)
+            pixmap.fill(Qt.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            renderer.render(painter, QRect(0, 0, 16, 16))
+            painter.end()
+            self.lbl_warn.setPixmap(pixmap)
+            name_layout.addWidget(self.lbl_warn)
+            
+        name_layout.addStretch()
+        self.item_layout.addWidget(name_container, 1, Qt.AlignVCenter)
+        
+        role = self.char.get("role", "")
         self.lbl_role = QLabel(role)
         self.lbl_role.setAlignment(Qt.AlignCenter)
         
@@ -826,20 +900,23 @@ class CharacterListItemWidget(QWidget):
             "조연": {"bg": "#FEF3C7", "text": "#D97706", "border": "#FCD34D"},
             "단역": {"bg": "#F3F4F6", "text": "#4B5563", "border": "#E5E7EB"}
         }
-        colors = role_colors.get(role, role_colors["단역"])
         
-        self.lbl_role.setStyleSheet(f"""
-            QLabel {{
-                background-color: {colors['bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                border-radius: 4px;
-                padding: 2px 6px;
-                font-size: 11px;
-                font-weight: 600;
-            }}
-        """)
-        self.item_layout.addWidget(self.lbl_role, 0, Qt.AlignVCenter)
+        if role in role_colors:
+            colors = role_colors[role]
+            self.lbl_role.setStyleSheet(f"""
+                QLabel {{
+                    background-color: {colors['bg']};
+                    color: {colors['text']};
+                    border: 1px solid {colors['border']};
+                    border-radius: 4px;
+                    padding: 2px 6px;
+                    font-size: 11px;
+                    font-weight: 600;
+                }}
+            """)
+            self.item_layout.addWidget(self.lbl_role, 0, Qt.AlignVCenter)
+        else:
+            self.lbl_role.setVisible(False)
         
         self.update_avatar(self.avatar_size)
         
@@ -918,7 +995,7 @@ class TitleBarButton(QPushButton):
         
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.Antialiasing, True)
-        renderer.render(painter, QRect(6, 6, 12, 12))
+        renderer.render(painter, QRect(4, 4, 16, 16))
         painter.end()
         
         self.setIcon(QIcon(pixmap))
@@ -927,6 +1004,13 @@ class TitleBarButton(QPushButton):
     def enterEvent(self, event):
         self.update_icon(True)
         super().enterEvent(event)
+        if self.toolTip():
+            from PySide6.QtGui import QHelpEvent
+            from PySide6.QtCore import QEvent, QPoint
+            from PySide6.QtWidgets import QApplication
+            
+            help_event = QHelpEvent(QEvent.ToolTip, QPoint(0, 0), QCursor.pos())
+            QApplication.sendEvent(self, help_event)
 
     def leaveEvent(self, event):
         self.update_icon(False)
@@ -1016,12 +1100,6 @@ class FloatingCharacterViewer(QDialog):
                 pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
                 parent._character_relative_pos = pos
 
-    def toggle_help(self):
-        self.show_help = not self.show_help
-        if hasattr(self, 'info_label') and self.info_label:
-            self.info_label.setVisible(self.show_help)
-        if hasattr(self, 'current_info') and self.current_info:
-            self.current_info.setVisible(self.show_help)
 
     def hideEvent(self, event):
         parent = self.parent()
@@ -1103,11 +1181,17 @@ class FloatingCharacterViewer(QDialog):
         title_layout.addWidget(self.btn_magnet)
         
         # 도움말 (?) 버튼 추가
-        svg_help_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
-        svg_help_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FF4B4B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+        svg_help_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>'
+        svg_help_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FF4B4B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>'
         self.btn_help = TitleBarButton(svg_help_normal, svg_help_hover, "#E5E7EB")
-        self.btn_help.setToolTip("사용 안내 토글")
-        self.btn_help.clicked.connect(self.toggle_help)
+        
+        help_text = """<div style='line-height: 150%;'>
+<b style='color: #FF4B4B;'>💡 캐릭터 도우미 사용 안내</b><br>
+• <b>Step 2 (캐릭터 추가)</b>: 더블클릭 또는 드래그하여 리스트에 추가<br>
+• <b>Step 3 (역할 배정)</b>: 리스트의 인물을 대본 캐릭터 셀로 드래그<br>
+• <b>현재 회차 탭</b>: 대본 셀에 배정된 인물 자동 노출 및 빠른 드래그 입력
+</div>"""
+        self.btn_help.setToolTip(help_text)
         title_layout.addWidget(self.btn_help)
         
         # SVG 정의
@@ -1196,6 +1280,9 @@ class FloatingCharacterViewer(QDialog):
         
         # 마이너스 버튼
         self.btn_zoom_out = QPushButton("−")
+        self.btn_zoom_out.setFocusPolicy(Qt.NoFocus)
+        self.btn_zoom_out.setAutoDefault(False)
+        self.btn_zoom_out.setDefault(False)
         self.btn_zoom_out.setCursor(Qt.PointingHandCursor)
         self.btn_zoom_out.setStyleSheet(btn_style)
         self.btn_zoom_out.setToolTip("프로필 이미지 축소")
@@ -1204,6 +1291,9 @@ class FloatingCharacterViewer(QDialog):
         
         # 플러스 버튼
         self.btn_zoom_in = QPushButton("+")
+        self.btn_zoom_in.setFocusPolicy(Qt.NoFocus)
+        self.btn_zoom_in.setAutoDefault(False)
+        self.btn_zoom_in.setDefault(False)
         self.btn_zoom_in.setCursor(Qt.PointingHandCursor)
         self.btn_zoom_in.setStyleSheet(btn_style)
         self.btn_zoom_in.setToolTip("프로필 이미지 확대")
@@ -1260,11 +1350,6 @@ class FloatingCharacterViewer(QDialog):
         all_layout.setContentsMargins(8, 8, 8, 8)
         all_layout.setSpacing(8)
         
-        self.info_label = QLabel("💡 사용 안내\n• Step 2: 더블클릭 또는 드래그로 캐릭터 추가\n• Step 3: 대본 캐릭터 셀로 드래그하여 역할 배정")
-        self.info_label.setStyleSheet("font-size: 11px; color: #6B7280; font-weight: 500; line-height: 140%;")
-        self.info_label.setVisible(self.show_help)
-        all_layout.addWidget(self.info_label)
-        
         search_layout = QHBoxLayout()
         search_layout.setContentsMargins(0, 0, 0, 0)
         search_layout.setSpacing(6)
@@ -1289,6 +1374,7 @@ class FloatingCharacterViewer(QDialog):
         """ + "\n" + config.MODERN_MENU_STYLE)
         
         self.search_bar.textChanged.connect(self.filter_list)
+        self.search_bar.returnPressed.connect(self.on_search_bar_enter)
         search_layout.addWidget(self.search_bar)
         
         all_layout.addLayout(search_layout)
@@ -1300,6 +1386,61 @@ class FloatingCharacterViewer(QDialog):
         self.list_widget.itemDoubleClicked.connect(self.on_item_double_clicked)
         all_layout.addWidget(self.list_widget)
         
+        # 검색 결과 없음 상태 위젯
+        self.no_result_widget = QWidget()
+        self.no_result_widget.setObjectName("NoResultWidget")
+        self.no_result_widget.setStyleSheet("""
+            QWidget#NoResultWidget {
+                background-color: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+            }
+        """)
+        no_result_layout = QVBoxLayout(self.no_result_widget)
+        no_result_layout.setContentsMargins(16, 24, 16, 24)
+        no_result_layout.setSpacing(12)
+        no_result_layout.setAlignment(Qt.AlignCenter)
+        
+        self.lbl_no_result = QLabel("검색 결과가 없습니다.")
+        self.lbl_no_result.setStyleSheet("""
+            QLabel {
+                color: #6B7280;
+                font-size: 13px;
+                font-family: 'Pretendard';
+                background: transparent;
+                border: none;
+            }
+        """)
+        self.lbl_no_result.setAlignment(Qt.AlignCenter)
+        no_result_layout.addWidget(self.lbl_no_result)
+        
+        self.btn_add_search_char = QPushButton()
+        self.btn_add_search_char.setCursor(Qt.PointingHandCursor)
+        self.btn_add_search_char.setFocusPolicy(Qt.NoFocus)
+        self.btn_add_search_char.setStyleSheet("""
+            QPushButton {
+                background-color: #FF4B4B;
+                color: #FFFFFF;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-size: 12px;
+                font-weight: bold;
+                font-family: 'Pretendard';
+            }
+            QPushButton:hover {
+                background-color: #E03E3E;
+            }
+            QPushButton:pressed {
+                background-color: #C23535;
+            }
+        """)
+        self.btn_add_search_char.clicked.connect(self.add_search_character)
+        no_result_layout.addWidget(self.btn_add_search_char)
+        
+        all_layout.addWidget(self.no_result_widget)
+        self.no_result_widget.setVisible(False)
+        
         self.tabs.addTab(self.tab_all, "전체 캐릭터")
         
         # 2. 현재 회차 탭
@@ -1309,11 +1450,6 @@ class FloatingCharacterViewer(QDialog):
         current_layout = QVBoxLayout(self.tab_current)
         current_layout.setContentsMargins(8, 8, 8, 8)
         current_layout.setSpacing(8)
-        
-        self.current_info = QLabel("💡 사용 안내\n• 자동 등록: 대본 캐릭터 셀에 배정된 인물이 자동으로 노출됩니다.\n• 빠른 입력: 등장 비중이 높은 인물을 빠르게 드래그하여 입력합니다.")
-        self.current_info.setStyleSheet("font-size: 11px; color: #6B7280; font-weight: 500; line-height: 140%;")
-        self.current_info.setVisible(self.show_help)
-        current_layout.addWidget(self.current_info)
         
         self.list_widget_current = DraggableCharacterListWidget(self)
         self.list_widget_current.setStyleSheet(self._list_stylesheet())
@@ -1376,7 +1512,7 @@ class FloatingCharacterViewer(QDialog):
         mw = self.parent()
         if not mw or not hasattr(mw, 'table_script'):
             for widget in QApplication.topLevelWidgets():
-                if widget.__class__.__name__ == 'MainWindow':
+                if widget.__class__.__name__ in ('MainWindow', 'WebtoonManager'):
                     mw = widget
                     break
         
@@ -1511,12 +1647,76 @@ class FloatingCharacterViewer(QDialog):
     def filter_list(self):
         import unicodedata
         query = unicodedata.normalize('NFC', self.search_bar.text().lower().strip())
+        visible_count = 0
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
             char_info = item.data(Qt.UserRole)
             name = char_info.get("name", "").lower() if char_info else ""
             name_norm = unicodedata.normalize('NFC', name)
-            item.setHidden(query != "" and query not in name_norm)
+            hidden = (query != "" and query not in name_norm)
+            item.setHidden(hidden)
+            if not hidden:
+                visible_count += 1
+                
+        if self.tabs.currentIndex() == 0 and query != "" and visible_count == 0:
+            self.list_widget.setVisible(False)
+            self.btn_add_search_char.setText(f"💡 '{self.search_bar.text().strip()}' 추가하기")
+            self.no_result_widget.setVisible(True)
+        else:
+            self.no_result_widget.setVisible(False)
+            self.list_widget.setVisible(True)
+
+    def on_search_bar_enter(self):
+        if self.no_result_widget.isVisible():
+            self.add_search_character()
+
+    def add_search_character(self):
+        query = self.search_bar.text().strip()
+        if not query:
+            return
+            
+        chars = config.load_global_characters(self.project_name)
+        
+        import unicodedata
+        query_norm = unicodedata.normalize('NFC', query.lower())
+        if any(unicodedata.normalize('NFC', c.get("name", "").strip().lower()) == query_norm for c in chars):
+            return
+            
+        import random
+        r = random.randint(150, 240)
+        g = random.randint(150, 240)
+        b = random.randint(150, 240)
+        color_hex = f"#{r:02X}{g:02X}{b:02X}"
+        
+        new_char = {
+            "name": query,
+            "role": "",
+            "gender": "",
+            "age": "",
+            "image_path": "",
+            "color": color_hex,
+            "memo": ""
+        }
+        
+        chars.append(new_char)
+        config.save_global_characters(self.project_name, chars)
+        
+        self.load_data()
+        self.search_bar.clear()
+        
+        for widget in QApplication.topLevelWidgets():
+            if widget.__class__.__name__ == 'GlobalCharacterSettingsDialog':
+                if hasattr(widget, 'load_characters'):
+                    widget.load_characters()
+                    
+        mw = self.parent()
+        if not mw or not hasattr(mw, 'toast'):
+            for widget in QApplication.topLevelWidgets():
+                if widget.__class__.__name__ in ('MainWindow', 'WebtoonManager'):
+                    mw = widget
+                    break
+        if mw and hasattr(mw, 'toast'):
+            mw.toast.show_message(f"✅ '{query}' 캐릭터가 정식 등록되었습니다.", 1500)
             
     def on_item_double_clicked(self, item):
         char_info = item.data(Qt.UserRole)
@@ -1525,7 +1725,7 @@ class FloatingCharacterViewer(QDialog):
             mw = self.parent()
             if not mw or not hasattr(mw, 'add_character_card'):
                 for widget in QApplication.topLevelWidgets():
-                    if widget.__class__.__name__ == 'MainWindow':
+                    if widget.__class__.__name__ in ('MainWindow', 'WebtoonManager'):
                         mw = widget
                         break
             
@@ -1551,16 +1751,31 @@ class FloatingCharacterViewer(QDialog):
 # =================================================================
 class GlobalCharacterSettingsDialog(QDialog):
     """작품 전체의 캐릭터 데이터베이스를 추가, 수정, 삭제하고 색상을 관리하는 미려한 통합 관리 다이얼로그"""
-    def __init__(self, parent=None, project_name=""):
+    def __init__(self, parent=None, project_name="", edit_char_name=None):
         super().__init__(parent)
         self.project_name = project_name
         self.setWindowTitle("캐릭터 관리")
         self.resize(580, 710)
         self.selected_color = "#3B82F6"
         self.editing_name = None
+        self.single_edit_mode = edit_char_name is not None
         
         self.init_ui()
         self.load_characters()
+        
+        if edit_char_name:
+            self.list_section_widget.setVisible(False)
+            self.btn_close.setVisible(False)
+            self.setFixedHeight(315)
+            self.setWindowTitle("캐릭터 정보 수정")
+            
+            chars = config.load_global_characters(self.project_name)
+            char_info = next((c for c in chars if c.get("name") == edit_char_name), None)
+            if char_info:
+                self.edit_character(char_info)
+                
+            self.btn_cancel_edit.clicked.disconnect()
+            self.btn_cancel_edit.clicked.connect(self.reject)
         
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -1880,7 +2095,9 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.btn_sync_all.clicked.connect(self.sync_all_episodes_confirm)
         list_header_layout.addWidget(self.btn_sync_all)
         
-        list_section_layout = QVBoxLayout()
+        self.list_section_widget = QWidget()
+        self.list_section_widget.setStyleSheet("background: transparent; border: none;")
+        list_section_layout = QVBoxLayout(self.list_section_widget)
         list_section_layout.setContentsMargins(0, 0, 0, 0)
         list_section_layout.setSpacing(8)
         
@@ -1927,12 +2144,12 @@ class GlobalCharacterSettingsDialog(QDialog):
         scroll_area.setWidget(self.list_container)
         list_section_layout.addWidget(scroll_area, 1)
         
-        main_layout.addLayout(list_section_layout, 1)
+        main_layout.addWidget(self.list_section_widget, 1)
         
         footer_layout = QHBoxLayout()
         footer_layout.addStretch()
-        btn_close = QPushButton("닫기")
-        btn_close.setStyleSheet("""
+        self.btn_close = QPushButton("닫기")
+        self.btn_close.setStyleSheet("""
             QPushButton {
                 background-color: #212529;
                 color: white;
@@ -1945,8 +2162,8 @@ class GlobalCharacterSettingsDialog(QDialog):
                 background-color: #000000;
             }
         """)
-        btn_close.clicked.connect(self.accept)
-        footer_layout.addWidget(btn_close)
+        self.btn_close.clicked.connect(self.accept)
+        footer_layout.addWidget(self.btn_close)
         main_layout.addLayout(footer_layout)
         
     def filter_characters(self, text):
@@ -2056,32 +2273,37 @@ class GlobalCharacterSettingsDialog(QDialog):
             self.temp_image_path = None
 
     def show_avatar_register_menu(self):
-        menu = QMenu(self)
+        menu = QMenu(None)
+        menu.setObjectName("AvatarRegisterMenu")
         menu.setFont(QApplication.font())
         menu.setWindowFlags(menu.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
         menu.setAttribute(Qt.WA_TranslucentBackground)
         menu.setStyleSheet("""
-            QMenu {
-                font-family: 'Pretendard', sans-serif;
+            QMenu#AvatarRegisterMenu {
                 background-color: #FFFFFF;
-                border: 1px solid #D1D5DB;
-                border-radius: 6px;
-                padding: 4px;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                padding: 6px 4px;
             }
-            QMenu::item {
+            QMenu#AvatarRegisterMenu::item {
                 font-family: 'Pretendard', sans-serif;
                 font-size: 13px;
                 color: #374151;
-                padding: 6px 14px;
-                border-radius: 4px;
+                padding: 6px 20px;
+                border-radius: 6px;
+                margin: 2px 2px;
             }
-            QMenu::item:selected {
-                background-color: #F3F4F6;
-                color: #111827;
+            QMenu#AvatarRegisterMenu::item:selected {
+                background-color: #FFECEC;
+                color: #FF4B4B;
             }
         """)
-        action_file = menu.addAction("파일 추가...")
-        action_capture = menu.addAction("웹툰 뷰어에서 캡처")
+        
+        action_file = QAction(get_icon(config.ICON_IMPORT), "파일 추가...", self)
+        action_capture = QAction(get_icon(config.ICON_FILE), "웹툰 뷰어에서 캡처", self)
+        
+        menu.addAction(action_file)
+        menu.addAction(action_capture)
         
         # 버튼 바로 아래에 메뉴가 나타나도록 위치 계산
         btn_pos = self.btn_change_avatar.mapToGlobal(QPoint(0, self.btn_change_avatar.height()))
@@ -2400,7 +2622,14 @@ class GlobalCharacterSettingsDialog(QDialog):
                 try:
                     pix = QPixmap(self.temp_image_path)
                     if not pix.isNull():
-                        scaled_pix = pix.scaled(150, 150, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+                        # 비정방형 이미지(예: 외부 가져오기) 대응 - 찌그러짐 방지를 위해 가로세로 중 짧은 쪽 기준으로 중앙 정자형 크롭
+                        w = pix.width()
+                        h = pix.height()
+                        size = min(w, h)
+                        cx = (w - size) // 2
+                        cy = (h - size) // 2
+                        cropped_pix = pix.copy(cx, cy, size, size)
+                        scaled_pix = cropped_pix.scaled(150, 150, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
                         scaled_pix.save(target_img_absolute, "PNG")
                         image_field_val = target_img_relative
                     else:
@@ -2493,12 +2722,47 @@ class GlobalCharacterSettingsDialog(QDialog):
                     break
                     
         config.save_global_characters(self.project_name, chars)
+        
+        # 메인 윈도우 및 캐릭터 도우미 창 새로고침
+        for widget in QApplication.topLevelWidgets():
+            if widget.__class__.__name__ in ('MainWindow', 'WebtoonManager'):
+                if hasattr(widget, 'char_layout') and widget.char_layout:
+                    for i in range(widget.char_layout.count()):
+                        row_item = widget.char_layout.itemAt(i)
+                        if row_item:
+                            row_widget = row_item.widget()
+                            if row_widget and row_widget.__class__.__name__ == 'CharacterRow':
+                                row_name = row_widget.input_name.text().strip()
+                                if row_name == self.editing_name or row_name == name:
+                                    row_widget.input_name.setText(name)
+                                    
+                                    row_widget.combo_role.blockSignals(True)
+                                    row_widget.combo_age.blockSignals(True)
+                                    row_widget.combo_gender.blockSignals(True)
+                                    
+                                    row_widget.combo_role.setCurrentText(self.combo_role.currentText())
+                                    row_widget.combo_age.setCurrentText(self.combo_age.currentText())
+                                    row_widget.combo_gender.setCurrentText(self.combo_gender.currentText())
+                                    
+                                    row_widget.combo_role.blockSignals(False)
+                                    row_widget.combo_age.blockSignals(False)
+                                    row_widget.combo_gender.blockSignals(False)
+                                    
+                                    row_widget.check_registered_status()
+                if hasattr(widget, 'save_char_data'):
+                    widget.save_char_data()
+                if hasattr(widget, 'get_character_list'):
+                    widget.get_character_list()
+            elif widget.__class__.__name__ == 'FloatingCharacterViewer':
+                if hasattr(widget, 'load_data'):
+                    widget.load_data()
+            
+        if getattr(self, 'single_edit_mode', False):
+            self.accept()
+            return
+            
         self.cancel_editing()
         self.load_characters()
-        
-        mw = self.window()
-        if hasattr(mw, 'get_character_list'):
-            mw.get_character_list()
 
     def delete_character(self, name):
         msg_box = QMessageBox(self)
@@ -2529,9 +2793,40 @@ class GlobalCharacterSettingsDialog(QDialog):
             config.save_global_characters(self.project_name, chars)
             self.load_characters()
             
-            mw = self.window()
-            if hasattr(mw, 'get_character_list'):
-                mw.get_character_list()
+            # 메인 윈도우 및 플로팅 뷰어의 캐릭터 카드와 시트 셀 데이터를 정리합니다.
+            for widget in QApplication.topLevelWidgets():
+                if widget.__class__.__name__ in ('MainWindow', 'WebtoonManager'):
+                    # 스텝 2 캐릭터 카드 삭제 시도
+                    has_removed_card = False
+                    if hasattr(widget, 'char_layout') and widget.char_layout:
+                        for i in range(widget.char_layout.count()):
+                            row_item = widget.char_layout.itemAt(i)
+                            if row_item:
+                                row_widget = row_item.widget()
+                                if row_widget and row_widget.__class__.__name__ == 'CharacterRow':
+                                    row_name = row_widget.input_name.text().strip()
+                                    if row_name == name:
+                                        if hasattr(widget, 'remove_character_card'):
+                                            widget.remove_character_card(row_widget)
+                                        else:
+                                            widget.char_layout.removeWidget(row_widget)
+                                            row_widget.deleteLater()
+                                            if hasattr(widget, 'save_char_data'):
+                                                widget.save_char_data()
+                                            if hasattr(widget, 'clear_character_from_table'):
+                                                widget.clear_character_from_table(name)
+                                        has_removed_card = True
+                                        break
+                    # 카드가 없더라도 시트 셀 지정 정리만 한 번 더 안전하게 수행
+                    if not has_removed_card:
+                        if hasattr(widget, 'clear_character_from_table'):
+                            widget.clear_character_from_table(name)
+                            
+                    if hasattr(widget, 'get_character_list'):
+                        widget.get_character_list()
+                elif widget.__class__.__name__ == 'FloatingCharacterViewer':
+                    if hasattr(widget, 'load_data'):
+                        widget.load_data()
                 
     def sync_all_episodes_confirm(self):
         msg_box = QMessageBox(self)
@@ -2607,7 +2902,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         mw = self.parent()
         if not mw or not hasattr(mw, 'toast'):
             for widget in QApplication.topLevelWidgets():
-                if widget.__class__.__name__ == 'MainWindow':
+                if widget.__class__.__name__ in ('MainWindow', 'WebtoonManager'):
                     mw = widget
                     break
         if mw and hasattr(mw, 'toast') and mw.toast is not None:
@@ -2782,7 +3077,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         mw = self.parent()
         if not mw or not hasattr(mw, 'add_character_card'):
             for widget in QApplication.topLevelWidgets():
-                if widget.__class__.__name__ == 'MainWindow':
+                if widget.__class__.__name__ in ('MainWindow', 'WebtoonManager'):
                     mw = widget
                     break
                     
