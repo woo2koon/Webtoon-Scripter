@@ -20,7 +20,7 @@ echo "  완료"
 
 # ── 2. PyInstaller 빌드 ──────────────────────────────────────────
 echo "▶ PyInstaller 빌드 중..."
-venv/bin/python -m PyInstaller --noconfirm Webtoon_Scripter.spec
+python3 -m PyInstaller --noconfirm Webtoon_Scripter.spec
 echo "  빌드 완료"
 
 # ── 3. ._* 메타데이터 파일 제거 (외장 드라이브 서명 버그 방지) ─────
@@ -44,7 +44,73 @@ echo "▶ LaunchServices DB 캐시 강제 갱신 중..."
     -f "${APP_PATH}" 2>/dev/null || true
 echo "  완료"
 
+# ── 6. DMG 파일 생성 및 디자인 커스텀 ──────────────────────────────
+echo "▶ DMG 파일 생성 및 배경 지정 중..."
+
+LOCAL_TEMP_DIR="${HOME}/.webtoon_scripter_dmg_temp"
+rm -rf "${LOCAL_TEMP_DIR}"
+mkdir -p "${LOCAL_TEMP_DIR}/dmg_content"
+
+# 1. 앱 복사 및 Applications 바로가기 링크 생성
+cp -R "${APP_PATH}" "${LOCAL_TEMP_DIR}/dmg_content/"
+ln -s /Applications "${LOCAL_TEMP_DIR}/dmg_content/Applications"
+
+# 2. 임시 DMG 생성 (수정 가능한 UDRW 포맷)
+TEMP_DMG="dist/${APP_NAME}_temp.dmg"
+rm -f "${TEMP_DMG}"
+hdiutil create -volname "${APP_NAME}" -srcfolder "${LOCAL_TEMP_DIR}/dmg_content" -ov -format UDRW "${TEMP_DMG}"
+
+# 3. 임시 DMG 마운트
+echo "▶ DMG 마운트 및 디자인 적용 중..."
+MOUNT_DIR="/Volumes/${APP_NAME}"
+hdiutil detach "${MOUNT_DIR}" 2>/dev/null || true
+hdiutil attach -readwrite -noverify -noautoopen "${TEMP_DMG}"
+sleep 2
+
+# 4. 배경 이미지 폴더 생성 및 복사
+mkdir -p "${MOUNT_DIR}/.background"
+cp "/Volumes/Samsung_T5/DEV_HOZAKZIL/Webtoon_OCR_Dev/app_icon/스크립트 매니저 BG.png" "${MOUNT_DIR}/.background/background.png"
+chflags hidden "${MOUNT_DIR}/.background"
+
+# 5. AppleScript를 이용해 Finder 뷰 커스텀 (창 크기, 배경화면, 아이콘 배치)
+osascript <<EOF
+tell application "Finder"
+    tell disk "${APP_NAME}"
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set the bounds of container window to {100, 100, 820, 669} -- 720 x 482 inner content size (adjusted with extra height)
+        set theViewOptions to the icon view options of container window
+        set arrangement of theViewOptions to not arranged
+        set icon size of theViewOptions to 96
+        set background picture of theViewOptions to file ".background:background.png"
+        set position of item "${APP_NAME}.app" to {165, 286}
+        set position of item "Applications" to {555, 286}
+        update every item
+        delay 2
+        close
+    end tell
+end tell
+EOF
+
+# 변경사항이 동기화되도록 대기 후 마운트 해제
+sleep 2
+hdiutil detach "${MOUNT_DIR}"
+
+# 6. 최종 압축 DMG 생성 (UDZO 포맷)
+DMG_FILE="dist/${APP_NAME}_v3.0.0.dmg"
+rm -f "${DMG_FILE}"
+hdiutil convert "${TEMP_DMG}" -format UDZO -imagekey zlib-level=9 -o "${DMG_FILE}"
+
+# 임시 파일 정리
+rm -f "${TEMP_DMG}"
+rm -rf "${LOCAL_TEMP_DIR}"
+
+echo "  DMG 디자인 완성: ${DMG_FILE}"
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  ✅ 빌드 성공: ${APP_PATH}"
+echo "  ✅ 빌드 및 DMG 생성 성공: ${APP_PATH}"
+echo "                          ${DMG_FILE}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

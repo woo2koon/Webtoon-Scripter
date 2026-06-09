@@ -23,7 +23,7 @@ MY_DEFAULT_AI_KEY = ""   # <-- 여기에 직접 입력하지 마세요!
 
 # 1. 앱 이름 (이 이름으로 사용자의 컴퓨터에 폴더가 생깁니다)
 APP_NAME = "Webtoon Scripter"
-APP_VERSION = "2.5.5"
+APP_VERSION = "3.0.0"
 
 if getattr(sys, 'frozen', False):
     # [읽기전용] EXE 내부에 압축된 아이콘 등 (임시 폴더)
@@ -84,6 +84,18 @@ ICON_USER = os.path.join(ASSETS_DIR, "user.svg") # 사람 모양 캐릭터 아�
 ICON_SETTINGS_COG = os.path.join(ASSETS_DIR, "settings.svg") # 톱니바퀴 설정 아이콘 추가
 ICON_AVATAR_UPLOAD = os.path.join(ASSETS_DIR, "avatar-upload.svg") # 아바타 전용 업로드 아이콘
 ICON_SPLIT = os.path.join(ASSETS_DIR, "separator-horizontal.svg") # 셀 나누기 아이콘 추가
+ICON_MOVE_VERTICAL = os.path.join(ASSETS_DIR, "move-vertical.svg") # 스크롤/이동 아이콘 추가
+ICON_KEYBOARD = os.path.join(ASSETS_DIR, "keyboard.svg") # 키보드 아이콘 추가
+ICON_MAGNET = os.path.join(ASSETS_DIR, "magnet.svg") # 자석 아이콘 추가
+ICON_ZOOM_IN = os.path.join(ASSETS_DIR, "plus_icon.svg")
+ICON_ZOOM_OUT = os.path.join(ASSETS_DIR, "minus_icon.svg")
+ICON_COPY = os.path.join(ASSETS_DIR, "context_menu", "copy.svg")
+ICON_CUT = os.path.join(ASSETS_DIR, "context_menu", "cut.svg")
+ICON_PASTE = os.path.join(ASSETS_DIR, "context_menu", "paste.svg")
+ICON_SELECT_ALL = os.path.join(ASSETS_DIR, "context_menu", "select_all.svg")
+ICON_SUCCESS = os.path.join(ASSETS_DIR, "check.svg")
+ICON_INFO = os.path.join(ASSETS_DIR, "info.svg")
+ICON_WARNING = os.path.join(ASSETS_DIR, "warning.svg")
 # =================================================================
 
 OCR_API_KEY = ""
@@ -102,12 +114,26 @@ ROLE_OPTIONS = ["주연", "조연", "단역"]
 # 탭별 프로필 이미지 초기 크기 설정
 AVATAR_SIZE_ALL = 45
 AVATAR_SIZE_CURRENT = 45
+TEXT_ZOOM_STEP = 0
 
 # [관용구 설정] 자주 쓰는 지문 리스트
 IDIOMS = []
 
 # [저장 경로 설정] 마지막으로 저장한 디렉토리 경로 기억
 LAST_SAVE_DIR = ""
+
+# [도우미 창 상대 위치 및 크기 기억]
+IDIOM_VIEWER_POS = None
+IDIOM_VIEWER_SIZE = None
+CHARACTER_VIEWER_POS = None
+CHARACTER_VIEWER_SIZE = None
+
+# [메인 창 위치 및 크기 기억]
+MAIN_WINDOW_POS = None
+MAIN_WINDOW_SIZE = None
+
+# [신규 추가] 탭 레이아웃 순서 기억
+TAB_ORDER = ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"]
 
 MODERN_STYLE = f"""
     QWidget {{
@@ -118,7 +144,7 @@ MODERN_STYLE = f"""
 """
 
 def load_settings():
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER
     IS_SIMPLE_MODE = False
     
     # 1. 일단 하드코딩된 키로 초기화
@@ -142,8 +168,8 @@ def load_settings():
                             cleaned_presets[name] = {"ocr": value, "ai": ""}
                         elif isinstance(value, dict):
                             cleaned_presets[name] = {
-                                "ocr": value.get("ocr", ""),
-                                "ai": value.get("ai", "")
+                                  "ocr": value.get("ocr", ""),
+                                  "ai": value.get("ai", "")
                             }
                         else:
                             cleaned_presets[name] = {"ocr": "", "ai": ""}
@@ -165,6 +191,14 @@ def load_settings():
                     LAST_SAVE_DIR = data.get("last_save_dir", "")
                     AVATAR_SIZE_ALL = data.get("avatar_size_all", 45)
                     AVATAR_SIZE_CURRENT = data.get("avatar_size_current", 45)
+                    TEXT_ZOOM_STEP = data.get("text_zoom_step", 0)
+                    IDIOM_VIEWER_POS = data.get("idiom_viewer_pos", None)
+                    IDIOM_VIEWER_SIZE = data.get("idiom_viewer_size", None)
+                    CHARACTER_VIEWER_POS = data.get("character_viewer_pos", None)
+                    CHARACTER_VIEWER_SIZE = data.get("character_viewer_size", None)
+                    MAIN_WINDOW_POS = data.get("main_window_pos", None)
+                    MAIN_WINDOW_SIZE = data.get("main_window_size", None)
+                    TAB_ORDER = data.get("tab_order", ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"])
                 
                 else:
                     # 구형 데이터 구조일 경우 처리
@@ -203,7 +237,7 @@ def load_settings():
         AI_API_KEY = OCR_API_KEY
 
 def save_settings(presets=None, active_name=None, is_simple_mode=None):
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER
     
     if presets is not None:
         API_PRESETS = presets
@@ -226,7 +260,15 @@ def save_settings(presets=None, active_name=None, is_simple_mode=None):
         "idioms": IDIOMS,
         "last_save_dir": LAST_SAVE_DIR,
         "avatar_size_all": AVATAR_SIZE_ALL,
-        "avatar_size_current": AVATAR_SIZE_CURRENT
+        "avatar_size_current": AVATAR_SIZE_CURRENT,
+        "text_zoom_step": TEXT_ZOOM_STEP,
+        "idiom_viewer_pos": IDIOM_VIEWER_POS,
+        "idiom_viewer_size": IDIOM_VIEWER_SIZE,
+        "character_viewer_pos": CHARACTER_VIEWER_POS,
+        "character_viewer_size": CHARACTER_VIEWER_SIZE,
+        "main_window_pos": MAIN_WINDOW_POS,
+        "main_window_size": MAIN_WINDOW_SIZE,
+        "tab_order": TAB_ORDER
     }
     try:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
@@ -250,6 +292,24 @@ def update_last_save_dir(path):
         LAST_SAVE_DIR = path
     else:
         LAST_SAVE_DIR = os.path.dirname(path)
+    save_settings()
+
+def update_idiom_viewer_geometry(pos, size):
+    global IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE
+    IDIOM_VIEWER_POS = pos
+    IDIOM_VIEWER_SIZE = size
+    save_settings()
+
+def update_character_viewer_geometry(pos, size):
+    global CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE
+    CHARACTER_VIEWER_POS = pos
+    CHARACTER_VIEWER_SIZE = size
+    save_settings()
+
+def update_main_window_geometry(pos, size):
+    global MAIN_WINDOW_POS, MAIN_WINDOW_SIZE
+    MAIN_WINDOW_POS = pos
+    MAIN_WINDOW_SIZE = size
     save_settings()
 
 def get_global_characters_path(project_name):
@@ -295,18 +355,23 @@ EXCEL_TEMPLATE_BASE64 = ""
 MODERN_STYLE = """
 QWidget { font-family: 'Pretendard', 'Malgun Gothic', 'AppleGothic', sans-serif; font-size: 14px; color: #333333; }
 QMainWindow, QDialog { background-color: #ffffff; }
-QMenuBar { background-color: white; border-bottom: 1px solid #e5e7eb; }
-QMenuBar::item { padding: 8px 12px; background: transparent; color: #333; }
+QMenuBar { font-family: 'Pretendard'; background-color: white; border-bottom: 1px solid #e5e7eb; }
+QMenuBar::item { font-family: 'Pretendard'; padding: 8px 12px; background: transparent; color: #333; }
 QMenuBar::item:selected { background-color: #f3f4f6; color: #000; }
 QMenu { 
+    font-family: 'Pretendard';
+    font-size: 14px;
+    font-weight: 500;
     background-color: white; 
     border: 1px solid #d1d5db; 
-    border-radius: 0px; /* 메뉴창 모서리도 살짝 둥글게 하면 예쁩니다 */
+    border-radius: 0px; 
     padding: 3px; 
 }
 
 QMenu::item { 
-    /* 상, 우, 하, 좌 순서입니다. 좌측(40px)을 넉넉하게 주면 아이콘이 안으로 들어옵니다. */
+    font-family: 'Pretendard';
+    font-size: 14px;
+    font-weight: 500;
     padding: 8px 10px 8px 22px; 
     border-radius: 4px;
     margin: 2px 5px;
@@ -330,8 +395,10 @@ QMenu::separator {
 }
 QWidget#Sidebar { background-color: #f8f9fa; border-right: 1px solid #e0e0e0; }
 QLabel#SidebarTitle { font-size: 16px; font-weight: bold; color: #1f2937; margin: 10px 0; }
-QLineEdit, QComboBox { 
+QLabel#LabelBold { font-weight: 500; font-size: 15px; }
+QLineEdit { 
     font-family: 'Pretendard'; 
+    font-size: 15px;
     border: 1px solid #d1d5db; 
     border-radius: 6px; 
     background-color: #ffffff; 
@@ -339,8 +406,19 @@ QLineEdit, QComboBox {
     padding-left: 12px; 
     color: #333; 
 }
+QComboBox { 
+    font-family: 'Pretendard'; 
+    font-size: 15px;
+    border: 1px solid #d1d5db; 
+    border-radius: 6px; 
+    background-color: #ffffff; 
+    min-height: 34px; 
+    padding-left: 12px; 
+    color: #333; 
+}
 QComboBox { combobox-popup: 0; }
-QLineEdit:focus, QComboBox:focus, QComboBox:on { border: 1px solid #ff4b4b; }
+QLineEdit:focus { border: 1px solid #ff4b4b; }
+QComboBox:focus, QComboBox:on { border: 1px solid #ff8a65; }
 
 QComboBox::drop-down { 
     border: none; 
@@ -354,13 +432,16 @@ QComboBox::down-arrow {
     width: 12px; 
     height: 12px; 
 }
-QComboBox QAbstractItemView { font-family: 'Pretendard'; border: 1px solid #9CA3AF; border-radius: 8px; background-color: white; selection-background-color: #ffd7d7; selection-color: #ff4b4b; outline: none; padding: 2px; }
-QComboBox QAbstractItemView::item { font-family: 'Pretendard'; min-height: 30px; padding: 5px; margin: 1px; border-radius: 5px; }
-QComboBox QAbstractItemView::item:hover { background-color: #fff5f5; }
-QTableWidget { border: 1px solid #d1d5db; gridline-color: #d0d0d0; font-family: 'Pretendard', 'AppleGothic'; font-size: 10pt; selection-background-color: transparent; selection-color: black; }
-QTableWidget::item:selected, QTableWidget::item:focus { border: 2px solid #ff4b4b; background-color: transparent; color: black; }
+QComboBox QAbstractItemView { font-family: 'Pretendard'; font-size: 15px; border: 1px solid #9CA3AF; border-radius: 8px; background-color: white; selection-background-color: #fff0f0; selection-color: #111827; outline: none; padding: 2px; }
+QComboBox QAbstractItemView::item { font-family: 'Pretendard'; font-size: 15px; min-height: 28px; padding: 3px 5px; margin: 1px; border-radius: 5px; }
+QComboBox QAbstractItemView::item:hover { background-color: #fff0f0; color: #111827; }
+QTableWidget { border: 1px solid #d1d5db; gridline-color: #d0d0d0; font-family: 'Pretendard', 'AppleGothic'; font-size: 10pt; selection-background-color: #e8f0fe; selection-color: black; }
+QTableWidget::item { border-radius: 0px; }
+QTableWidget::item:selected { border: 2px solid #ff4b4b; background-color: #e8f0fe; color: black; border-radius: 0px; }
+QTableWidget::item:selected:focus { border: 2px solid #ff4b4b; background-color: #e8f0fe; color: black; border-radius: 0px; }
+QTableWidget::item:focus { border: 2px solid #ff4b4b; border-radius: 0px; }
 QHeaderView::section { background-color: #f0f0f0; border: none; border-right: 1px solid #d0d0d0; border-bottom: 1px solid #d0d0d0; padding: 4px; font-weight: normal; color: #333; font-family: 'Pretendard'; font-size: 10pt; }
-QPushButton { background-color: #ffffff; border: 1px solid #d1d5db; border-radius: 4px; padding: 6px 16px; font-weight: bold; color: #444; }
+QPushButton { background-color: #ffffff; border: 1px solid #d1d5db; border-radius: 4px; padding: 6px 16px; font-weight: bold; color: #444; font-size: 15px; }
 QPushButton:hover { border-color: #ff4b4b; color: #ff4b4b; }
 QPushButton:pressed { background-color: #fff0f0; }
 QPushButton#PlusBtn { background-color: #ff4b4b; color: white; border: none; font-size: 20px; font-family: 'Arial'; padding: 0px 0px 4px 0px; }
@@ -370,7 +451,7 @@ QPushButton#PrimaryBtn:hover { background-color: #e03e3e; }
 QPushButton#BlackBtn { background-color: #212529; color: white; border: none; padding: 12px; }
 QPushButton#BlackBtn:hover { background-color: #000000; }
 QTabWidget::pane { border: 1px solid #e5e7eb; border-radius: 4px; top: -1px; }
-QTabBar::tab { background: transparent; border-bottom: 3px solid transparent; padding: 10px 16px; font-weight: bold; color: #888; margin-right: 4px; }
+QTabBar::tab { background: transparent; border-bottom: 3px solid transparent; padding: 10px 16px; font-weight: 600; font-size: 17px; color: #888; margin-right: 4px; }
 QTabBar::tab:selected { color: #ff4b4b; border-bottom: 3px solid #ff4b4b; }
 QListWidget { border: 1px solid #e0e0e0; border-radius: 4px; background-color: #ffffff; padding: 5px; }
 QListWidget::item { padding: 8px; border-bottom: 1px solid #f0f0f0; color: #333; }
@@ -391,15 +472,34 @@ QTextEdit { color: #333333; line-height: 160%; background-color: white; border: 
 dropdown_arrow_path = os.path.join(ASSETS_DIR, "dropdown-arrow.svg").replace("\\", "/")
 MODERN_STYLE = MODERN_STYLE.replace("url(assets/dropdown-arrow.svg)", f"url('{dropdown_arrow_path}')")
 
+if sys.platform == "darwin":
+    MODERN_STYLE += """
+    QComboBox {
+        font-size: 14px;
+    }
+    QComboBox QAbstractItemView {
+        font-size: 14px;
+    }
+    QComboBox QAbstractItemView::item {
+        font-size: 14px;
+    }
+    """
+
 
 MODERN_MENU_STYLE = """
 QMenu { 
+    font-family: 'Pretendard';
+    font-size: 14px;
+    font-weight: 500;
     background-color: white; 
     border: 1px solid #d1d5db; 
     border-radius: 0px; 
     padding: 3px; 
 }
 QMenu::item { 
+    font-family: 'Pretendard';
+    font-size: 14px;
+    font-weight: 500;
     padding: 8px 10px 8px 22px; 
     border-radius: 4px;
     margin: 2px 5px;
@@ -418,4 +518,4 @@ QMenu::separator {
     background: #e5e7eb;
     margin: 5px 10px;
 }
-"""
+"""

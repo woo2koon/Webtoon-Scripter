@@ -1,4 +1,5 @@
 # widgets/dialogs.py
+import sys
 import os
 import re
 import difflib
@@ -11,9 +12,9 @@ from PySide6.QtWidgets import (
     QComboBox, QFrame, QListWidget, QListWidgetItem, QWidget, QListView,
     QInputDialog, QMessageBox, QAbstractItemView, QApplication, QStackedWidget,
     QFileDialog, QCheckBox, QMenu, QScrollArea, QGraphicsOpacityEffect, QTextEdit,
-    QProgressBar, QGraphicsDropShadowEffect
+    QProgressBar, QGraphicsDropShadowEffect, QTableWidget, QTableWidgetItem, QHeaderView, QGridLayout
 )
-from PySide6.QtCore import Qt, Signal, QPoint, QSize, QMimeData, QByteArray, QTimer, QEvent, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Qt, Signal, QPoint, QSize, QMimeData, QByteArray, QTimer, QEvent, QPropertyAnimation, QEasingCurve, QRect
 from PySide6.QtGui import (
     QPixmap, QIcon, QDrag, QPainter, QColor, QPen, QFont, QAction, QKeySequence,
     QTextCharFormat, QTextFormat, QTextCursor
@@ -21,7 +22,7 @@ from PySide6.QtGui import (
 
 import config
 from config import PROJECTS_DIR
-from utils import get_icon, get_colored_icon, open_path
+from utils import get_icon, get_colored_icon, get_colored_pixmap, open_path
 from .common import PopupItemDelegate, SingleClickLineEdit
 from .character import GlobalCharacterSettingsDialog
 
@@ -98,32 +99,63 @@ class SettingsDialog(QDialog):
         self.combo_presets.view().window().setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
         self.combo_presets.view().window().setAttribute(Qt.WA_TranslucentBackground)
 
-        self.combo_presets.setStyleSheet("""
-            QComboBox#PresetCombo {
-                combobox-popup: 0;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                padding-left: 10px;
-                background: white;
-                min-height: 33px;
-                max-height: 33px;
-                height: 33px;
-            }
-            QComboBox QAbstractItemView {
-                border: 1px solid #ddd;
-                border-radius: 8px;
-                background-color: white;
-                outline: 0;
-                padding: 2px;
-            }
-            QComboBox QAbstractItemView::item {
-                font-family: 'Pretendard';
-                min-height: 30px;
-                padding: 5px;
-                margin: 1px;
-                border-radius: 5px;
-            }
-        """)
+        if sys.platform == "darwin":
+            self.combo_presets.setStyleSheet("""
+                QComboBox#PresetCombo {
+                    combobox-popup: 0;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    padding-left: 10px;
+                    background: white;
+                    min-height: 33px;
+                    max-height: 33px;
+                    height: 33px;
+                    font-size: 14pt;
+                }
+                QComboBox QAbstractItemView {
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    background-color: white;
+                    outline: 0;
+                    padding: 2px;
+                    font-size: 14pt;
+                }
+                QComboBox QAbstractItemView::item {
+                    font-family: 'Pretendard';
+                    min-height: 30px;
+                    padding: 5px;
+                    margin: 1px;
+                    border-radius: 5px;
+                    font-size: 14pt;
+                }
+            """)
+        else:
+            self.combo_presets.setStyleSheet("""
+                QComboBox#PresetCombo {
+                    combobox-popup: 0;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    padding-left: 10px;
+                    background: white;
+                    min-height: 33px;
+                    max-height: 33px;
+                    height: 33px;
+                }
+                QComboBox QAbstractItemView {
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    background-color: white;
+                    outline: 0;
+                    padding: 2px;
+                }
+                QComboBox QAbstractItemView::item {
+                    font-family: 'Pretendard';
+                    min-height: 30px;
+                    padding: 5px;
+                    margin: 1px;
+                    border-radius: 5px;
+                }
+            """)
 
         self.combo_presets.addItems(list(self.local_presets.keys()))
         self.combo_presets.setCurrentText(self.local_active)
@@ -696,7 +728,7 @@ class IdiomSettingsDialog(QDialog):
             lay.setContentsMargins(0, 0, 0, 0)
             lbl = QLabel(text)
             lbl.setAlignment(Qt.AlignCenter)
-            lbl.setStyleSheet("color: #4b5563; font-size: 11px; font-weight: bold; border: none;")
+            lbl.setStyleSheet("color: #4b5563; font-size: 12px; font-weight: bold; border: none;")
             lay.addWidget(lbl)
             if width: box.setFixedWidth(width)
             return box
@@ -835,6 +867,118 @@ class IdiomSettingsDialog(QDialog):
         self.accept()
 
 # =================================================================
+# TitleBarButton: SVG 아이콘 전용 프레임런스 버튼
+# =================================================================
+class TitleBarButton(QPushButton):
+    def __init__(self, svg_normal, svg_hover, hover_bg_color, parent=None):
+        super().__init__(parent)
+        self.svg_normal = svg_normal
+        self.svg_hover = svg_hover
+        self.hover_bg_color = hover_bg_color
+        
+        self.setFixedSize(24, 24)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: 12px;
+                padding: 0px;
+                margin: 0px;
+                min-width: 24px;
+                max-width: 24px;
+                min-height: 24px;
+                max-height: 24px;
+            }}
+            QPushButton:hover, QPushButton:focus {{
+                background-color: {self.hover_bg_color};
+                outline: none;
+            }}
+        """)
+        self.update_icon(False)
+
+    def update_icon(self, is_hover):
+        from PySide6.QtSvg import QSvgRenderer
+        from PySide6.QtCore import QByteArray, QRect
+        from PySide6.QtGui import QIcon, QPixmap, QPainter
+        
+        svg_content = self.svg_hover if (is_hover and self.svg_hover) else self.svg_normal
+        renderer = QSvgRenderer(QByteArray(svg_content.encode('utf-8')))
+        pixmap = QPixmap(24, 24)
+        pixmap.fill(Qt.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        renderer.render(painter, QRect(4, 4, 16, 16))
+        painter.end()
+        
+        self.setIcon(QIcon(pixmap))
+        self.setIconSize(QSize(24, 24))
+
+    def enterEvent(self, event):
+        self.update_icon(True)
+        super().enterEvent(event)
+        if self.toolTip():
+            from PySide6.QtGui import QHelpEvent, QCursor
+            from PySide6.QtCore import QEvent, QPoint
+            from PySide6.QtWidgets import QApplication
+            
+            help_event = QHelpEvent(QEvent.ToolTip, QPoint(0, 0), QCursor.pos())
+            QApplication.sendEvent(self, help_event)
+
+    def leaveEvent(self, event):
+        self.update_icon(False)
+        super().leaveEvent(event)
+
+    def showEvent(self, event):
+        self.update_icon(False)
+        super().showEvent(event)
+
+class MagnetToggleButton(TitleBarButton):
+    def __init__(self, is_sticky=True, parent=None):
+        self.is_sticky = is_sticky
+        self.svg_active_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>'
+        self.svg_active_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>'
+        self.svg_inactive_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M15 9.34V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H7.89"/><path d="m2 2 20 20"/><path d="M9 9v1.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h11"/></svg>'
+        self.svg_inactive_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M15 9.34V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H7.89"/><path d="m2 2 20 20"/><path d="M9 9v1.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h11"/></svg>'
+        
+        super().__init__(self.svg_active_normal, self.svg_active_hover, "#E5E7EB", parent)
+        self.update_magnet_state(is_sticky)
+
+    def update_magnet_state(self, is_sticky):
+        self.is_sticky = is_sticky
+        if self.is_sticky:
+            self.svg_normal = self.svg_active_normal
+            self.svg_hover = self.svg_active_hover
+            self.hover_bg_color = "#E0E7FF"
+            self.setToolTip("고정 모드 활성화됨 (메인 창과 함께 이동)")
+        else:
+            self.svg_normal = self.svg_inactive_normal
+            self.svg_hover = self.svg_inactive_hover
+            self.hover_bg_color = "#D1D5DB"
+            self.setToolTip("고정 모드 비활성화됨 (개별 이동)")
+        
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: 12px;
+                padding: 0px;
+                margin: 0px;
+                min-width: 24px;
+                max-width: 24px;
+                min-height: 24px;
+                max-height: 24px;
+            }}
+            QPushButton:hover, QPushButton:focus {{
+                background-color: {self.hover_bg_color};
+                outline: none;
+            }}
+        """)
+        self.update_icon(False)
+
+# =================================================================
 # 관용구 플로팅 뷰어 (FloatingIdiomViewer)
 # =================================================================
 class FloatingIdiomViewer(QDialog):
@@ -843,20 +987,159 @@ class FloatingIdiomViewer(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("관용구 도우미")
-        import sys
-        if sys.platform == "darwin":
-            self.setWindowFlags(Qt.Tool | Qt.WindowCloseButtonHint)
-        else:
-            self.setWindowFlags(Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
-        self.setMinimumSize(300, 450)
+        self.is_sticky = True # 자석(Sticky) 모드 활성화 상태
+        self.show_help = False # 사용 안내 토글 상태 (기본값: 숨김)
+        
+        # 프레임리스 윈도우 및 투명 배경 설정
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.resize(300, 450)
+        
         self.init_ui()
         self.refresh_list()
+        
+        # 8방향 리사이즈 및 타이틀바 드래그 이동 등록
+        from .window_resizer import FramelessWindowResizer
+        self.resizer = FramelessWindowResizer(self, self.title_bar)
+
+    def toggle_sticky(self):
+        self.is_sticky = not self.is_sticky
+        self.btn_magnet.update_magnet_state(self.is_sticky)
+        if self.is_sticky:
+            parent = self.parent()
+            if parent and hasattr(parent, 'geometry'):
+                pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+                parent._idiom_relative_pos = pos
+
+
+    def hideEvent(self, event):
+        parent = self.parent()
+        if parent and hasattr(parent, 'geometry'):
+            pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+            size = (self.width(), self.height())
+            parent._idiom_relative_pos = pos
+            parent._idiom_size = size
+            config.update_idiom_viewer_geometry(pos, size)
+        super().hideEvent(event)
+
+    def closeEvent(self, event):
+        parent = self.parent()
+        if parent and hasattr(parent, 'geometry'):
+            pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+            size = (self.width(), self.height())
+            parent._idiom_relative_pos = pos
+            parent._idiom_size = size
+            config.update_idiom_viewer_geometry(pos, size)
+        super().closeEvent(event)
+
+    def moveEvent(self, event):
+        parent = self.parent()
+        if parent and hasattr(parent, 'geometry') and self.isVisible():
+            if not getattr(self, '_is_moving_by_parent', False):
+                pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+                parent._idiom_relative_pos = pos
+                size = parent._idiom_size if parent._idiom_size else (self.width(), self.height())
+                config.update_idiom_viewer_geometry(pos, size)
+        super().moveEvent(event)
+
+    def resizeEvent(self, event):
+        parent = self.parent()
+        if parent and hasattr(parent, 'geometry') and self.isVisible():
+            size = (self.width(), self.height())
+            parent._idiom_size = size
+            pos = (self.pos().x() - parent.x(), self.pos().y() - parent.y())
+            parent._idiom_relative_pos = pos
+            config.update_idiom_viewer_geometry(pos, size)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 1))
+        super().paintEvent(event)
 
     def init_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(10)
-
+        # 1. 커스텀 타이틀바 생성
+        self.title_bar = QFrame()
+        self.title_bar.setObjectName("TitleBar")
+        self.title_bar.setFixedHeight(34)
+        self.title_bar.setStyleSheet("""
+            QFrame#TitleBar {
+                background-color: #FFFFFF;
+                border-top-left-radius: 7px;
+                border-top-right-radius: 7px;
+                border-bottom: 1px solid #E5E7EB;
+            }
+        """)
+        title_layout = QHBoxLayout(self.title_bar)
+        title_layout.setContentsMargins(12, 0, 12, 0)
+        title_layout.setSpacing(6)
+        
+        # Title icon using SVG
+        lbl_icon = QLabel()
+        lbl_icon.setFixedSize(14, 14)
+        lbl_icon.setStyleSheet("background: transparent; border: none;")
+        pixmap = get_colored_pixmap(config.ICON_IDIOM, "#1F2937", 14, 14)
+        lbl_icon.setPixmap(pixmap)
+        title_layout.addWidget(lbl_icon)
+        
+        lbl_title = QLabel("관용구 도우미")
+        lbl_title.setStyleSheet("color: #1F2937; font-weight: 600; font-size: 13px; background: transparent; border: none; font-family: 'Pretendard';")
+        title_layout.addWidget(lbl_title)
+        
+        title_layout.addStretch()
+        
+        # 자석 토글 버튼 추가
+        self.btn_magnet = MagnetToggleButton(self.is_sticky)
+        self.btn_magnet.clicked.connect(self.toggle_sticky)
+        title_layout.addWidget(self.btn_magnet)
+        
+        # 도움말 (?) 버튼 추가
+        svg_help_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>'
+        svg_help_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FF5722" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>'
+        self.btn_help = TitleBarButton(svg_help_normal, svg_help_hover, "#E5E7EB")
+        
+        is_mac = sys.platform == "darwin"
+        shortcut_key = "⌥" if is_mac else "Alt"
+        help_text = f"빠른 입력: 단축키({shortcut_key}+숫자) 혹은 더블 클릭으로 본문에 자동 삽입"
+        self.btn_help.setToolTip(help_text)
+        title_layout.addWidget(self.btn_help)
+        
+        # SVG 정의
+        svg_close_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+        svg_close_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+        
+        # 닫기 버튼
+        btn_close = TitleBarButton(svg_close_normal, svg_close_hover, "#EF4444")
+        btn_close.clicked.connect(self.close)
+        title_layout.addWidget(btn_close)
+        
+        # 2. 메인 외곽 프레임
+        self.main_frame = QFrame(self)
+        self.main_frame.setObjectName("MainFrame")
+        self.main_frame.setStyleSheet("""
+            QFrame#MainFrame {
+                background-color: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 8px;
+            }
+        """)
+        
+        main_layout = QVBoxLayout(self.main_frame)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        main_layout.addWidget(self.title_bar)
+        
+        # 3. 내부 컨텐츠 영역
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(15, 15, 15, 15)
+        content_layout.setSpacing(10)
+        main_layout.addLayout(content_layout)
+        
+        # 4. 다이얼로그 본체 레이아웃
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(6, 6, 6, 6)
+        outer_layout.addWidget(self.main_frame)
+        
+        # 이하 기존 search_bar 등 위젯 생성은 content_layout에 추가
         self.search_bar = SingleClickLineEdit()
         self.search_bar.setPlaceholderText("🔍 관용구 검색...")
         self.search_bar.setFixedHeight(36)
@@ -876,7 +1159,7 @@ class FloatingIdiomViewer(QDialog):
             }
         """ + "\n" + config.MODERN_MENU_STYLE)
         self.search_bar.textChanged.connect(self.filter_list)
-        layout.addWidget(self.search_bar)
+        content_layout.addWidget(self.search_bar)
 
         self.list_widget = QListWidget()
         self.list_widget.itemDoubleClicked.connect(self.on_item_clicked)
@@ -903,11 +1186,9 @@ class FloatingIdiomViewer(QDialog):
                 border: none;
             }
         """)
-        layout.addWidget(self.list_widget)
+        content_layout.addWidget(self.list_widget)
 
-        lbl_info = QLabel(f"💡 단축키({config.MODIFIER_NAME}+키) 혹은 더블 클릭하면 자동 삽입됩니다.")
-        lbl_info.setStyleSheet("color: #6B7280; font-size: 11px; font-family: 'Pretendard';")
-        layout.addWidget(lbl_info)
+
 
     def refresh_list(self):
         self.list_widget.clear()
@@ -1104,6 +1385,33 @@ class SpellCheckDialog(QDialog):
         btn_layout.addWidget(btn_apply)
         layout.addLayout(btn_layout)
 
+    def get_granular_segments(self, org, new, tag_type):
+        if tag_type == 'equal':
+            return [('equal', org, new)]
+        if not org:
+            return [('insert', '', new)]
+        if not new:
+            return [('delete', org, '')]
+        
+        res = []
+        org_words = re.findall(r'\s+|\S+', org)
+        new_words = re.findall(r'\s+|\S+', new)
+        
+        max_len = max(len(org_words), len(new_words))
+        for i in range(max_len):
+            o_w = org_words[i] if i < len(org_words) else ""
+            n_w = new_words[i] if i < len(new_words) else ""
+            
+            if o_w == n_w:
+                res.append(('equal', o_w, n_w))
+            elif not o_w:
+                res.append(('insert', '', n_w))
+            elif not n_w:
+                res.append(('delete', o_w, ''))
+            else:
+                res.append(('replace', o_w, n_w))
+        return res
+
     def show_diff(self, text1, text2):
         start_time = time.time()
         print(f"DEBUG: [SpellCheck] 결과 렌더링 시작 (원본 길이: {len(text1)}, 교정본 길이: {len(text2)})")
@@ -1125,33 +1433,6 @@ class SpellCheckDialog(QDialog):
         
         current_idx = 0
         self._is_syncing = True
-        
-        def get_granular_segments(org, new, tag_type):
-            if tag_type == 'equal':
-                return [('equal', org, new)]
-            if not org:
-                return [('insert', '', new)]
-            if not new:
-                return [('delete', org, '')]
-            
-            res = []
-            org_words = re.findall(r'\s+|\S+', org)
-            new_words = re.findall(r'\s+|\S+', new)
-            
-            max_len = max(len(org_words), len(new_words))
-            for i in range(max_len):
-                o_w = org_words[i] if i < len(org_words) else ""
-                n_w = new_words[i] if i < len(new_words) else ""
-                
-                if o_w == n_w:
-                    res.append(('equal', o_w, n_w))
-                elif not o_w:
-                    res.append(('insert', '', n_w))
-                elif not n_w:
-                    res.append(('delete', o_w, ''))
-                else:
-                    res.append(('replace', o_w, n_w))
-            return res
 
         cursor_org.beginEditBlock()
         cursor_new.beginEditBlock()
@@ -1159,7 +1440,7 @@ class SpellCheckDialog(QDialog):
         for idx, (tag, i1, i2, j1, j2) in enumerate(opcodes):
             org_full = text1[i1:i2]
             new_full = text2[j1:j2]
-            segments = get_granular_segments(org_full, new_full, tag)
+            segments = self.get_granular_segments(org_full, new_full, tag)
 
             for s_tag, s_org, s_new in segments:
                 if s_tag == 'equal':
@@ -1201,7 +1482,6 @@ class SpellCheckDialog(QDialog):
                     else:
                         fmt_new.setBackground(QColor("#FFCDD2"))
                         fmt_new.setForeground(QColor("#B71C1C"))
-                        fmt_new.setFontStrikeOut(True)
                         cursor_new.insertText(s_org.replace(' ', '✓'), fmt_new)
                     
                 elif s_tag == 'insert':
@@ -1299,11 +1579,20 @@ class SpellCheckDialog(QDialog):
             block = block.next()
 
         if start_pos != -1 and end_pos != -1 and start_pos < end_pos:
+            org_text = item["org"]
+            
+            # 원본 텍스트가 순수 공백/줄바꿈이 아닌 실제 글자를 포함하는 경우,
+            # 앞뒤 줄바꿈(\n)을 제거합니다.
+            # - trailing \n: 문서에 이미 존재하는 블록 구분자와 중복 삽입되는 것을 방지
+            # - leading \n:  위 블록의 \n과 org_text 앞의 \n이 겹쳐 빈 줄이 생기는 것을 방지
+            if org_text.strip() != "":
+                org_text = org_text.strip('\n')
+            
             revert_cursor = self.edit_new.textCursor()
             revert_cursor.setPosition(start_pos)
             revert_cursor.setPosition(end_pos, QTextCursor.KeepAnchor)
             revert_cursor.beginEditBlock()
-            revert_cursor.insertText(item["org"], QTextCharFormat())
+            revert_cursor.insertText(org_text, QTextCharFormat())
             revert_cursor.endEditBlock()
 
         self.undo_btn.hide()
@@ -1341,6 +1630,420 @@ class SpellCheckDialog(QDialog):
         self.accept()
 
 # =================================================================
+# Windows ClearType 폰트 깨짐 방지 전용 커스텀 헤더뷰
+# =================================================================
+class ClearTypeHeaderView(QHeaderView):
+    """Windows에서 QHeaderView 스타일시트 적용 시 ClearType(안티앨리어싱) 렌더링이
+    비활성화되어 폰트가 깨져 보이는 Qt 고질 버그를 paintSection() 오버라이드로 해결."""
+    def __init__(self, orientation, font, bg_color="#F9FAFB", text_color="#374151", parent=None):
+        super().__init__(orientation, parent)
+        self._section_font = font
+        self._bg_color = QColor(bg_color)
+        self._text_color = QColor(text_color)
+        self._border_color = QColor("#E5E7EB")
+
+    def paintSection(self, painter, rect, logical_index):
+        painter.save()
+        # 배경 채우기
+        painter.setRenderHint(QPainter.Antialiasing, False)
+        painter.fillRect(rect, self._bg_color)
+        # 하단 경계선 그리기
+        painter.setPen(QPen(self._border_color, 1))
+        painter.drawLine(rect.left(), rect.bottom(), rect.right(), rect.bottom())
+        # 텍스트 렌더링 - 안티앨리어싱 강제 활성화
+        painter.setRenderHint(QPainter.TextAntialiasing, True)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setFont(self._section_font)
+        painter.setPen(self._text_color)
+        label = self.model().headerData(logical_index, self.orientation(), Qt.DisplayRole)
+        if label:
+            text_rect = rect.adjusted(8, 0, -8, 0)
+            painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignCenter, str(label))
+        painter.restore()
+
+# =================================================================
+# 스마트 스크립트 병합 다이얼로그 (ScriptMergeDialog)
+# =================================================================
+class ScriptMergeDialog(QDialog):
+    def __init__(self, current_script, new_lines, parent=None):
+        """
+        current_script: list of dict {'char': str, 'line': str}
+        new_lines: list of str
+        """
+        super().__init__(parent)
+        self.setWindowTitle("스마트 스크립트 병합")
+        self.resize(1100, 750)
+        self.merge_action = None  # "merge", "overwrite", or None
+        
+        self.current_script = current_script
+        self.new_lines = new_lines
+        
+        # Calculate alignment
+        self.aligned_data = self.align_scripts(current_script, new_lines)
+        
+        self.init_ui()
+
+    def align_scripts(self, current_script, new_lines):
+        def normalize_text(text):
+            if not text:
+                return ""
+            return re.sub(r'[\s\W_]+', '', text)
+
+        def calculate_similarity(s1, s2):
+            return difflib.SequenceMatcher(None, s1, s2).ratio()
+
+        norm_curr = [normalize_text(x["line"]) for x in current_script]
+        norm_new = [normalize_text(x) for x in new_lines]
+        
+        sm = difflib.SequenceMatcher(None, norm_curr, norm_new)
+        opcodes = sm.get_opcodes()
+        
+        alignment = []
+        
+        for tag, i1, i2, j1, j2 in opcodes:
+            if tag == 'equal':
+                for idx in range(i2 - i1):
+                    curr_item = current_script[i1 + idx]
+                    alignment.append({
+                        "status": "equal",
+                        "curr_char": curr_item["char"],
+                        "curr_line": curr_item["line"],
+                        "new_line": new_lines[j1 + idx],
+                        "keep_char": True
+                    })
+            elif tag == 'delete':
+                for idx in range(i2 - i1):
+                    curr_item = current_script[i1 + idx]
+                    alignment.append({
+                        "status": "delete",
+                        "curr_char": curr_item["char"],
+                        "curr_line": curr_item["line"],
+                        "new_line": "",
+                        "keep_char": False
+                    })
+            elif tag == 'insert':
+                for idx in range(j2 - j1):
+                    alignment.append({
+                        "status": "insert",
+                        "curr_char": "",
+                        "curr_line": "",
+                        "new_line": new_lines[j1 + idx],
+                        "keep_char": False
+                    })
+            elif tag == 'replace':
+                curr_slice = current_script[i1:i2]
+                new_slice = new_lines[j1:j2]
+                
+                used_new = set()
+                paired_curr = {}
+                
+                for c_idx, c_item in enumerate(curr_slice):
+                    best_similarity = 0.0
+                    best_n_idx = -1
+                    for n_idx, n_line in enumerate(new_slice):
+                        if n_idx in used_new:
+                            continue
+                        sim = calculate_similarity(c_item["line"], n_line)
+                        if sim > best_similarity:
+                            best_similarity = sim
+                            best_n_idx = n_idx
+                    
+                    # 0.70 similarity threshold for fuzzy matching
+                    if best_similarity >= 0.70 and best_n_idx != -1:
+                        paired_curr[c_idx] = best_n_idx
+                        used_new.add(best_n_idx)
+                
+                for c_idx, c_item in enumerate(curr_slice):
+                    if c_idx in paired_curr:
+                        n_idx = paired_curr[c_idx]
+                        alignment.append({
+                            "status": "replace",
+                            "curr_char": c_item["char"],
+                            "curr_line": c_item["line"],
+                            "new_line": new_slice[n_idx],
+                            "keep_char": True
+                        })
+                    else:
+                        alignment.append({
+                            "status": "delete",
+                            "curr_char": c_item["char"],
+                            "curr_line": c_item["line"],
+                            "new_line": "",
+                            "keep_char": False
+                        })
+                for n_idx, n_line in enumerate(new_slice):
+                    if n_idx not in used_new:
+                        alignment.append({
+                            "status": "insert",
+                            "curr_char": "",
+                            "curr_line": "",
+                            "new_line": n_line,
+                            "keep_char": False
+                        })
+                        
+        return alignment
+
+    def get_dialog_font(self, bold=False, strikeout=False, size_px=13, weight=None):
+        app_font = QApplication.font()
+        f_family = app_font.family()
+        if f_family == "sans-serif" or not f_family:
+            f_family = "Pretendard"
+        font = QFont(f_family)
+        font.setPixelSize(size_px)
+        if weight is not None:
+            font.setWeight(weight)
+        else:
+            font.setBold(bold)
+        font.setStrikeOut(strikeout)
+        font.setStyleStrategy(QFont.PreferAntialias)
+        font.setHintingPreference(QFont.PreferNoHinting)
+        return font
+
+    def get_html_diff(self, text1, text2, mode='delete'):
+        """
+        기존 대사와 신규 대사 간의 차이점을 분석하여 하이라이트된 HTML 코드로 반환합니다.
+        mode: 'delete' (기존 대사용 - 삭제/변경된 부분 빨간색 취소선)
+              'insert' (가져올 대사용 - 추가/변경된 부분 초록색/주황색 배경)
+        """
+        s = difflib.SequenceMatcher(None, text1, text2)
+        html = []
+        for tag, i1, i2, j1, j2 in s.get_opcodes():
+            if tag == 'equal':
+                html.append(text1[i1:i2])
+            elif tag == 'delete':
+                if mode == 'delete':
+                    html.append(f'<span style="color: #EF4444; background-color: #FEE2E2; text-decoration: line-through;">{text1[i1:i2]}</span>')
+            elif tag == 'insert':
+                if mode == 'insert':
+                    html.append(f'<span style="color: #10B981; background-color: #ECFDF5; font-weight: bold;">{text2[j1:j2]}</span>')
+            elif tag == 'replace':
+                if mode == 'delete':
+                    html.append(f'<span style="color: #EF4444; background-color: #FEE2E2; text-decoration: line-through;">{text1[i1:i2]}</span>')
+                elif mode == 'insert':
+                    html.append(f'<span style="color: #F59E0B; background-color: #FEF3C7; font-weight: bold;">{text2[j1:j2]}</span>')
+        return "".join(html).replace("\n", "<br>")
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Info Header
+        info_label = QLabel("💡 스텝 1의 새로운 대사와 현재 배정 상태를 비교합니다. 수정된 부분의 캐릭터 정보가 자동으로 보존됩니다.")
+        info_label.setStyleSheet("color: #2563EB; font-weight: bold; font-size: 13px;")
+        layout.addWidget(info_label)
+        
+        # Table
+        self.table = QTableWidget()
+        self.table.setFont(self.get_dialog_font(size_px=14))
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["", "기존 대사 (스텝 3)", "상태", "가져올 대사 (스텝 1)"])
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionMode(QAbstractItemView.NoSelection)
+        self.table.setAlternatingRowColors(True)
+        self.table.verticalHeader().setVisible(False)
+        
+        # Style header - ClearTypeHeaderView로 Windows 폰트 깨짐 근본 해결
+        h_font = QFont(QApplication.font())
+        h_font.setPointSize(11)
+        h_font.setWeight(QFont.Medium)
+        header = ClearTypeHeaderView(Qt.Horizontal, h_font, parent=self.table)
+        self.table.setHorizontalHeader(header)
+        header.setMinimumHeight(40)
+        header.setSectionResizeMode(0, QHeaderView.Interactive)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.Stretch)
+        self.table.setColumnWidth(0, 110)
+        self.table.setColumnWidth(2, 90)
+        
+        # Populate table
+        self.table.setRowCount(len(self.aligned_data))
+        for row_idx, item in enumerate(self.aligned_data):
+            item_char = QTableWidgetItem(item['curr_char'] if item['curr_char'] else "")
+            item_char.setFont(self.get_dialog_font(size_px=14))
+            item_char.setTextAlignment(Qt.AlignCenter)
+            
+            # Status styling
+            status_text = ""
+            bg_color = ""
+            fg_color = ""
+            
+            if item['status'] == 'equal':
+                status_text = "유지"
+                bg_color = "#E8F5E9"
+                fg_color = "#2E7D32"
+            elif item['status'] == 'replace':
+                status_text = "수정됨"
+                bg_color = "#FFF3E0"
+                fg_color = "#EF6C00"
+            elif item['status'] == 'insert':
+                status_text = "추가됨"
+                bg_color = "#E3F2FD"
+                fg_color = "#1565C0"
+            elif item['status'] == 'delete':
+                status_text = "삭제됨"
+                bg_color = "#FFEBEE"
+                fg_color = "#C62828"
+                
+            item_status = QTableWidgetItem(status_text)
+            item_status.setTextAlignment(Qt.AlignCenter)
+            item_status.setBackground(QColor(bg_color))
+            item_status.setForeground(QColor(fg_color))
+            item_status.setFont(self.get_dialog_font(bold=True, size_px=14))
+            
+            if item['status'] == 'replace':
+                # 수정됨 상태에서는 텍스트를 위젯(QLabel)으로 직접 렌더링하므로 중복 겹침 방지를 위해 빈 문자열로 생성
+                item_exist = QTableWidgetItem("")
+                item_new = QTableWidgetItem("")
+            else:
+                exist_text = item['curr_line'] if item['curr_line'] else ""
+                item_exist = QTableWidgetItem(exist_text)
+                item_exist.setFont(self.get_dialog_font(size_px=14))
+                
+                item_new = QTableWidgetItem(item['new_line'])
+                item_new.setFont(self.get_dialog_font(size_px=14))
+                
+                # Delete/insert styles
+                if item['status'] == 'delete':
+                    item_char.setFont(self.get_dialog_font(strikeout=True, size_px=14))
+                    item_char.setForeground(QColor("#94A3B8"))
+                    item_exist.setFont(self.get_dialog_font(strikeout=True, size_px=14))
+                    item_exist.setForeground(QColor("#94A3B8"))
+                    item_new.setText("(삭제됨)")
+                    item_new.setFont(self.get_dialog_font(strikeout=True, size_px=14))
+                    item_new.setForeground(QColor("#94A3B8"))
+                elif item['status'] == 'insert':
+                    item_new.setFont(self.get_dialog_font(bold=True, size_px=14))
+                    item_new.setForeground(QColor("#1565C0"))
+            
+            self.table.setItem(row_idx, 0, item_char)
+            self.table.setItem(row_idx, 1, item_exist)
+            self.table.setItem(row_idx, 2, item_status)
+            self.table.setItem(row_idx, 3, item_new)
+            
+            # '수정됨' 상태인 경우, 기존 대사와 신규 대사 간의 차이점을 HTML로 시각화하여 라벨로 부착
+            if item['status'] == 'replace':
+                # 기존 대사
+                exist_html = self.get_html_diff(item['curr_line'], item['new_line'], mode='delete')
+                lbl_exist = QLabel(exist_html)
+                lbl_exist.setFont(self.get_dialog_font(size_px=14))
+                lbl_exist.setWordWrap(True)
+                lbl_exist.setStyleSheet("padding: 2px; margin: 0px; background-color: transparent;")
+                self.table.setCellWidget(row_idx, 1, lbl_exist)
+                
+                # 가져올 대사
+                new_html = self.get_html_diff(item['curr_line'], item['new_line'], mode='insert')
+                lbl_new = QLabel(new_html)
+                lbl_new.setFont(self.get_dialog_font(size_px=14))
+                lbl_new.setWordWrap(True)
+                lbl_new.setStyleSheet("padding: 2px; margin: 0px; background-color: transparent;")
+                self.table.setCellWidget(row_idx, 3, lbl_new)
+            
+        # 열 너비가 최종 결정된 후에 행 높이를 재계산하도록 타이머로 지연 호출 (QLabel의 워드랩 높이 계산 버그 방지)
+        QTimer.singleShot(0, self.table.resizeRowsToContents)
+        layout.addWidget(self.table)
+        
+        # Action buttons
+        btn_layout = QHBoxLayout()
+        
+        btn_cancel = QPushButton("취소")
+        btn_cancel.setFixedHeight(40)
+        btn_cancel.setFixedWidth(100)
+        btn_cancel.clicked.connect(self.reject)
+        btn_cancel.setStyleSheet("""
+            QPushButton {
+                background-color: white;
+                border: 1px solid #D1D5DB;
+                border-radius: 4px;
+                font-weight: 600;
+                font-family: 'Pretendard', sans-serif;
+            }
+            QPushButton:hover {
+                background-color: #F9FAFB;
+            }
+        """)
+        
+        btn_overwrite = QPushButton("덮어쓰기 (전체 초기화)")
+        btn_overwrite.setFixedHeight(40)
+        btn_overwrite.setStyleSheet("""
+            QPushButton {
+                background-color: white;
+                color: #DC2626;
+                border: 1px solid #FCA5A5;
+                border-radius: 4px;
+                font-weight: 600;
+                font-family: 'Pretendard', sans-serif;
+                padding: 0 15px;
+            }
+            QPushButton:hover {
+                background-color: #FEF2F2;
+            }
+        """)
+        btn_overwrite.clicked.connect(self.on_overwrite)
+        
+        btn_merge = QPushButton("스마트 병합 적용")
+        btn_merge.setFixedHeight(40)
+        btn_merge.setStyleSheet("""
+            QPushButton {
+                background-color: #2563EB;
+                color: white;
+                border-radius: 4px;
+                font-weight: 600;
+                font-family: 'Pretendard', sans-serif;
+                padding: 0 20px;
+            }
+            QPushButton:hover {
+                background-color: #1D4ED8;
+            }
+        """)
+        btn_merge.clicked.connect(self.on_merge)
+        
+        btn_layout.addWidget(btn_cancel)
+        btn_layout.addStretch()
+        btn_layout.addWidget(btn_overwrite)
+        btn_layout.addWidget(btn_merge)
+        
+        layout.addLayout(btn_layout)
+        
+        app_font = QApplication.font()
+        f_family = app_font.family()
+        if f_family == "sans-serif" or not f_family:
+            f_family = "Pretendard"
+        self.setStyleSheet("QDialog { background-color: #FFFFFF; }")
+        self.table.setStyleSheet(f"""
+            QTableWidget {{
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                gridline-color: #F3F4F6;
+                background-color: white;
+                font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
+                font-size: 14px;
+            }}
+            QTableWidget::item {{
+                font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
+                font-size: 14px;
+            }}
+        """)
+
+
+    def on_overwrite(self):
+        reply = QMessageBox.warning(
+            self,
+            "덮어쓰기 경고",
+            "정말로 덮어쓰시겠습니까?\n이 작업은 기존 배정 내역(캐릭터 정보)을 모두 초기화하며 되돌릴 수 없습니다.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            self.merge_action = "overwrite"
+            self.accept()
+
+    def on_merge(self):
+        self.merge_action = "merge"
+        self.accept()
+
+# =================================================================
 # 회차 목록용 커스텀 위젯 (EpisodeItemWidget)
 # =================================================================
 class EpisodeItemWidget(QWidget):
@@ -1358,13 +2061,27 @@ class EpisodeItemWidget(QWidget):
         container_layout.setContentsMargins(15, 0, 15, 0)
         container_layout.setSpacing(10)
 
+        # 폰트 깨짐 방지 안티앨리어싱 전략 주입
+        item_font = QFont("Pretendard", 15)
+        item_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        item_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        if platform.system() == "Windows":
+            item_font.setWeight(QFont.Weight.Medium)
+
         self.lbl_name = QLabel(name)
-        self.lbl_name.setFont(QFont("Pretendard", 15))
-        self.lbl_name.setStyleSheet("font-weight: bold; font-size: 15px; color: #374151; background: transparent;")
+        self.lbl_name.setFont(item_font)
+        self.lbl_name.setStyleSheet("font-weight: 600; font-size: 15px; color: #374151; background: transparent;")
         
         self.lbl_status = QLabel(status)
         self.lbl_status.setFixedSize(80, 26)
         self.lbl_status.setAlignment(Qt.AlignCenter)
+        
+        status_font = QFont("Pretendard", 11)
+        status_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        status_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        if platform.system() == "Windows":
+            status_font.setWeight(QFont.Weight.Bold)
+        self.lbl_status.setFont(status_font)
         self.lbl_status.setStyleSheet(self.get_status_style(status))
 
         container_layout.addWidget(self.lbl_name)
@@ -1383,7 +2100,7 @@ class EpisodeItemWidget(QWidget):
                     border-radius: 10px;
                 }
             """)
-            self.lbl_name.setStyleSheet("font-weight: bold; font-size: 15px; color: #0369A1; background: transparent; font-family: 'Pretendard';")
+            self.lbl_name.setStyleSheet("font-weight: 600; font-size: 15px; color: #0369A1; background: transparent; font-family: 'Pretendard';")
         else:
             self.container.setStyleSheet("""
                 QFrame#itemContainer {
@@ -1392,7 +2109,7 @@ class EpisodeItemWidget(QWidget):
                     border-radius: 10px;
                 }
             """)
-            self.lbl_name.setStyleSheet("font-weight: bold; font-size: 15px; color: #374151; background: transparent; font-family: 'Pretendard';")
+            self.lbl_name.setStyleSheet("font-weight: 600; font-size: 15px; color: #374151; background: transparent; font-family: 'Pretendard';")
 
     def get_status_style(self, status):
         if status == "분석 완료":
@@ -1532,7 +2249,7 @@ class ProjectManagementDialog(QDialog):
                 border: 1px solid #D1D5DB;
                 border-radius: 6px;
                 padding: 6px 12px;
-                font-weight: bold;
+                font-weight: 600;
                 color: #374151;
                 font-family: 'Pretendard';
             }
@@ -1560,7 +2277,7 @@ class ProjectManagementDialog(QDialog):
         icon_lib = QLabel()
         icon_lib.setPixmap(get_icon(config.ICON_LIBRARY).pixmap(20, 20))
         lbl_lib_text = QLabel("작품 목록")
-        lbl_lib_text.setStyleSheet("font-weight: bold; font-size: 15px; color: #111827; font-family: 'Pretendard';")
+        lbl_lib_text.setStyleSheet("font-weight: 600; font-size: 15px; color: #111827; font-family: 'Pretendard';")
 
         title_list_layout.addWidget(icon_lib)
         title_list_layout.addWidget(lbl_lib_text)
@@ -1592,7 +2309,13 @@ class ProjectManagementDialog(QDialog):
         left_layout.addWidget(self.search_bar)
         
         self.list_titles = QListWidget()
-        self.list_titles.setFont(QFont("Pretendard", 10))
+        
+        list_font = QFont("Pretendard", 13) # 기존 10에서 가독성을 높이기 위해 상향 조정
+        list_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        list_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        if platform.system() == "Windows":
+            list_font.setWeight(QFont.Weight.Medium)
+        self.list_titles.setFont(list_font)
         self.list_titles.setStyleSheet("""
             QListWidget {
                 background-color: white;
@@ -1654,7 +2377,7 @@ class ProjectManagementDialog(QDialog):
         icon_epi = QLabel()
         icon_epi.setPixmap(get_icon(config.ICON_MOVIE).pixmap(20, 20))
         lbl_epi_text = QLabel("회차 목록")
-        lbl_epi_text.setStyleSheet("font-weight: bold; font-size: 15px; color: #111827; font-family: 'Pretendard';")
+        lbl_epi_text.setStyleSheet("font-weight: 600; font-size: 15px; color: #111827; font-family: 'Pretendard';")
 
         epi_list_layout.addWidget(icon_epi)
         epi_list_layout.addWidget(lbl_epi_text)
@@ -1673,6 +2396,7 @@ class ProjectManagementDialog(QDialog):
         empty_box.addStretch()
         
         self.list_episodes = QListWidget()
+        self.list_episodes.setFont(list_font)
         self.list_episodes.setSelectionMode(QListWidget.ExtendedSelection)
         self.list_episodes.setSpacing(5)
         self.list_episodes.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -1838,6 +2562,7 @@ class ProjectManagementDialog(QDialog):
         project_name = item.text()
         
         menu = QMenu(self)
+        menu.setFont(QApplication.font())
         menu.setStyleSheet("""
             QMenu { background-color: white; border: 1px solid #D1D5DB; padding: 3px; }
             QMenu::item { padding: 8px 10px 8px 25px; border-radius: 4px; color: #374151; font-size: 14px; margin: 2px 5px; }
@@ -1877,6 +2602,7 @@ class ProjectManagementDialog(QDialog):
         epi_names = [item.data(Qt.UserRole) for item in selected_items]
         
         menu = QMenu(self)
+        menu.setFont(QApplication.font())
         menu.setStyleSheet("""
             QMenu { background-color: white; border: 1px solid #D1D5DB; padding: 3px; }
             QMenu::item { padding: 8px 10px 8px 25px; border-radius: 4px; color: #374151; font-size: 14px; margin: 2px 5px; }
@@ -2357,12 +3083,13 @@ class UpdateNotificationBanner(QFrame):
         <path d="M19 21H5"/>
     </svg>"""
 
-    def __init__(self, parent, current_version, version_tag, release_notes, on_show_dialog):
+    def __init__(self, parent, current_version, version_tag, release_notes, on_show_dialog, on_direct_update):
         super().__init__(parent)
         self.current_version = current_version
         self.version_tag = version_tag
         self.release_notes = release_notes
         self.on_show_dialog = on_show_dialog  # Callback takes auto_start (bool)
+        self.on_direct_update = on_direct_update
         
         self.setObjectName("UpdateNotificationBanner")
         self.setFixedSize(420, 115)
@@ -2376,9 +3103,9 @@ class UpdateNotificationBanner(QFrame):
         
         # 그림자 효과 적용 (Premium UI)
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(0, 0, 0, 30))
-        shadow.setOffset(0, 4)
+        shadow.setBlurRadius(24)
+        shadow.setColor(QColor(0, 0, 0, 15))
+        shadow.setOffset(0, 3)
         self.setGraphicsEffect(shadow)
         
         # 메인 레이아웃 (수직)
@@ -2386,22 +3113,22 @@ class UpdateNotificationBanner(QFrame):
         main_layout.setContentsMargins(16, 12, 16, 12)
         main_layout.setSpacing(10)
         
-        # [상단 영역] 아이콘 + 텍스트 정보 (가로 배치)
-        top_layout = QHBoxLayout()
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.setSpacing(12)
+        # [콘텐츠 레이아웃] (가로 배치: 아이콘 + 우측 수직 영역)
+        content_layout = QHBoxLayout()
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(12)
         
-        # 1. SVG 아이콘 라벨
+        # 1. SVG 아이콘 라벨 (수직 가운데 정렬)
         self.lbl_icon = QLabel()
         self.lbl_icon.setPixmap(self.get_svg_pixmap(self.SVG_UPDATE_ICON, 24, 24))
         self.lbl_icon.setFixedSize(24, 24)
         self.lbl_icon.setAlignment(Qt.AlignCenter)
-        top_layout.addWidget(self.lbl_icon)
+        content_layout.addWidget(self.lbl_icon, 0, Qt.AlignVCenter)
         
-        # 2. 텍스트 정보 영역 (수직 배치)
-        text_layout = QVBoxLayout()
-        text_layout.setSpacing(4)
-        text_layout.setContentsMargins(0, 0, 0, 0)
+        # 2. 우측 수직 영역 (타이틀, 요약글, 진행률, 버튼 영역을 한데 묶음)
+        right_layout = QVBoxLayout()
+        right_layout.setSpacing(8)
+        right_layout.setContentsMargins(0, 0, 0, 0)
         
         # 타이틀: 새로운 업데이트가 있습니다! (현재버전 → 업뎃버전)
         self.lbl_title = QLabel(f"새로운 업데이트가 있습니다! (v{current_version} → {version_tag})")
@@ -2413,7 +3140,7 @@ class UpdateNotificationBanner(QFrame):
                 color: #111827;
             }
         """)
-        text_layout.addWidget(self.lbl_title)
+        right_layout.addWidget(self.lbl_title)
         
         # 본문 요약: 1~2줄
         summary_text = self.clean_release_notes(release_notes)
@@ -2427,12 +3154,37 @@ class UpdateNotificationBanner(QFrame):
             }
         """)
         self.lbl_summary.setWordWrap(True)
-        text_layout.addWidget(self.lbl_summary)
+        right_layout.addWidget(self.lbl_summary)
         
-        top_layout.addLayout(text_layout)
-        main_layout.addLayout(top_layout)
+        # [진행률 컨테이너] (다운로드 시작 시 표시 - 우측 영역 내부 하단에 배치됨)
+        self.progress_container = QWidget()
+        self.progress_layout = QVBoxLayout(self.progress_container)
+        self.progress_layout.setContentsMargins(0, 0, 0, 0)
+        self.progress_layout.setSpacing(6)
         
-        # [하단 영역] 버튼 배치 (오른쪽 정렬)
+        self.lbl_progress_status = QLabel("다운로드 대기 중...")
+        self.lbl_progress_status.setStyleSheet("font-size: 12px; color: #2563EB; font-weight: bold; font-family: 'Pretendard';")
+        self.progress_layout.addWidget(self.lbl_progress_status)
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(6)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #E5E7EB;
+                border-radius: 3px;
+            }
+            QProgressBar::chunk {
+                background-color: #FF5722;
+                border-radius: 3px;
+            }
+        """)
+        self.progress_layout.addWidget(self.progress_bar)
+        self.progress_container.setVisible(False)
+        right_layout.addWidget(self.progress_container)
+        
+        # [하단 영역] 버튼 배치 (오른쪽 정렬 - 우측 영역 하단에 결합)
         bottom_layout = QHBoxLayout()
         bottom_layout.setContentsMargins(0, 0, 0, 0)
         bottom_layout.addStretch()
@@ -2480,7 +3232,9 @@ class UpdateNotificationBanner(QFrame):
         self.btn_update.clicked.connect(self.update_clicked)
         bottom_layout.addWidget(self.btn_update)
         
-        main_layout.addLayout(bottom_layout)
+        right_layout.addLayout(bottom_layout)
+        content_layout.addLayout(right_layout)
+        main_layout.addLayout(content_layout)
 
         # 닫기 버튼 (우측 상단 절대 좌표 배치 - 모서리 쪽으로 더 밀어 밀착시킴)
         self.btn_close = QPushButton(self)
@@ -2540,12 +3294,41 @@ class UpdateNotificationBanner(QFrame):
         return "\n".join(lines) if lines else "새로운 업데이트 버전이 준비되었습니다."
 
     def update_clicked(self):
-        self.hide_banner()
-        self.on_show_dialog(True)
+        if hasattr(self, 'on_direct_update') and self.on_direct_update:
+            self.on_direct_update()
 
     def details_clicked(self):
         self.hide_banner()
         self.on_show_dialog(False)
+
+    def set_downloading_mode(self, active=True):
+        self.is_downloading = active
+        self.btn_details.setVisible(not active)
+        self.btn_update.setVisible(not active)
+        self.lbl_summary.setVisible(not active)
+        self.progress_container.setVisible(active)
+        self.btn_close.setEnabled(not active)
+        self.btn_close.setVisible(not active)
+        
+        # 다운로드 중일 때는 배너 박스 크기를 작게(85px로) 축소하여 불필요한 공백을 줄이고 균형감 확보
+        if active:
+            self.setFixedSize(420, 85)
+        else:
+            self.setFixedSize(420, 115)
+            
+        # 크기가 변경되었으므로 부모창 내에서의 y 위치(바닥 기준 위치)를 재정렬합니다.
+        if self.parent():
+            parent_rect = self.parent().rect()
+            self.target_y = parent_rect.height() - self.height() - 20
+            self.move(self.x(), self.target_y)
+
+    def set_progress(self, percent, text):
+        self.progress_bar.setValue(percent)
+        self.lbl_progress_status.setText(text)
+
+    def show_error(self, err_msg):
+        self.set_downloading_mode(False)
+        QMessageBox.critical(self, "업데이트 오류", f"업데이트 파일 다운로드 중 오류가 발생했습니다:\n{err_msg}")
 
     def show_banner(self):
         if not self.parent():
@@ -2649,91 +3432,212 @@ class SVGCloseButton(QPushButton):
 class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Webtoon Scripter 정보")
-        self.setFixedSize(510, 270)
+        self.setWindowTitle("Webtoon Scripter 제품 정보")
+        self.setFixedSize(440, 510)
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground) # 둥근 테두리 구현을 위한 투명화
         
         self.init_ui()
 
     def init_ui(self):
-        # 외부 레이아웃 (그림자 및 테두리 포함)
+        # 외부 레이아웃 (마진 제거)
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setContentsMargins(0, 0, 0, 0)
         
-        # 내부 카드 바디 (하얀색 배경 + macOS 스타일)
+        # 내부 카드 바디 (하얀색 배경 + 모던 스타일)
         self.body = QFrame()
         self.body.setObjectName("AboutBody")
         self.body.setStyleSheet("""
             QFrame#AboutBody {
                 background-color: #ffffff;
-                border: 1px solid #e5e7eb;
-                border-radius: 12px;
+                border: 1px solid #caced6;
+                border-radius: 8px;
             }
         """)
         
-        body_layout = QHBoxLayout(self.body)
-        body_layout.setContentsMargins(30, 25, 30, 25)
-        body_layout.setSpacing(20)
+        body_layout = QVBoxLayout(self.body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
 
-        # 1. 왼쪽 영역: 로고/아이콘 (160x160 크기 확대 및 세로 중앙 정렬)
-        left_layout = QVBoxLayout()
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setAlignment(Qt.AlignVCenter)
-
-        self.lbl_logo = QLabel()
-        self.lbl_logo.setFixedSize(130, 130)
-        self.lbl_logo.setScaledContents(True)
-
-        # 로고 로드
+        # 1. 상단 커스텀 타이틀바
+        title_bar = QWidget()
+        title_bar.setFixedHeight(40)
+        title_bar.setStyleSheet("background-color: #f1f3f9; border-top-left-radius: 7px; border-top-right-radius: 7px;")
+        title_layout = QHBoxLayout(title_bar)
+        title_layout.setContentsMargins(15, 0, 15, 0)
+        
+        lbl_title_bar = QLabel("제품 정보")
+        lbl_title_bar.setStyleSheet("font-size: 13px; font-weight: bold; color: #1f2937; background: transparent; border: none;")
+        title_layout.addWidget(lbl_title_bar)
+        title_layout.addStretch()
+        
+        btn_close_top = SVGCloseButton(title_bar)
+        btn_close_top.setStyleSheet("""
+            QPushButton {
+                border: none;
+                border-radius: 10px;
+                background-color: transparent;
+            }
+            QPushButton:hover {
+                background-color: #EF4444;
+            }
+        """)
+        btn_close_top.clicked.connect(self.close)
+        title_layout.addWidget(btn_close_top)
+        
+        body_layout.addWidget(title_bar)
+        
+        # 타이틀바 구분선
+        sep_line = QFrame()
+        sep_line.setFrameShape(QFrame.HLine)
+        sep_line.setStyleSheet("background-color: #d1d5db; max-height: 1px; border: none;")
+        body_layout.addWidget(sep_line)
+        
+        # 2. 메인 컨텐츠 영역
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(30, 25, 30, 20)
+        content_layout.setSpacing(10)
+        
+        # 상단 영역: 왼쪽 큰 아이콘 + 오른쪽 텍스트 블록
+        header_row = QHBoxLayout()
+        header_row.setSpacing(25)
+        header_row.setContentsMargins(10, 0, 10, 0)
+        
+        # 1. 왼쪽 큰 아이콘
+        lbl_logo = QLabel()
+        lbl_logo.setFixedSize(110, 110)
+        lbl_logo.setScaledContents(True)
         logo_path = os.path.join(config.ASSETS_DIR, "../app_icon/webtoo_scripter_yellow.png")
         if os.path.exists(logo_path):
-            self.lbl_logo.setPixmap(QPixmap(logo_path))
+            lbl_logo.setPixmap(QPixmap(logo_path))
         else:
-            # 폴백용 기본 아이콘 (AttributeError 방지를 위해 존재하는 ICON_MOVIE 사용)
-            self.lbl_logo.setPixmap(get_icon(config.ICON_MOVIE).pixmap(130, 130))
-
-        left_layout.addWidget(self.lbl_logo)
-
-        # 2. 오른쪽 영역: 상세 정보 및 텍스트 (세로 중앙 정렬)
-        right_layout = QVBoxLayout()
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(8)
-        right_layout.setAlignment(Qt.AlignVCenter)
-
-        # 커스텀 닫기 버튼 (우측 상단 절대 배치 - 510 가로 기준)
-        self.btn_close = SVGCloseButton(self.body)
-        self.btn_close.clicked.connect(self.close)
-        self.btn_close.move(456, 12)
-
-        # 타이틀
-        lbl_title = QLabel("Webtoon Scripter")
-        lbl_title.setStyleSheet("color: #1f2937; font-size: 26px; font-weight: bold; font-family: 'Helvetica Neue', Arial; border: none; background: transparent;")
-        right_layout.addWidget(lbl_title)
-
-        # 버전 정보
+            lbl_logo.setPixmap(get_icon(config.ICON_MOVIE).pixmap(110, 110))
+            
+        header_row.addWidget(lbl_logo, 0, Qt.AlignVCenter)
+        
+        # 2. 오른쪽 텍스트 영역
+        text_block = QVBoxLayout()
+        text_block.setSpacing(6)
+        text_block.setAlignment(Qt.AlignVCenter)
+        
+        lbl_app_name = QLabel("Webtoon Scripter")
+        lbl_app_name.setStyleSheet("color: #1e3a8a; font-size: 24px; font-weight: bold; font-family: 'Helvetica Neue', Arial; border: none; background: transparent; padding: 0; margin: 0;")
+        text_block.addWidget(lbl_app_name)
+        
+        lbl_subtitle = QLabel("웹툰 대사 추출 및 편집 툴")
+        lbl_subtitle.setStyleSheet("color: #4f46e5; font-size: 13px; font-weight: bold; border: none; background: transparent;")
+        text_block.addWidget(lbl_subtitle)
+        
         lbl_version = QLabel(f"Version {config.APP_VERSION}")
-        lbl_version.setStyleSheet("color: #4b5563; font-size: 14px; font-family: 'Helvetica Neue'; border: none; background: transparent;")
-        right_layout.addWidget(lbl_version)
-
-        # 개발자 및 피드백 정보 링크
-        lbl_links = QLabel("<a href='https://github.com/woo2koon/Webtoon-Scripter' style='color:#e64a19; text-decoration:none;'>GitHub 저장소 바로가기</a><br>"
-                           "<a href='https://github.com/woo2koon/Webtoon-Scripter/issues' style='color:#e64a19; text-decoration:none;'>버그 제보 및 건의사항</a>")
-        lbl_links.setOpenExternalLinks(True)
-        lbl_links.setStyleSheet("font-size: 13px; font-family: 'Pretendard', 'Helvetica Neue', Arial, sans-serif; border: none; background: transparent; margin-top: 4px; margin-bottom: 4px;")
-        right_layout.addWidget(lbl_links)
-
-        # 저작권 정보 표기
-        lbl_copyright = QLabel("© 2026 PAK JINWOO. All rights reserved.")
-        lbl_copyright.setWordWrap(True)
-        lbl_copyright.setStyleSheet("color: #6b7280; font-size: 10px; font-family: 'Helvetica Neue'; line-height: 14px; border: none; background: transparent; margin-top: 4px;")
-        right_layout.addWidget(lbl_copyright)
-
-        body_layout.addStretch(1)
-        body_layout.addLayout(left_layout)
-        body_layout.addLayout(right_layout)
-        body_layout.addStretch(1)
-
+        lbl_version.setStyleSheet("color: #4b5563; font-size: 13px; border: none; background: transparent;")
+        text_block.addWidget(lbl_version)
+        
+        py_version = platform.python_version()
+        lbl_sub_version = QLabel(f"Python {py_version}")
+        lbl_sub_version.setStyleSheet("color: #9ca3af; font-size: 11px; border: none; background: transparent;")
+        text_block.addWidget(lbl_sub_version)
+        
+        lbl_tech = QLabel("Python + PySide6 + Cloud Vision + Gemini")
+        lbl_tech.setStyleSheet("color: #6b7280; font-size: 11px; border: none; background: transparent;")
+        text_block.addWidget(lbl_tech)
+        
+        header_row.addLayout(text_block, 1)
+        content_layout.addLayout(header_row)
+        
+        content_layout.addSpacing(10)
+        
+        # 오픈소스 라이선스 헤더
+        lbl_license_title = QLabel("오픈소스 라이선스")
+        lbl_license_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #1f2937; border: none; background: transparent;")
+        content_layout.addWidget(lbl_license_title)
+        
+        # 라이선스 리스트 프레임
+        license_list_widget = QWidget()
+        license_list_layout = QVBoxLayout(license_list_widget)
+        license_list_layout.setContentsMargins(0, 0, 0, 0)
+        license_list_layout.setSpacing(0)
+        
+        licenses = [
+            ("PySide6", "LGPLv3"),
+            ("google-cloud-vision", "Apache-2.0"),
+            ("google-generativeai", "Apache-2.0"),
+            ("pillow (PIL)", "HPND"),
+            ("openpyxl", "MIT"),
+            ("opencv-python", "Apache-2.0")
+        ]
+        
+        for i, (name, lic) in enumerate(licenses):
+            row = QWidget()
+            row.setMinimumHeight(32)
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(5, 8, 5, 8)
+            
+            lbl_name = QLabel(name)
+            lbl_name.setStyleSheet("font-family: 'Helvetica Neue', Arial; font-size: 13px; color: #374151; background: transparent; border: none; padding: 0px; margin: 0px;")
+            lbl_name.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+            
+            lbl_lic = QLabel(lic)
+            lbl_lic.setStyleSheet("font-family: 'Helvetica Neue', Arial; font-size: 13px; color: #9ca3af; background: transparent; border: none; padding: 0px; margin: 0px;")
+            lbl_lic.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+            
+            row_layout.addWidget(lbl_name)
+            row_layout.addStretch()
+            row_layout.addWidget(lbl_lic)
+            
+            license_list_layout.addWidget(row)
+            
+            # 구분선 (마지막 항목 제외)
+            if i < len(licenses) - 1:
+                row_line = QFrame()
+                row_line.setFrameShape(QFrame.HLine)
+                row_line.setStyleSheet("background-color: #f1f5f9; max-height: 1px; border: none;")
+                license_list_layout.addWidget(row_line)
+                
+        content_layout.addWidget(license_list_widget)
+        
+        content_layout.addStretch()
+        
+        # 저작권 표기
+        lbl_copyright = QLabel("© 2026 PAK JINWOO: Webtoon Scripter")
+        lbl_copyright.setAlignment(Qt.AlignCenter)
+        lbl_copyright.setStyleSheet("color: #9ca3af; font-size: 12px; border: none; background: transparent; margin-bottom: 10px;")
+        content_layout.addWidget(lbl_copyright)
+        
+        # 하단 버튼 바 (우측 정렬)
+        bottom_layout = QHBoxLayout()
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_layout.addStretch()
+        
+        btn_close_bottom = QPushButton("닫기")
+        btn_close_bottom.setCursor(Qt.PointingHandCursor)
+        btn_close_bottom.setStyleSheet("""
+            QPushButton {
+                background-color: #5d75d6;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 13px;
+                min-height: 28px;
+                max-height: 28px;
+                height: 28px;
+                padding-left: 20px;
+                padding-right: 20px;
+            }
+            QPushButton:hover {
+                background-color: #4a62c4;
+            }
+            QPushButton:pressed {
+                background-color: #3b50a6;
+            }
+        """)
+        btn_close_bottom.clicked.connect(self.close)
+        bottom_layout.addWidget(btn_close_bottom)
+        
+        content_layout.addLayout(bottom_layout)
+        
+        body_layout.addWidget(content_widget)
         main_layout.addWidget(self.body)
 
     def mousePressEvent(self, event):
@@ -2746,4 +3650,367 @@ class AboutDialog(QDialog):
         if event.buttons() == Qt.LeftButton:
             self.move(event.globalPosition().toPoint() - self.drag_position)
             event.accept()
+
+
+class TextCleanDialog(SpellCheckDialog):
+    def __init__(self, original, cleaned, parent=None, initial_vscroll=0):
+        super().__init__(original, cleaned, parent, initial_vscroll)
+        self.setWindowTitle("텍스트 정리 결과 비교")
+        self.resize(600, 700)
+        
+        # 왼쪽 교정 전 텍스트 창 숨김 (오른쪽 단일 창으로 넓게 시각화)
+        self.edit_org.hide()
+        
+        # 안내 문구 및 적용 버튼 텍스트/스타일을 텍스트 정리에 어울리게 치환
+        for label in self.findChildren(QLabel):
+            if "수정된 부분" in label.text():
+                label.setText("💡 정리(삭제/교정)된 단어에 마우스 커서를 두면 떠오르는 '원래대로' 버튼을 클릭하여 개별 복구할 수 있습니다.")
+                label.setStyleSheet("color: #4F46E5; margin-bottom: 10px; font-weight: bold; font-family: 'Pretendard';")
+                
+        for btn in self.findChildren(QPushButton):
+            if btn.text() == "교정 내용 적용":
+                btn.setText("정리 내용 적용")
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #4F46E5;
+                        color: white;
+                        font-weight: bold;
+                        border-radius: 4px;
+                    }
+                    QPushButton:hover {
+                        background-color: #4338CA;
+                    }
+                """)
+
+    def apply_changes(self):
+        """텍스트 정리 전용: 부모의 apply_changes 결과에서 연속 빈 줄을 제거합니다."""
+        super().apply_changes()
+        if self.result_text is not None:
+            import re as _re
+            # 2개 이상 연속 줄바꿈(= 빈 줄 1개 이상)을 줄바꿈 하나로 압축
+            # 삭제된 블록이 있던 자리에 남는 빈 줄을 자동으로 붙여줍니다.
+            self.result_text = _re.sub(r'\n{2,}', '\n', self.result_text)
+            # 텍스트 앞뒤 공백 제거
+            self.result_text = self.result_text.strip()
+
+
+# =================================================================
+# 프리미엄 디자인 커스텀 입력 다이얼로그 (QInputDialog 대체용)
+# =================================================================
+class CustomInputDialog(QDialog):
+    def __init__(self, title, label_text, placeholder_text="", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.resize(360, 180)
+        self.validator = None
+        
+        self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
+        self.setStyleSheet("QDialog { background-color: #FFFFFF; }")
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(14)
+        
+        self.lbl_text = QLabel(label_text)
+        self.lbl_text.setStyleSheet("font-size: 14px; font-weight: 600; color: #1F2937; font-family: 'Pretendard';")
+        layout.addWidget(self.lbl_text)
+        
+        self.input_field = SingleClickLineEdit()
+        self.input_field.setPlaceholderText(placeholder_text)
+        self.input_field.setFixedHeight(38)
+        self.input_field.setStyleSheet("""
+            QLineEdit {
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                padding-left: 10px;
+                font-size: 13px;
+                color: #374151;
+                background-color: #F9FAFB;
+                font-family: 'Pretendard';
+            }
+            QLineEdit:focus {
+                border: 2px solid #FF5722;
+                background-color: white;
+            }
+        """)
+        layout.addWidget(self.input_field)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+        
+        self.btn_cancel = QPushButton("취소")
+        self.btn_cancel.setFixedHeight(38)
+        self.btn_cancel.setStyleSheet("""
+            QPushButton {
+                background-color: #F3F4F6;
+                color: #4B5563;
+                font-weight: bold;
+                border: 1px solid #E5E7EB;
+                border-radius: 6px;
+                font-family: 'Pretendard';
+            }
+            QPushButton:hover {
+                background-color: #E5E7EB;
+            }
+        """)
+        self.btn_cancel.clicked.connect(self.reject)
+        
+        self.btn_ok = QPushButton("확인")
+        self.btn_ok.setFixedHeight(38)
+        self.btn_ok.setStyleSheet("""
+            QPushButton {
+                background-color: #FF5722;
+                color: white;
+                font-weight: bold;
+                border: none;
+                border-radius: 6px;
+                font-family: 'Pretendard';
+            }
+            QPushButton:hover {
+                background-color: #F4511E;
+            }
+        """)
+        self.btn_ok.clicked.connect(self.on_accept)
+        
+        btn_layout.addWidget(self.btn_cancel)
+        btn_layout.addWidget(self.btn_ok)
+        layout.addLayout(btn_layout)
+        
+        self.input_field.returnPressed.connect(self.btn_ok.click)
+        
+    def get_text(self):
+        return self.input_field.text().strip()
+
+    def on_accept(self):
+        text = self.get_text()
+        if not text:
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: (
+                QMessageBox.warning(self, "경고", "이름을 입력해주세요."),
+                self.input_field.setFocus()
+            ))
+            return
+        if self.validator:
+            is_valid, err_msg = self.validator(text)
+            if not is_valid:
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(0, lambda: (
+                    QMessageBox.warning(self, "중복 경고", err_msg),
+                    self.input_field.setFocus()
+                ))
+                return
+        self.accept()
+
+    @classmethod
+    def get_input(cls, parent, title, label_text, placeholder_text="", validator=None):
+        dlg = cls(title, label_text, placeholder_text, parent)
+        dlg.validator = validator
+        # 활성화 시 포커스를 텍스트 필드로 자동 설정
+        dlg.input_field.setFocus()
+        if dlg.exec() == QDialog.Accepted:
+            return dlg.get_text(), True
+        return "", False
+
+
+# =================================================================
+# ⌨️ 단축키 도움말 다이얼로그 (ShortcutHelpDialog)
+# =================================================================
+class ShortcutHelpDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("단축키 도움말")
+        self.setModal(True)
+        self.resize(460, 520)
+        self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
+        self.setStyleSheet("QDialog { background-color: #FFFFFF; }")
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        # Title / Description Layout with SVG Icon
+        title_layout = QHBoxLayout()
+        title_layout.setSpacing(8)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        
+        lbl_title_icon = QLabel()
+        lbl_title_icon.setFixedSize(20, 20)
+        lbl_title_icon.setPixmap(get_colored_pixmap(config.ICON_KEYBOARD, "#4F46E5", 20, 20))
+        title_layout.addWidget(lbl_title_icon)
+        
+        title_lbl = QLabel("단축키 도움말")
+        title_lbl.setStyleSheet("font-size: 18px; font-weight: bold; color: #111827; font-family: 'Pretendard';")
+        title_layout.addWidget(title_lbl)
+        title_layout.addStretch()
+        
+        layout.addLayout(title_layout)
+
+        desc_lbl = QLabel("Webtoon Scripter에서 제공하는 단축키 목록입니다.\n단축키를 활용하여 작업 시간을 획기적으로 줄여보세요.")
+        desc_lbl.setStyleSheet("font-size: 13px; color: #6B7280; font-family: 'Pretendard'; line-height: 140%;")
+        layout.addWidget(desc_lbl)
+
+        # Scroll Area for shortcuts list
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                background-color: #FAFAFA;
+            }
+        """)
+
+        container = QWidget()
+        container.setStyleSheet("background-color: transparent;")
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(16, 16, 16, 16)
+        container_layout.setSpacing(20)
+        container_layout.setAlignment(Qt.AlignTop)
+
+        # OS 판단에 따른 단축키 이름 매핑 함수
+        is_mac = sys.platform == "darwin"
+        ctrl_key = "⌘" if is_mac else "Ctrl"
+        alt_key = "⌥" if is_mac else "Alt"
+        shift_key = "⇧" if is_mac else "Shift"
+
+        # Shortcut Groups with SVG Icons and Colors
+        groups = [
+            ("화면 및 도구 토글", config.ICON_MENU, "#3B82F6", [
+                (f"{ctrl_key} + B", "사이드바 열기 / 닫기"),
+                (f"{ctrl_key} + J", "관용구 도우미 창 토글"),
+                (f"{ctrl_key} + K", "캐릭터 도우미 창 토글"),
+                (f"{ctrl_key} + N", "새 작업 (심플 모드)"),
+            ]),
+            ("대본 표(테이블) 편집", config.ICON_EXCEL, "#10B981", [
+                (f"{ctrl_key} + Z", "실행 취소 (Undo)"),
+                (f"{ctrl_key} + {shift_key} + Z", "다시 실행 (Redo)"),
+                (f"{ctrl_key} + C", "선택한 셀 내용 복사"),
+                (f"{ctrl_key} + V", "선택한 셀 내용 붙여넣기"),
+                ("Delete / Backspace", "선택 내용 지우기"),
+                ("Enter / Return", "텍스트 확정 후 아래쪽 셀로 이동"),
+                (f"{shift_key} + Enter", "현재 커서 위치에서 행 분리 (셀 나누기)"),
+                (f"{ctrl_key} + M", "선택한 2개 이상의 셀(행) 합치기 (셀 병합)"),
+            ]),
+            ("웹툰 뷰어 스크롤 및 이동", config.ICON_MOVE_VERTICAL, "#6B7280", [
+                (f"Home, {ctrl_key} + ↑", "스크롤 최상단으로 이동"),
+                (f"End, {ctrl_key} + ↓", "스크롤 최하단으로 이동"),
+            ]),
+            ("관용구 자동 입력", config.ICON_LIBRARY, "#F59E0B", [
+                (f"{alt_key} + [숫자]", "지정된 관용구 삽입"),
+            ])
+        ]
+
+        for group_title, icon_path, icon_color, items in groups:
+            group_box = QFrame()
+            group_box.setStyleSheet("QFrame { background-color: transparent; border: none; }")
+            group_layout = QVBoxLayout(group_box)
+            group_layout.setContentsMargins(0, 0, 0, 0)
+            group_layout.setSpacing(8)
+
+            header_layout = QHBoxLayout()
+            header_layout.setContentsMargins(0, 0, 0, 0)
+            header_layout.setSpacing(6)
+
+            lbl_grp_icon = QLabel()
+            lbl_grp_icon.setFixedSize(14, 14)
+            lbl_grp_icon.setPixmap(get_colored_pixmap(icon_path, icon_color, 14, 14))
+            header_layout.addWidget(lbl_grp_icon)
+
+            lbl_group_title = QLabel(group_title)
+            lbl_group_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #4B5563; font-family: 'Pretendard';")
+            header_layout.addWidget(lbl_group_title)
+            header_layout.addStretch()
+
+            header_widget = QWidget()
+            header_widget.setStyleSheet("QWidget { border-bottom: 1px solid #E5E7EB; background: transparent; }")
+            header_w_layout = QVBoxLayout(header_widget)
+            header_w_layout.setContentsMargins(0, 0, 0, 4)
+            header_w_layout.addLayout(header_layout)
+
+            group_layout.addWidget(header_widget)
+
+            grid = QGridLayout()
+            grid.setSpacing(8)
+            grid.setColumnStretch(0, 1) # 설명이 왼쪽에 와서 더 넓은 공간 할당
+            grid.setColumnStretch(1, 0) # 단축키 배지는 오른쪽에 붙음
+
+            for row_idx, (keys, action_desc) in enumerate(items):
+                lbl_desc = QLabel(action_desc)
+                lbl_desc.setStyleSheet("font-size: 13px; color: #374151; font-family: 'Pretendard';")
+                grid.addWidget(lbl_desc, row_idx, 0, Qt.AlignLeft | Qt.AlignVCenter)
+
+                # 단축키 키 조합을 위한 배지 레이아웃
+                badge_widget = QWidget()
+                badge_widget.setStyleSheet("background: transparent; border: none;")
+                badge_layout = QHBoxLayout(badge_widget)
+                badge_layout.setContentsMargins(0, 0, 0, 0)
+                badge_layout.setSpacing(4)
+
+                key_groups = keys.split(", ")
+                for g_idx, key_group in enumerate(key_groups):
+                    parts = key_group.split(" + ")
+                    for p_idx, part in enumerate(parts):
+                        part_lbl = QLabel(part)
+                        part_lbl.setStyleSheet("""
+                            QLabel {
+                                background-color: #F3F4F6;
+                                color: #374151;
+                                border: 1px solid #E5E7EB;
+                                border-radius: 4px;
+                                padding: 3px 6px;
+                                font-size: 11px;
+                                font-weight: bold;
+                                font-family: 'Pretendard', sans-serif;
+                            }
+                        """)
+                        badge_layout.addWidget(part_lbl)
+                        if p_idx < len(parts) - 1:
+                            plus_lbl = QLabel("+")
+                            plus_lbl.setStyleSheet("color: #9CA3AF; font-size: 11px; font-weight: bold;")
+                            badge_layout.addWidget(plus_lbl)
+                    
+                    if g_idx < len(key_groups) - 1:
+                        or_lbl = QLabel("/")
+                        or_lbl.setStyleSheet("color: #9CA3AF; font-size: 11px; font-weight: bold; margin-left: 4px; margin-right: 4px;")
+                        badge_layout.addWidget(or_lbl)
+
+                grid.addWidget(badge_widget, row_idx, 1, Qt.AlignRight | Qt.AlignVCenter)
+
+            group_layout.addLayout(grid)
+            container_layout.addWidget(group_box)
+
+        scroll_area.setWidget(container)
+        layout.addWidget(scroll_area)
+
+        # Close button at the bottom
+        btn_close = QPushButton("닫기")
+        btn_close.setFixedHeight(38)
+        btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.setStyleSheet("""
+            QPushButton {
+                background-color: #1F2937;
+                color: white;
+                font-weight: bold;
+                border: none;
+                border-radius: 6px;
+                font-family: 'Pretendard';
+            }
+            QPushButton:hover {
+                background-color: #111827;
+            }
+        """)
+        btn_close.clicked.connect(self.accept)
+        layout.addWidget(btn_close)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.accept()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
+
 

@@ -84,6 +84,12 @@ def natural_sort_key(s):
 def clean_korean_text(text):
     if not text: return ""
     
+    # 0. 일본식 가운뎃점 및 불릿 기호 말줄임표(· · ·, ・・・, • • •)를 한국식 말줄임표(...)로 치환
+    text = re.sub(r'([·・•]\s*){2,}', '...', text)
+    
+    # 0-1. 단일 유니코드 말줄임표 기호(…)를 일반 마침표 세 개(...)로 일괄 전환
+    text = text.replace('…', '...')
+    
     # 1. 기본 공백 정리
     text = re.sub(r'\s+', ' ', text).strip()
 
@@ -209,3 +215,60 @@ def safe_excel_clean(file_path):
         except:
             pass
         return False
+
+def clean_ocr_text(text):
+    if not text:
+        return ""
+    import re
+    lines = text.split('\n')
+    cleaned_lines = []
+    
+    # 한글 음절 및 자모음 탐지 정규식
+    hangul_syllables = re.compile(r'[가-힣]')
+    
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            cleaned_lines.append("")
+            continue
+            
+        # 1. 한글 음절(글자) 및 자모음 개수 계산
+        syllable_count = len(hangul_syllables.findall(stripped))
+        
+        # 2. 공백 제외 전체 글자 수
+        non_space_len = len(stripped.replace(" ", ""))
+        if non_space_len == 0:
+            continue
+            
+        # 3. 한글 음절이나 대사성 웃음/울음(ㅋ, ㅎ, ㅠ, ㅜ)이 전혀 없는 영어/숫자/기호 라인 일괄 제거
+        # 예: "W9KG AD Boou 928919", "...:: T: . **", "GFENG S ::S", "D8", "18" 등
+        if syllable_count == 0 and not any(c in stripped for c in ('ㅋ', 'ㅎ', 'ㅠ', 'ㅜ')):
+            continue
+            
+        # 4. 한글 음절이 들어있더라도, 노이즈 자모(ㅁ, □ 등) 및 영문 비중이 비정상적으로 높으면 제거
+        # 예: "SWER C 붕 ㅁ □ ㅁㅁ ㅁㅁㅁㅁ", "ㅁㅁ ㅁ ㅁ D ㅁ D ㅁㅁㅁ ㅁ ㅁ 송"
+        if syllable_count <= 2:
+            hangul_ratio = syllable_count / non_space_len
+            if hangul_ratio < 0.25:  # 한글 대사 비중이 25% 미만인 경우 노이즈로 판정하여 제외
+                continue
+                
+        # 5. 알파벳 1글자 단독 라인 제거
+        if len(stripped) == 1 and stripped.isalpha():
+            continue
+            
+        # 6. 특정 무의미한 짧은 영단어 노이즈 제거
+        if stripped in ("VER", "BE", "H", "C", "U", "G", "M", "S", "L", "K", "N", "I", "Y", "P", "T", "D", "GFENG"):
+            continue
+            
+        # 7. 라인 내부에 붙어 있는 단독 자음/박스문자(ㅁ, □, ㅂ 등) 파편 정리
+        line_cleaned = re.sub(r'\s+[ㅁㅂㄷㄹㅇㅈㅅㄴㄱㅃㅉㄸㄲㅆ□■▨▧]+$', '', line)
+        line_cleaned = re.sub(r'^[ㅁㅂㄷㄹㅇㅈㅅㄴㄱㅃㅉㄸㄲㅆ□■▨▧]+\s+', '', line_cleaned)
+        
+        # 문장 끝에 남은 외딴 자모음 제거 (예: "ㅝ. ㅁ"의 마지막 "ㅁ")
+        line_cleaned = re.sub(r'\s+[ㄱ-ㅎㅏ-ㅣ□■]+$', '', line_cleaned)
+        
+        cleaned_lines.append(line_cleaned)
+        
+    result = '\n'.join(cleaned_lines)
+    result = re.sub(r'\n{3,}', '\n\n', result)
+    return result.strip()

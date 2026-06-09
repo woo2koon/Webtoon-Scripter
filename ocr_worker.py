@@ -6,11 +6,32 @@ import base64
 import hashlib
 import requests
 import concurrent.futures
-from PIL import Image
+from PIL import Image, ImageOps, ImageEnhance
 from PySide6.QtCore import QThread, Signal
 import config
 from config import CACHE_DIR
 from utils import clean_korean_text 
+
+def preprocess_image_for_ocr(pil_img):
+    """OCR 인식률 극대화를 위한 Pillow 기반 고성능 전처리 파이프라인 (2배 업스케일링 포함)"""
+    try:
+        w, h = pil_img.size
+        # 1. 2배 업스케일링
+        processed = pil_img.resize((w * 2, h * 2), Image.Resampling.LANCZOS)
+        # 2. 그레이스케일 변환
+        processed = processed.convert("L")
+        # 3. 오토 콘트라스트 (상하위 2% 무시로 아웃라이어 제거)
+        processed = ImageOps.autocontrast(processed, cutoff=2)
+        # 4. 대비 증폭 (1.8배)
+        contrast_enhancer = ImageEnhance.Contrast(processed)
+        processed = contrast_enhancer.enhance(1.8)
+        # 5. 샤프니스 선명화 (2.0배)
+        sharpness_enhancer = ImageEnhance.Sharpness(processed)
+        processed = sharpness_enhancer.enhance(2.0)
+        return processed
+    except Exception as e:
+        print(f"이미지 전처리 실패 (원본으로 대체): {e}")
+        return pil_img
 
 # [필수] HTTP 연결 재사용을 위한 세션 객체
 session = requests.Session()
@@ -22,7 +43,17 @@ def call_google_api_raw(png_bytes):
         if not current_key: return []
             
         image_content = base64.b64encode(png_bytes).decode("utf-8")
-        req = {"requests": [{"image": {"content": image_content}, "features": [{"type": "DOCUMENT_TEXT_DETECTION"}]}]}
+        req = {
+            "requests": [
+                {
+                    "image": {"content": image_content},
+                    "features": [{"type": "DOCUMENT_TEXT_DETECTION"}],
+                    "imageContext": {
+                        "languageHints": ["ko"]
+                    }
+                }
+            ]
+        }
         
         # 연결 풀링을 사용해 구글 서버와 더 빠르게 통신
         res = session.post(f"https://vision.googleapis.com/v1/images:annotate?key={current_key}", json=req, timeout=15)
@@ -49,12 +80,13 @@ def call_google_api_raw(png_bytes):
                     cleaned = clean_korean_text(block_text)
                     vs = block["boundingBox"]["vertices"]
                     if cleaned:
+                        # 전처리 단계의 2배 업스케일링을 고려하여 좌표값을 다시 1/2로 보정합니다.
                         blocks_found.append({
                             "text": cleaned, 
-                            "y": min(v.get("y", 0) for v in vs), 
-                            "bottom": max(v.get("y", 0) for v in vs),
-                            "x1": min(v.get("x", 0) for v in vs), 
-                            "x2": max(v.get("x", 0) for v in vs)
+                            "y": int(min(v.get("y", 0) for v in vs) / 2.0), 
+                            "bottom": int(max(v.get("y", 0) for v in vs) / 2.0),
+                            "x1": int(min(v.get("x", 0) for v in vs) / 2.0), 
+                            "x2": int(max(v.get("x", 0) for v in vs) / 2.0)
                         })
         return blocks_found
     except Exception as e:
@@ -127,8 +159,9 @@ class OCRWorker(QThread):
                             cut_y = min(current_y + self.MAX_SLICE_HEIGHT, h)
                         
                         cropped = img.crop((0, current_y, w, cut_y))
+                        preprocessed = preprocess_image_for_ocr(cropped)
                         buf = io.BytesIO()
-                        cropped.save(buf, format="PNG")
+                        preprocessed.save(buf, format="PNG")
                         png_bytes = buf.getvalue()
                         
                         tasks.append({
@@ -210,11 +243,50 @@ class OCRWorker(QThread):
                     groups[first_idx].extend(groups[other_idx])
                     del groups[other_idx]
 
-        # 그룹 정렬 및 텍스트 합치기
-        groups.sort(key=lambda g: min(b['y'] for b in g) + (min(b['x1'] for b in g) * 0.5))
+        from functools import cmp_to_key
+
+        # 각 그룹(말풍선)의 전체 바운딩 박스 정보 및 중심점 계산
+        group_metadata = []
+        for g in groups:
+            y1 = min(b['y'] for b in g)
+            y2 = max(b['bottom'] for b in g)
+            x1 = min(b['x1'] for b in g)
+            x2 = max(b['x2'] for b in g)
+            group_metadata.append({
+                'group': g,
+                'y1': y1,
+                'y2': y2,
+                'x1': x1,
+                'x2': x2,
+                'yc': (y1 + y2) / 2.0,
+                'xc': (x1 + x2) / 2.0,
+                'h': y2 - y1
+            })
+
+        def compare_metadata(a, b):
+            # 두 그룹의 Y축 중심점 간격 차이
+            dy = abs(a['yc'] - b['yc'])
+            # Y축 오버랩 높이 계산
+            overlap_y = min(a['y2'], b['y2']) - max(a['y1'], b['y1'])
+            min_h = min(a['h'], b['h'])
+            
+            # Y축이 상당히 겹치거나 Y축 중심선 차이가 평균 글자 크기 기준값 미만으로 미세한 경우 -> 동일 선상의 대화(좌우 배치)로 간주
+            is_horizontal_layout = (dy < avg_height * 1.8) or (min_h > 0 and (overlap_y / min_h) > 0.3)
+            
+            if is_horizontal_layout:
+                # 같은 라인에 있다면 더 왼쪽에 있는(X축 좌표가 작은) 대사가 무조건 먼저 읽힘
+                if abs(a['xc'] - b['xc']) > 5:
+                    return -1 if a['xc'] < b['xc'] else 1
+            
+            # 그 외의 세로 배치 관계는 위에서 아래로 순차 배치
+            return -1 if a['yc'] < b['yc'] else 1
+
+        # 커스텀 비교 정렬 적용
+        group_metadata.sort(key=cmp_to_key(compare_metadata))
+        sorted_groups = [m['group'] for m in group_metadata]
 
         final_merged = []
-        for group in groups:
+        for group in sorted_groups:
             # 같은 말풍선 안에서도 비슷한 높이면 왼쪽부터 합치도록 미세 조정
             group.sort(key=lambda b: (int(b['y'] // (avg_height * 0.5)), b['x1']))
             merged_text = " ".join(b['text'] for b in group)

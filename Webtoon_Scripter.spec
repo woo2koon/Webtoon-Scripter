@@ -8,7 +8,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets', 'assets'), ('app_icon', 'app_icon')],
+    datas=[('assets', 'assets'), ('app_icon', 'app_icon'), ('app_icons', 'app_icons')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -59,8 +59,8 @@ app = BUNDLE(
         'CFBundleName': 'Webtoon Scripter',
         'CFBundleDisplayName': 'Webtoon Scripter',
         'CFBundleExecutable': 'Webtoon_Scripter',
-        'CFBundleShortVersionString': '2.5.5',
-        'CFBundleVersion': '2.5.5',
+        'CFBundleShortVersionString': '3.0.0',
+        'CFBundleVersion': '3.0.0',
         'CFBundleIdentifier': 'com.woo2koon.webtoonscripter',
         # macOS가 About 메뉴에 표시하는 저작권 문자열
         # NSHumanReadableCopyright가 있어야 macOS가 앱을 완전한 네이티브 앱으로 인식함

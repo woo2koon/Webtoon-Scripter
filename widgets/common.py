@@ -46,31 +46,111 @@ class ResponsiveLabel(QLabel):
         super().resizeEvent(event)
 
 # =================================================================
-# 클릭 시 데이터 새로고침 가능한 콤보박스
-# =================================================================
 class ClickableComboBox(QComboBox):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setFocusPolicy(Qt.ClickFocus) # [수정] 스크롤 시 자동 포커스(클릭되는 현상) 방지하기 위해 ClickFocus로 설정
         self.setEditable(True) 
         self.lineEdit().setReadOnly(True)
         self.lineEdit().setCursor(Qt.ArrowCursor)
+        self.lineEdit().setFocusPolicy(Qt.ClickFocus) # [수정] 내부 입력창도 스크롤 시 포커스 방지
         self.lineEdit().installEventFilter(self)
         self.installEventFilter(self) # [추가] 자기 자신에게도 필터 설치
         self.setView(QListView())
         
-        # [추가] 프리미엄 드롭다운 스타일 (잔상 제거 및 라운드 대응)
-        self.view().window().setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
-        self.view().window().setAttribute(Qt.WA_TranslucentBackground)
-
-        delegate = QStyledItemDelegate()
-        self.setItemDelegate(delegate)
+        # Apply application-wide dynamic font and size
+        combo_font = QFont("Pretendard")
+        if platform.system().lower() == "darwin":
+            combo_font.setPixelSize(14)
+        else:
+            combo_font.setPointSize(11)
+        combo_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        combo_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        if platform.system() == "Windows":
+            combo_font.setWeight(QFont.Weight.Medium)
+        self.setFont(combo_font)
+        if self.lineEdit():
+            self.lineEdit().setFont(combo_font)
+        
+        # 뷰에 폰트와 엘라이드 모드 명시적 지정
+        self.view().setFont(combo_font)
+        self.view().setTextElideMode(Qt.TextElideMode.ElideRight)
+            
+        self.setItemDelegate(PopupItemDelegate())
         self.refresh_callback = None 
         self._popup_hidden_recently = False
+
+    def setView(self, view):
+        super().setView(view)
+        if view:
+            combo_font = QFont("Pretendard")
+            if platform.system().lower() == "darwin":
+                combo_font.setPixelSize(14)
+            else:
+                combo_font.setPointSize(11)
+            combo_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+            combo_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+            if platform.system() == "Windows":
+                combo_font.setWeight(QFont.Weight.Medium)
+            view.setFont(combo_font)
+            view.setTextElideMode(Qt.TextElideMode.ElideRight)
+            
+            # QListView에 직접 스타일시트 강제 설정
+            if platform.system().lower() == "darwin":
+                view.setStyleSheet("""
+                    QListView {
+                        font-family: 'Pretendard';
+                        font-size: 14px;
+                        background-color: #FFFFFF;
+                        border: 1px solid #D1D5DB;
+                        border-radius: 6px;
+                        padding: 4px;
+                    }
+                    QListView::item {
+                        font-family: 'Pretendard';
+                        font-size: 14px;
+                    }
+                """)
+            else:
+                view.setStyleSheet("""
+                    QListView {
+                        font-family: 'Pretendard';
+                        font-size: 15px;
+                        background-color: #FFFFFF;
+                        border: 1px solid #D1D5DB;
+                        border-radius: 6px;
+                        padding: 4px;
+                    }
+                    QListView::item {
+                        font-family: 'Pretendard';
+                        font-size: 15px;
+                    }
+                """)
+            
+            popup_win = view.window()
+            if popup_win:
+                popup_win.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+                popup_win.setAttribute(Qt.WA_TranslucentBackground)
+                popup_win.setFont(combo_font)
 
     def showPopup(self):
         # [추가] 콤보박스가 열려서 값이 바뀌기 직전의 상태 저장
         self._trigger_undo_backup()
         super().showPopup()
+        combo_font = QFont("Pretendard")
+        if platform.system().lower() == "darwin":
+            combo_font.setPixelSize(14)
+        else:
+            combo_font.setPointSize(11)
+        combo_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        combo_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        if platform.system() == "Windows":
+            combo_font.setWeight(QFont.Weight.Medium)
+        self.view().setFont(combo_font)
+        self.view().setTextElideMode(Qt.TextElideMode.ElideRight)
+        popup_win = self.view().window()
+        if popup_win and popup_win is not self:
+            popup_win.setFont(combo_font)
 
     def mousePressEvent(self, event):
         # [추가] 클릭 시에도 백업 (직접 입력이나 휠 조작 전 대비)
@@ -150,6 +230,10 @@ class ClickableComboBox(QComboBox):
                     self._ignore_next_release = False
                 else:
                     self._toggle_popup()
+                return True
+
+            elif event.type() in (QEvent.MouseMove, QEvent.MouseButtonDblClick, QEvent.DragEnter, QEvent.DragMove, QEvent.DragLeave, QEvent.Drop):
+                # 드래그, 더블클릭 블록 지정 및 드래그 앤 드롭 동작 완전 차단
                 return True
                     
         return super().eventFilter(obj, event)
@@ -233,8 +317,76 @@ class WebtoonScrollArea(QScrollArea):
 class PopupItemDelegate(QStyledItemDelegate):
     def sizeHint(self, option, index):
         size = super().sizeHint(option, index)
-        size.setHeight(36)
+        if platform.system().lower() == "darwin":
+            size.setHeight(40)
+        else:
+            size.setHeight(36)
         return size
+
+    def initStyleOption(self, option, index):
+        """렌더링 직전에 호출되는 올바른 훅 지점에서 Pretendard 폰트를 강제 적용합니다.
+        paint()에서 option.font를 수정하는 것은 이미 style 엔진이 폰트를 읽은 후이므로
+        효과가 없습니다. initStyleOption이 올바른 방법입니다."""
+        super().initStyleOption(option, index)
+        font = QFont("Pretendard")
+        if platform.system().lower() == "darwin":
+            font.setPixelSize(14)
+        else:
+            font.setPointSize(11)
+        font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        if platform.system() == "Windows":
+            font.setWeight(QFont.Weight.Medium)
+        option.font = font
+
+    def paint(self, painter, option, index):
+        painter.save()
+        # 안티앨리어싱 명시적 활성화 (글자 깨짐 방지 핵심)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.TextAntialiasing, True)
+        
+        # Pretendard 폰트 설정
+        font = QFont("Pretendard")
+        if platform.system().lower() == "darwin":
+            font.setPixelSize(14)
+        else:
+            font.setPointSize(11)
+        font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        if platform.system() == "Windows":
+            font.setWeight(QFont.Weight.Medium)
+        painter.setFont(font)
+        
+        # 상태별 색상 매핑
+        from PySide6.QtWidgets import QStyle
+        is_selected = bool(option.state & QStyle.State_Selected)
+        is_hover = bool(option.state & QStyle.State_MouseOver)
+        
+        if is_selected:
+            bg_color = QColor("#fff0f0") # 연한 분홍 배경
+            text_color = QColor("#111827") # 고대비 어두운 텍스트
+        elif is_hover:
+            bg_color = QColor("#fff8f8") # 더 연한 호버 배경
+            text_color = QColor("#111827") # 고대비 어두운 텍스트
+        else:
+            bg_color = QColor("#ffffff")
+            text_color = QColor("#333333")
+            
+        # 배경 (둥근 모서리 적용)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(bg_color))
+        rect = option.rect.adjusted(1, 1, -1, -1)
+        painter.drawRoundedRect(rect, 5, 5)
+        
+        # 텍스트 그리기
+        text = index.data(Qt.DisplayRole)
+        if text:
+            painter.setPen(QPen(text_color))
+            # 패딩 10px 부여
+            text_rect = rect.adjusted(10, 0, -10, 0)
+            painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, text)
+            
+        painter.restore()
 
 # =================================================================
 # 호버 아이콘 버튼
@@ -272,7 +424,7 @@ class DropOverlay(QWidget):
         self.lbl_text.setStyleSheet("""
             QLabel {
                 font-family: 'Pretendard', '-apple-system', 'Helvetica Neue', 'Segoe UI', sans-serif;
-                font-size: 24px;
+                font-size: 27px;
                 font-weight: bold;
                 color: #1E293B;
                 background: transparent;
@@ -285,9 +437,9 @@ class DropOverlay(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        icon_size = 80
-        y_pos = (self.height() - icon_size) // 2 + 50
-        self.lbl_text.setGeometry(0, y_pos, self.width(), 40)
+        # 이미지 크기(100px) 증가 및 겹침 방지를 위해 텍스트의 y 위치를 조절하여 간격을 넓힙니다.
+        y_pos = self.height() // 2 + 25
+        self.lbl_text.setGeometry(0, y_pos, self.width(), 45)
 
     def set_snapshot(self, pixmap):
         self.snapshot = pixmap
@@ -314,9 +466,9 @@ class DropOverlay(QWidget):
         )
 
         svg_path = config.ICON_AVATAR_UPLOAD
-        icon_size = 80
+        icon_size = 100 # 80에서 100으로 25% 크기 증가
         cx = (self.width() - icon_size) // 2
-        cy = (self.height() - icon_size) // 2 - 20
+        cy = (self.height() - icon_size) // 2 - 45 # 텍스트와의 겹침 방지 및 여백 확보를 위해 위치 조정
         svg_pix = get_colored_pixmap(svg_path, "#1E293B", icon_size, icon_size)
         painter.drawPixmap(cx, cy, svg_pix)
 
@@ -436,6 +588,7 @@ class FileDropListWidget(QListWidget):
 
     def show_context_menu(self, pos):
         menu = QMenu(self)
+        menu.setFont(QApplication.font())
         delete_action = QAction(get_icon(config.ICON_DELETE), "선택한 파일 지우기", self)
         delete_action.triggered.connect(self.delete_selected_items)
         menu.addAction(delete_action)
@@ -531,6 +684,9 @@ class SmartTextEdit(QTextEdit):
                 image_files = [f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
                 if image_files:
                     mw.process_image_files(image_files)
+        elif source.hasText():
+            # 웹 브라우저 등에서 복사한 서식(HTML, 스타일)이 포함된 Rich Text를 무시하고 순수 텍스트(Plain Text)로만 붙여넣기
+            self.insertPlainText(source.text())
         else:
             super().insertFromMimeData(source)
 
@@ -584,27 +740,36 @@ class ToastMessage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         
         self.bg_frame = QFrame()
+        self.bg_frame.setFrameShape(QFrame.NoFrame)
         self.bg_frame.setStyleSheet("""
             QFrame {
                 background-color: #282C34;
                 border-radius: 18px;
+                border: none;
             }
         """)
-        frame_layout = QVBoxLayout(self.bg_frame)
-        frame_layout.setContentsMargins(0, 0, 0, 0)
+        frame_layout = QHBoxLayout(self.bg_frame)
+        frame_layout.setContentsMargins(18, 11, 18, 11)
+        frame_layout.setSpacing(8)
+        
+        self.lbl_icon = QLabel()
+        self.lbl_icon.setFixedSize(18, 18)
+        self.lbl_icon.setStyleSheet("background: transparent; border: none;")
+        self.lbl_icon.hide()
         
         self.lbl_text = QLabel()
-        self.lbl_text.setAlignment(Qt.AlignCenter)
         self.lbl_text.setStyleSheet("""
             QLabel {
                 color: white;
-                padding: 10px 18px;
                 font-size: 14px;
                 font-weight: bold;
                 font-family: 'Pretendard';
                 background: transparent;
+                border: none;
             }
         """)
+        
+        frame_layout.addWidget(self.lbl_icon)
         frame_layout.addWidget(self.lbl_text)
         layout.addWidget(self.bg_frame)
         
@@ -624,7 +789,74 @@ class ToastMessage(QWidget):
         self.timer.stop()
         self.anim.stop()
         
-        self.lbl_text.setText(text)
+        # 이모지 검출 및 텍스트 정제
+        clean_text = text
+        emoji = ""
+        for char in ["✅", "🗑️", "✨", "⚠️", "❌", "📄", "👥", "⏳", "📶", "🔄", "🚫", "🏢", "📊", "⚡"]:
+            if clean_text.startswith(char):
+                emoji = char
+                clean_text = clean_text[len(char):].strip()
+                break
+                
+        # 매칭되는 아이콘 표시
+        if emoji:
+            icon_path = ""
+            icon_color = "#FFFFFF"
+            if emoji == "✅":
+                icon_path = config.ICON_SUCCESS
+                icon_color = "#10B981" # 성공: 녹색
+            elif emoji == "🗑️":
+                icon_path = config.ICON_DELETE
+                icon_color = "#EF4444" # 삭제: 빨간색
+            elif emoji == "✨":
+                icon_path = config.ICON_INFO
+                icon_color = "#F59E0B" # 정보: 오렌지
+            elif emoji == "⚠️":
+                icon_path = config.ICON_WARNING
+                icon_color = "#FBBF24" # 경고: 노란색
+            elif emoji == "❌":
+                icon_path = config.ICON_WARNING
+                icon_color = "#EF4444" # 에러: 빨간색
+            elif emoji == "📄":
+                icon_path = config.ICON_FILE
+                icon_color = "#3B82F6" # 파일: 파란색
+            elif emoji == "👥":
+                icon_path = config.ICON_USER
+                icon_color = "#8B5CF6" # 캐릭터/사용자: 보라색
+            elif emoji == "⏳":
+                icon_path = config.ICON_REFRESH
+                icon_color = "#9CA3AF" # 로딩/대기: 회색
+            elif emoji == "📶":
+                icon_path = config.ICON_ARROW_UP
+                icon_color = "#3B82F6" # 정렬: 파란색
+            elif emoji == "🔄":
+                icon_path = config.ICON_REFRESH
+                icon_color = "#3B82F6" # 새로고침/업데이트: 파란색
+            elif emoji == "🚫":
+                icon_path = config.ICON_WARNING
+                icon_color = "#EF4444" # 중지/금지: 빨간색
+            elif emoji == "🏢":
+                icon_path = config.ICON_SETTINGS_COG
+                icon_color = "#3B82F6" # 전체 모드: 파란색
+            elif emoji == "📊":
+                icon_path = config.ICON_EXCEL
+                icon_color = "#10B981" # 엑셀: 녹색
+            elif emoji == "⚡":
+                icon_path = config.ICON_INFO
+                icon_color = "#FBBF24" # 빠른처리/캐시: 노란색
+                
+            if icon_path:
+                pix = get_colored_pixmap(icon_path, icon_color, 18, 18)
+                self.lbl_icon.setPixmap(pix)
+                self.lbl_icon.show()
+            else:
+                self.lbl_icon.hide()
+        else:
+            self.lbl_icon.hide()
+            
+        self.lbl_text.setText(clean_text)
+        
+        # 크기 자동 조절
         self.lbl_text.adjustSize()
         self.bg_frame.adjustSize()
         self.adjustSize()
@@ -751,4 +983,213 @@ class SingleClickLineEdit(QLineEdit):
             event.accept()
             return
         super().mousePressEvent(event)
+
+# =================================================================
+# 회전하는 SVG 로딩 아이콘 라벨
+# =================================================================
+class SpinningIconLabel(QLabel):
+    def __init__(self, icon_path, color="#FF5722", size=22, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(size, size)
+        self.pixmap = get_colored_pixmap(icon_path, color, size, size)
+        self.angle = 0
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.rotate)
+        self.timer.start(30)
+
+    def rotate(self):
+        self.angle = (self.angle + 8) % 360
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        
+        # 중심점 기준 회전
+        painter.translate(self.width() / 2, self.height() / 2)
+        painter.rotate(self.angle)
+        painter.translate(-self.width() / 2, -self.height() / 2)
+        
+        painter.drawPixmap(self.rect(), self.pixmap)
+
+# =================================================================
+# 프리미엄 디자인 커스텀 로딩 다이얼로그
+# =================================================================
+class ModernProgressDialog(QDialog):
+    def __init__(self, label_text, cancel_button_text, minimum, maximum, parent=None):
+        super().__init__(parent)
+        self.setModal(True)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint | Qt.WindowSystemMenuHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        
+        self.minimum = minimum
+        self.maximum = maximum
+        self.value = minimum
+        self.canceled = False
+        
+        self.init_ui(label_text, cancel_button_text)
+        
+    def init_ui(self, label_text, cancel_button_text):
+        if cancel_button_text:
+            self.setFixedSize(420, 170)
+        elif self.maximum == 0:
+            self.setFixedSize(420, 115)
+        else:
+            self.setFixedSize(420, 145)
+        
+        # 메인 레이아웃 (그림자 여백 확보를 위해 마진 설정)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        
+        # 다이얼로그 바디 프레임
+        self.body = QFrame(self)
+        self.body.setObjectName("ProgressBody")
+        self.body.setStyleSheet("""
+            QFrame#ProgressBody {
+                background-color: #FFFFFF;
+                border: 1px solid #FFE5D9;
+                border-radius: 12px;
+            }
+        """)
+        
+        # 고급스러운 그림자 효과 적용
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(24)
+        shadow.setColor(QColor(0, 0, 0, 15))
+        shadow.setOffset(0, 3)
+        self.body.setGraphicsEffect(shadow)
+        
+        body_layout = QVBoxLayout(self.body)
+        if cancel_button_text or self.maximum > 0:
+            body_layout.setContentsMargins(24, 24, 24, 20)
+        else:
+            body_layout.setContentsMargins(24, 24, 24, 24)
+        body_layout.setSpacing(16)
+        
+        # 로딩 메시지와 회전 아이콘을 정렬할 가로 레이아웃
+        text_layout = QHBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(12)
+        text_layout.setAlignment(Qt.AlignVCenter)
+        
+        # 로딩 스피너 추가 (config.ICON_REFRESH를 이용해 회전)
+        self.spinner = SpinningIconLabel(config.ICON_REFRESH, color="#FF5722", size=22, parent=self.body)
+        text_layout.addWidget(self.spinner)
+        
+        # 텍스트에서 이모지 제거
+        clean_text = label_text
+        if clean_text.startswith("⏳"):
+            clean_text = clean_text[1:].strip()
+        elif clean_text.startswith("⌛"):
+            clean_text = clean_text[1:].strip()
+            
+        self.lbl_text = QLabel(clean_text, self.body)
+        self.lbl_text.setStyleSheet("""
+            font-family: 'Pretendard';
+            font-size: 14px;
+            font-weight: bold;
+            color: #1F2937;
+            background: transparent;
+            border: none;
+        """)
+        self.lbl_text.setWordWrap(True)
+        text_layout.addWidget(self.lbl_text, 1)
+        
+        body_layout.addLayout(text_layout)
+        
+        # 프로그레스바
+        from PySide6.QtWidgets import QProgressBar
+        self.progress_bar = QProgressBar(self.body)
+        self.progress_bar.setFixedHeight(8)
+        self.progress_bar.setRange(self.minimum, self.maximum)
+        self.progress_bar.setValue(self.value)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #F3F4F6;
+                border-radius: 4px;
+                border: none;
+            }
+            QProgressBar::chunk {
+                background-color: #FF5722;
+                border-radius: 4px;
+            }
+        """)
+        body_layout.addWidget(self.progress_bar)
+        
+        # 하단 정보 및 버튼 레이아웃
+        bottom_layout = QHBoxLayout()
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 진행 상태 텍스트
+        init_percent = f"{int((self.value / self.maximum) * 100)}%" if self.maximum > 0 else ""
+        self.lbl_percent = QLabel(init_percent, self.body)
+        self.lbl_percent.setStyleSheet("""
+            font-family: 'Pretendard';
+            font-size: 12px;
+            color: #6B7280;
+            background: transparent;
+            border: none;
+        """)
+        if self.maximum == 0:
+            self.lbl_percent.hide()
+        bottom_layout.addWidget(self.lbl_percent)
+        bottom_layout.addStretch()
+        
+        # 중단(취소) 버튼
+        if cancel_button_text:
+            self.btn_cancel = QPushButton(cancel_button_text, self.body)
+            self.btn_cancel.setFixedSize(70, 30)
+            self.btn_cancel.setCursor(Qt.PointingHandCursor)
+            self.btn_cancel.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    border: 1px solid #D1D5DB;
+                    border-radius: 6px;
+                    color: #4B5563;
+                    font-family: 'Pretendard';
+                    font-size: 12px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #F9FAFB;
+                    border-color: #9CA3AF;
+                    color: #1F2937;
+                }
+            """)
+            self.btn_cancel.clicked.connect(self.on_cancel_clicked)
+            bottom_layout.addWidget(self.btn_cancel)
+            
+        if cancel_button_text or self.maximum > 0:
+            body_layout.addLayout(bottom_layout)
+        layout.addWidget(self.body)
+        
+    def on_cancel_clicked(self):
+        self.canceled = True
+        self.reject()
+        
+    def setValue(self, val):
+        self.value = val
+        self.progress_bar.setValue(val)
+        if self.maximum == 0:
+            self.lbl_percent.hide()
+        else:
+            percent = int((val / self.maximum) * 100) if self.maximum > 0 else 0
+            self.lbl_percent.setText(f"{percent}%")
+            self.lbl_percent.show()
+        QApplication.processEvents()
+        
+    def setLabelText(self, text):
+        clean_text = text
+        if clean_text.startswith("⏳"):
+            clean_text = clean_text[1:].strip()
+        elif clean_text.startswith("⌛"):
+            clean_text = clean_text[1:].strip()
+        self.lbl_text.setText(clean_text)
+        QApplication.processEvents()
+        
+    def wasCanceled(self):
+        return self.canceled
 

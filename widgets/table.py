@@ -6,9 +6,13 @@ from PySide6.QtWidgets import (
     QComboBox, QLineEdit, QStyledItemDelegate, QApplication, QPushButton
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QModelIndex
-from PySide6.QtGui import QPainter, QColor, QPen, QKeySequence
+from PySide6.QtGui import QPainter, QColor, QPen, QKeySequence, QFont
 
 import config
+
+class UndoStateList(list):
+    """list를 상속받아 동적 속성(auto_added_chars 등) 부여가 가능하도록 만든 상태 리스트 클래스"""
+    pass
 
 class SheetCellLineEdit(QLineEdit):
     def __init__(self, parent=None, delegate=None, index=None):
@@ -53,7 +57,8 @@ class ExcelTextDelegate(QStyledItemDelegate):
 
         editor.setStyleSheet("""
             QLineEdit { 
-                border: 2px solid #FF5722; 
+                border: 2px solid #ff4b4b; 
+                border-radius: 0px;
                 padding: 0px; 
                 background-color: white;
                 font-family: 'Pretendard';
@@ -107,18 +112,34 @@ class SpreadsheetTable(QTableWidget):
         self.verticalHeader().setMinimumSectionSize(47)
         self.verticalHeader().setDefaultSectionSize(47)
         self.verticalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.verticalHeader().setDefaultAlignment(Qt.AlignCenter)
 
-        self.setStyleSheet("""
-            QTableWidget {
+        app_font = QApplication.font()
+        f_family = app_font.family()
+        if f_family == "sans-serif" or not f_family:
+            f_family = "Pretendard"
+        table_font = QFont(f_family, 11)
+        table_font.setStyleStrategy(QFont.PreferAntialias)
+        table_font.setHintingPreference(QFont.PreferNoHinting)
+        self.setFont(table_font)
+
+        self.setStyleSheet(f"""
+            QTableWidget {{
                 gridline-color: #e0e0e0;
                 background-color: white;
                 selection-background-color: #e8f0fe;
                 selection-color: black;
-                font-size: 13px;
+                font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
+                font-size: 14px;
                 outline: none;
-            }
-            QTableWidget::item { padding-left: 5px; padding-right: 5px; } 
-            QTableWidget::item:focus { border: 2px solid #1a73e8; }
+            }}
+            QTableWidget::item {{ 
+                padding-left: 5px; 
+                padding-right: 5px; 
+                font-family: '{f_family}', 'Malgun Gothic', 'Segoe UI', sans-serif;
+                border-radius: 0px;
+            }} 
+            QTableWidget::item:focus {{ border: 2px solid #1a73e8; border-radius: 0px; }}
         """)
         
         self.drop_target_row = None
@@ -131,7 +152,7 @@ class SpreadsheetTable(QTableWidget):
         self.redo_stack.clear()
 
     def get_table_state(self):
-        state = []
+        state = UndoStateList()
         try:
             for r in range(self.rowCount()):
                 combo_text = ""
@@ -220,6 +241,14 @@ class SpreadsheetTable(QTableWidget):
                 if len(previous_state) == 0 and len(current_state) > 3:
                     self.undo_stack.append(previous_state)  # 스택에 다시 넣어 원복
                     return
+                
+                # [실행취소 시 스텝 2 자동 추가된 캐릭터 연동 삭제]
+                auto_chars = getattr(previous_state, "auto_added_chars", [])
+                if auto_chars:
+                    mw = self.window()
+                    if mw and hasattr(mw, 'remove_character_card_only'):
+                        for char_name in auto_chars:
+                            mw.remove_character_card_only(char_name)
                     
                 self.redo_stack.append(current_state)
                 self.restore_table_state(previous_state)

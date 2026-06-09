@@ -2,7 +2,7 @@
 from .common import (
     ResponsiveLabel, ClickableComboBox, WebtoonScrollArea, PopupItemDelegate,
     HoverIconButton, FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage,
-    get_round_rect_pixmap
+    get_round_rect_pixmap, ModernProgressDialog
 )
 from .character import (
     CharacterRow, CharacterListContainer, FloatingCharacterViewer, GlobalCharacterSettingsDialog,
@@ -12,5 +12,5 @@ from .table import (
     SpreadsheetTable, ExcelTextDelegate
 )
 from .dialogs import (
-    SpellCheckDialog, ProjectManagementDialog, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog
+    SpellCheckDialog, ScriptMergeDialog, ProjectManagementDialog, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog, TextCleanDialog, CustomInputDialog, ShortcutHelpDialog
 )
