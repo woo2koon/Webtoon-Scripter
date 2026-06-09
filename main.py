@@ -460,6 +460,8 @@ class CustomTabHeader(QWidget):
                 
                 self.lbl_icon.setPixmap(pixmap)
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 print(f"경고 아이콘 SVG 색상 렌더링 중 오류 발생: {e}")
                 
         self.update()
@@ -511,11 +513,47 @@ class WebtoonManager(QMainWindow):
         # About 다이얼로그 강한 참조 (GC 방지: 빌드 앱에서 로컬 변수는 즉시 해제될 수 있음)
         self.about_dialog = None
         self.init_ui()
-        # [추가] 애플리케이션 및 메인 윈도우의 아이콘을 슬레이트(영화) 아이콘으로 설정
-        app_icon_path = config.ICON_MOVIE
-        if os.path.exists(app_icon_path):
-            self.setWindowIcon(QIcon(app_icon_path))
-            QApplication.setWindowIcon(QIcon(app_icon_path))
+        # [추가] 애플리케이션 및 메인 윈도우의 아이콘 설정 (OS별 분기 및 여백 처리)
+        import sys
+        if sys.platform == "darwin":
+            # macOS용 독/창 아이콘
+            app_icon_path = os.path.join(config.BASE_DIR, "app_icons", "webtoon_scripter_icon_black_modified_mac.png")
+            if os.path.exists(app_icon_path):
+                from PySide6.QtGui import QPixmap, QPainter
+                from PySide6.QtCore import Qt, QRect
+                orig_pixmap = QPixmap(app_icon_path)
+                if not orig_pixmap.isNull():
+                    # 1024x1024 등의 캔버스에 82% 수준으로 줄여서 중앙에 배치해 투명 마진(여백)을 추가합니다.
+                    size = max(orig_pixmap.width(), orig_pixmap.height())
+                    if size <= 0:
+                        size = 512
+                    new_pixmap = QPixmap(size, size)
+                    new_pixmap.fill(Qt.transparent)
+                    
+                    painter = QPainter(new_pixmap)
+                    painter.setRenderHint(QPainter.Antialiasing, True)
+                    painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+                    
+                    # 82% 크기로 축소 (상하좌우 약 9%의 투명 여백 확보)
+                    scaled_size = int(size * 0.82)
+                    offset = (size - scaled_size) // 2
+                    painter.drawPixmap(QRect(offset, offset, scaled_size, scaled_size), orig_pixmap)
+                    painter.end()
+                    
+                    mac_icon = QIcon(new_pixmap)
+                    self.setWindowIcon(mac_icon)
+                    QApplication.setWindowIcon(mac_icon)
+            else:
+                app_icon_path = config.ICON_MOVIE
+                if os.path.exists(app_icon_path):
+                    self.setWindowIcon(QIcon(app_icon_path))
+                    QApplication.setWindowIcon(QIcon(app_icon_path))
+        else:
+            # Windows 및 기타 OS 기본 아이콘
+            app_icon_path = config.ICON_MOVIE
+            if os.path.exists(app_icon_path):
+                self.setWindowIcon(QIcon(app_icon_path))
+                QApplication.setWindowIcon(QIcon(app_icon_path))
         self.update_zoom_style()
         self.refresh_project_list()
         self.idiom_shortcuts = []
@@ -1486,11 +1524,13 @@ class WebtoonManager(QMainWindow):
                 padding: 0px;
                 margin-right: 8px;
                 font-family: 'Pretendard';
+                border-bottom: none;
             }
             
             /* 4. 선택된 탭 */
             QTabBar::tab:selected {
                 color: #FF5722;
+                border-bottom: none;
             }
             
             QTabBar::tab:hover {
@@ -2167,17 +2207,36 @@ class WebtoonManager(QMainWindow):
         self.viewer_stack.setStyleSheet(f"#ViewerStack {{ background-color: {bg_color}; border-radius: 8px; border: 1px solid #D1D5DB; padding: 1px; }}")
 
     def init_tab_headers(self):
-        self.tab_headers = []
-        tab_names = ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"]
+        # 1. 저장된 탭 순서로 레이아웃 재배치
+        saved_order = getattr(config, 'TAB_ORDER', ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"])
         
+        tab_widgets = {}
+        for i in range(self.tabs.count()):
+            widget = self.tabs.widget(i)
+            title = self.tabs.tabText(i)
+            tab_widgets[title] = widget
+            
         self.tabs.blockSignals(True)
+        self.tabs.clear()
+        
+        for name in saved_order:
+            if name in tab_widgets:
+                self.tabs.addTab(tab_widgets[name], name)
+        
+        # 2. CustomTabHeader 설정 및 헤더 수집
+        self.tab_headers = []
         for idx in range(self.tabs.count()):
+            title = self.tabs.tabText(idx)
             self.tabs.setTabText(idx, "")
-            header = CustomTabHeader(tab_names[idx], is_selected=(idx == self.tabs.currentIndex()), parent=self)
+            header = CustomTabHeader(title, is_selected=(idx == self.tabs.currentIndex()), parent=self)
             self.tabs.tabBar().setTabButton(idx, QTabBar.LeftSide, header)
             self.tab_headers.append(header)
         self.tabs.blockSignals(False)
         
+        try:
+            self.tabs.currentChanged.disconnect(self.on_tab_changed_refresh_headers)
+        except:
+            pass
         self.tabs.currentChanged.connect(self.on_tab_changed_refresh_headers)
 
     def on_tab_changed_refresh_headers(self, index):
@@ -2193,6 +2252,18 @@ class WebtoonManager(QMainWindow):
             self.tabs.tabBar().moveTab(to_idx, from_idx)
             self.tabs.tabBar().blockSignals(False)
             return
+
+        # 이동이 성공했으므로 탭 순서를 수집하여 영구 저장
+        new_order = []
+        for idx in range(self.tabs.count()):
+            header = self.tabs.tabBar().tabButton(idx, QTabBar.LeftSide)
+            if isinstance(header, CustomTabHeader):
+                new_order.append(header.text)
+            else:
+                new_order.append(f"Step {idx + 1}")
+                
+        config.TAB_ORDER = new_order
+        config.save_settings()
 
 
 
@@ -2702,11 +2773,13 @@ class WebtoonManager(QMainWindow):
                     padding: 0px;
                     margin-right: 8px;
                     font-family: 'Pretendard';
+                    border-bottom: none;
                 }
                 
                 /* 4. 선택된 탭 */
                 QTabBar::tab:selected {
                     color: #FF5722;
+                    border-bottom: none;
                 }
                 
                 QTabBar::tab:hover {
@@ -4997,7 +5070,7 @@ if __name__ == "__main__":
     # 미설정 시 프로세스명(Webtoon_Scripter)으로 대체되어 AboutRole 매핑이 틀어짐.
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     app.setApplicationName(config.APP_NAME)           # "Webtoon Scripter"
-    app.setApplicationVersion(config.APP_VERSION)     # "2.5.5"
+    app.setApplicationVersion(config.APP_VERSION)     # "3.0.0"
     app.setOrganizationName("PAK JINWOO")
     app.setOrganizationDomain("com.woo2koon.webtoonscripter")
     

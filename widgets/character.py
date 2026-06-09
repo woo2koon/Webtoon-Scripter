@@ -1244,12 +1244,9 @@ class FloatingCharacterViewer(QDialog):
         svg_help_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FF4B4B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>'
         self.btn_help = TitleBarButton(svg_help_normal, svg_help_hover, "#E5E7EB")
         
-        help_text = """<div style='line-height: 150%;'>
-<b style='color: #FF4B4B;'>💡 캐릭터 도우미 사용 안내</b><br>
-• <b>Step 2 (캐릭터 추가)</b>: 더블클릭 또는 드래그하여 리스트에 추가<br>
-• <b>Step 3 (역할 배정)</b>: 리스트의 인물을 대본 캐릭터 셀로 드래그<br>
-• <b>현재 회차 탭</b>: 대본 셀에 배정된 인물 자동 노출 및 빠른 드래그 입력
-</div>"""
+        help_text = ("- Step 2 (캐릭터 추가): 더블클릭 또는 드래그하여 리스트에 추가\n"
+                     "- Step 3 (역할 배정): 리스트의 인물을 대본 캐릭터 셀로 드래그\n"
+                     "- 현재 회차 등장인물: 대본 셀에 배정된 인물 자동 노출 및 빠른 드래그 입력")
         self.btn_help.setToolTip(help_text)
         title_layout.addWidget(self.btn_help)
         

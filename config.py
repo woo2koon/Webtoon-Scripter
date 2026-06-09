@@ -23,7 +23,7 @@ MY_DEFAULT_AI_KEY = ""   # <-- 여기에 직접 입력하지 마세요!
 
 # 1. 앱 이름 (이 이름으로 사용자의 컴퓨터에 폴더가 생깁니다)
 APP_NAME = "Webtoon Scripter"
-APP_VERSION = "2.5.5"
+APP_VERSION = "3.0.0"
 
 if getattr(sys, 'frozen', False):
     # [읽기전용] EXE 내부에 압축된 아이콘 등 (임시 폴더)
@@ -132,6 +132,9 @@ CHARACTER_VIEWER_SIZE = None
 MAIN_WINDOW_POS = None
 MAIN_WINDOW_SIZE = None
 
+# [신규 추가] 탭 레이아웃 순서 기억
+TAB_ORDER = ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"]
+
 MODERN_STYLE = f"""
     QWidget {{
         font-family: {FONT_FAMILY};
@@ -141,7 +144,7 @@ MODERN_STYLE = f"""
 """
 
 def load_settings():
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER
     IS_SIMPLE_MODE = False
     
     # 1. 일단 하드코딩된 키로 초기화
@@ -165,8 +168,8 @@ def load_settings():
                             cleaned_presets[name] = {"ocr": value, "ai": ""}
                         elif isinstance(value, dict):
                             cleaned_presets[name] = {
-                                "ocr": value.get("ocr", ""),
-                                "ai": value.get("ai", "")
+                                  "ocr": value.get("ocr", ""),
+                                  "ai": value.get("ai", "")
                             }
                         else:
                             cleaned_presets[name] = {"ocr": "", "ai": ""}
@@ -195,6 +198,7 @@ def load_settings():
                     CHARACTER_VIEWER_SIZE = data.get("character_viewer_size", None)
                     MAIN_WINDOW_POS = data.get("main_window_pos", None)
                     MAIN_WINDOW_SIZE = data.get("main_window_size", None)
+                    TAB_ORDER = data.get("tab_order", ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"])
                 
                 else:
                     # 구형 데이터 구조일 경우 처리
@@ -233,7 +237,7 @@ def load_settings():
         AI_API_KEY = OCR_API_KEY
 
 def save_settings(presets=None, active_name=None, is_simple_mode=None):
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER
     
     if presets is not None:
         API_PRESETS = presets
@@ -263,7 +267,8 @@ def save_settings(presets=None, active_name=None, is_simple_mode=None):
         "character_viewer_pos": CHARACTER_VIEWER_POS,
         "character_viewer_size": CHARACTER_VIEWER_SIZE,
         "main_window_pos": MAIN_WINDOW_POS,
-        "main_window_size": MAIN_WINDOW_SIZE
+        "main_window_size": MAIN_WINDOW_SIZE,
+        "tab_order": TAB_ORDER
     }
     try:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:

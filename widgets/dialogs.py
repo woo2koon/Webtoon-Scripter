@@ -1099,10 +1099,7 @@ class FloatingIdiomViewer(QDialog):
         
         is_mac = sys.platform == "darwin"
         shortcut_key = "⌥" if is_mac else "Alt"
-        help_text = f"""<div style='line-height: 150%;'>
-<b style='color: #FF5722;'>💡 관용구 도우미 사용 안내</b><br>
-• <b>빠른 입력</b>: 단축키({shortcut_key}+숫자) 혹은 더블 클릭으로 본문에 자동 삽입
-</div>"""
+        help_text = f"빠른 입력: 단축키({shortcut_key}+숫자) 혹은 더블 클릭으로 본문에 자동 삽입"
         self.btn_help.setToolTip(help_text)
         title_layout.addWidget(self.btn_help)
         
