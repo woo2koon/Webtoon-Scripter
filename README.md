@@ -11,11 +11,11 @@
 
 <table>
   <tr>
-    <td align="center"><b>🖥️ 프로젝트 모드 (Full Mode)</b></td>
+    <td align="center"><b>🖥️ 전체 모드 (Full Mode)</b></td>
     <td align="center"><b>⚡ 심플 모드 (Simple Mode)</b></td>
   </tr>
   <tr>
-    <td><img src="assets/project_mode.png" width="450" alt="프로젝트 모드 스크린샷"></td>
+    <td><img src="assets/project_mode.png" width="450" alt="전체 모드 스크린샷"></td>
     <td><img src="assets/simple_mode.png" width="450" alt="심플 모드 스크린샷"></td>
   </tr>
   <tr>
@@ -106,13 +106,13 @@ graph TD
     C --> D[대사 편집 & 텍스트 정제]
     D --> H[AI 맞춤법 교정 & 차이 비교/되돌리기]
     
-    A -->|프로젝트 모드| E[작품/회차 프로젝트 생성]
+    A -->|전체 모드| E[작품/회차 프로젝트 생성]
     E --> F[웹툰 이미지 로드 & OCR 분석]
     F --> G[대사 편집 & 텍스트 정제]
     G --> H
     
     H -->|심플 모드| I[텍스트 파일 저장]
-    H -->|프로젝트 모드| J[캐릭터 DB 연동 & 대사 배정]
+    H -->|전체 모드| J[캐릭터 DB 연동 & 대사 배정]
     J --> K[엑셀 파일 저장]
 ```
 
