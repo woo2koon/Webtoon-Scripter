@@ -4,7 +4,7 @@
 [![UI Framework](https://img.shields.io/badge/PySide6-Qt_6-41CD52?style=flat-square&logo=qt&logoColor=white)](https://doc.qt.io/qtforpython-6/)
 [![AI Integration](https://img.shields.io/badge/Gemini_AI-Google-4285F4?style=flat-square&logo=google-gemini&logoColor=white)](https://deepmind.google/technologies/gemini/)
 [![OCR Engine](https://img.shields.io/badge/Google_Vision-OCR-EA4335?style=flat-square&logo=google-cloud&logoColor=white)](https://cloud.google.com/vision)
-[![Download](https://img.shields.io/github/v/release/woo2koon/Webtoon-Scripter?label=%EC%84%A4%EC%B9%98%ED%8C%8C%EC%9D%BC%20%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C&style=flat-square&color=007ACC)](https://github.com/woo2koon/Webtoon-Scripter/releases/latest)
+[📦 최신 윈도우 설치 파일 (.exe) 다운로드 바로가기](https://github.com/woo2koon/Webtoon-Scripter/releases/latest)
 
 웹툰 대사 추출, AI 맞춤법 교정, 그리고 스크립트 작성 공정을 자동화하는 전문가용 저작 보조 도구입니다. 복잡한 워크플로우를 극적으로 단순화하여 작업 시간을 획기적으로 단축시킵니다.
 
