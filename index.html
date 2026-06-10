@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webtoon Scripter v3.0 - 웹툰 대사 추출 및 저작 보조 도구</title>
+    <meta name="description" content="구글 비전 OCR과 Gemini AI 맞춤법 검사를 탑재한 전문가용 웹툰 스크립트 제작 도구. 엑셀 내보내기 및 dubright 호환성을 제공합니다.">
+    
+    <!-- Google Fonts & Font Awesome Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+KR:wght@300;400;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(255, 255, 255, 0.03);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --primary-color: #3b82f6;
+            --primary-glow: rgba(59, 130, 246, 0.3);
+            --accent-color: #60a5fa;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* Background Glow Effects */
+        .glow-orb {
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            background: radial-gradient(circle, var(--primary-glow) 0%, rgba(11,15,25,0) 70%);
+            top: -200px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: -1;
+            filter: blur(80px);
+            pointer-events: none;
+        }
+
+        /* Container */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 24px 0;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #ffffff 0%, var(--accent-color) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .github-link {
+            color: var(--text-main);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 8px 16px;
+            border: 1px solid var(--card-border);
+            border-radius: 99px;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .github-link:hover {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 15px var(--primary-glow);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        /* Hero Section */
+        .hero {
+            text-align: center;
+            padding: 80px 0 60px 0;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 6px 14px;
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            color: var(--accent-color);
+            border-radius: 99px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 24px;
+            letter-spacing: 0.5px;
+        }
+
+        .hero h1 {
+            font-size: 56px;
+            font-weight: 800;
+            line-height: 1.2;
+            letter-spacing: -1.5px;
+            margin-bottom: 24px;
+            background: linear-gradient(to right, #ffffff, #93c5fd);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero p {
+            font-size: 18px;
+            color: var(--text-muted);
+            max-width: 650px;
+            margin: 0 auto 40px auto;
+            font-weight: 300;
+        }
+
+        .cta-group {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px 32px;
+            background: var(--primary-color);
+            color: white;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 16px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px var(--primary-glow);
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(59, 130, 246, 0.5);
+            background: #2563eb;
+        }
+
+        .btn-secondary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px 32px;
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--text-main);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 16px;
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: var(--text-muted);
+        }
+
+        /* Feature Section */
+        .features {
+            padding: 60px 0;
+        }
+
+        .section-title {
+            text-align: center;
+            font-size: 32px;
+            font-weight: 800;
+            margin-bottom: 48px;
+            letter-spacing: -0.5px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 24px;
+        }
+
+        /* Glassmorphism Cards */
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 32px;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .card:hover {
+            transform: translateY(-6px);
+            border-color: rgba(59, 130, 246, 0.3);
+            background: rgba(255, 255, 255, 0.05);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 20px rgba(59, 130, 246, 0.05);
+        }
+
+        .card-icon {
+            font-size: 32px;
+            margin-bottom: 20px;
+        }
+
+        .card h3 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .card p {
+            font-size: 14px;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        /* Preview Grid (Screenshots) */
+        .previews {
+            padding: 60px 0 100px 0;
+            background: radial-gradient(circle at bottom, rgba(59, 130, 246, 0.05) 0%, rgba(11,15,25,0) 70%);
+        }
+
+        .preview-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 32px;
+            margin-top: 40px;
+        }
+
+        @media (max-width: 900px) {
+            .preview-grid {
+                grid-template-columns: 1fr;
+            }
+            .hero h1 {
+                font-size: 40px;
+            }
+        }
+
+        .preview-item {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .preview-item h4 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--accent-color);
+        }
+
+        .preview-img-wrapper {
+            width: 100%;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            aspect-ratio: 16/10;
+            background: #141b2d;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .preview-img-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.5s ease;
+        }
+
+        .preview-img-wrapper img:hover {
+            transform: scale(1.03);
+        }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--card-border);
+            padding: 40px 0;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="glow-orb"></div>
+
+    <!-- Container Wrap -->
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="logo">🎨 Webtoon Scripter</div>
+            <a href="https://github.com/woo2koon/Webtoon-Scripter" class="github-link" target="_blank" rel="noopener noreferrer">GitHub Repository</a>
+        </header>
+
+        <!-- Hero Section -->
+        <section class="hero">
+            <span class="badge">v3.0.0 RELEASE</span>
+            <h1>웹툰 번역 및 대사 추출의 신세계</h1>
+            <p>구글 비전 OCR과 Gemini AI 맞춤법 검사를 탑재한 전문가용 스크립터. 복잡했던 다국어 스크립트 배정 공정을 원클릭으로 가속화하세요.</p>
+            
+            <div class="cta-group">
+                <!-- 원클릭 다이렉트 다운로드 바로가기 링크 매핑 -->
+                <a href="https://github.com/woo2koon/Webtoon-Scripter/releases/download/v3.0.0/Webtoon_Scripter_v3.0_Setup.exe" class="btn-primary" id="btn-download">
+                    📦 Windows 설치 파일 (.exe) 다운로드
+                </a>
+                <a href="https://github.com/woo2koon/Webtoon-Scripter/releases/latest" class="btn-secondary" target="_blank" rel="noopener noreferrer">
+                    🚀 최신 Releases 페이지로 이동
+                </a>
+            </div>
+        </section>
+
+        <!-- Features Section -->
+        <section class="features">
+            <h2 class="section-title">주요 핵심 기능</h2>
+            <div class="grid">
+                <!-- Card 1 -->
+                <div class="card">
+                    <div class="card-icon">🔍</div>
+                    <h3>고도화된 OCR & 분절</h3>
+                    <p>스마트 모션을 통한 흰색 여백 자동 스캔 컷 슬라이싱 모드를 통해, 컷 내부의 글자가 절단선에 걸려 잘리는 현상을 미연에 방지합니다. 2배 LANCZOS 업스케일링 및 고선명 전처리를 내장하여 작은 텍스트 인식률을 획기적으로 개선합니다.</p>
+                </div>
+                <!-- Card 2 -->
+                <div class="card">
+                    <div class="card-icon">🤖</div>
+                    <h3>Gemini AI 맞춤법 교정</h3>
+                    <p>구어체 뉘앙스를 유지하면서 띄어쓰기 및 맞춤법을 자동으로 교정합니다. 맞춤법 검사 전/후 변경 부분을 직관적인 컬러 Diff(차이 비교) 다이얼로그로 확인하고 마음에 들지 않으면 즉시 원래 대사로 되돌릴(Undo) 수 있습니다.</p>
+                </div>
+                <!-- Card 3 -->
+                <div class="card">
+                    <div class="card-icon">📊</div>
+                    <h3>배정 시트 & dubright 호환</h3>
+                    <p>스프레드시트 에디터에서 대사 순서 이동(셀 이동), 셀 병합/셀 나누기를 손쉽게 처리합니다. 특히 엑셀 저장 시 백그라운드에서 Excel을 자동 제어 재저장(Re-save) 함으로써 사내 더빙 툴인 'dubright' 업로드 시 캐릭터 역할 유실이 발생하지 않도록 정규화해 줍니다.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Preview Section -->
+        <section class="previews">
+            <h2 class="section-title">스크린샷 미리보기</h2>
+            <div class="preview-grid">
+                <!-- Preview 1 -->
+                <div class="preview-item">
+                    <h4>🖥️ 전체 모드 (Full Mode)</h4>
+                    <div class="preview-img-wrapper">
+                        <img src="assets/project_mode.png" alt="전체 모드 구동 화면 스크린샷">
+                    </div>
+                </div>
+                <!-- Preview 2 -->
+                <div class="preview-item">
+                    <h4>⚡ 심플 모드 (Simple Mode)</h4>
+                    <div class="preview-img-wrapper">
+                        <img src="assets/simple_mode.png" alt="심플 모드 구동 화면 스크린샷">
+                    </div>
+                </div>
+                <!-- Preview 3 -->
+                <div class="preview-item">
+                    <h4>👥 캐릭터 DB & 도우미</h4>
+                    <div class="preview-img-wrapper">
+                        <img src="assets/character_helper.png" alt="캐릭터 도우미 화면 스크린샷">
+                    </div>
+                </div>
+                <!-- Preview 4 -->
+                <div class="preview-item">
+                    <h4>📚 관용구 도우미</h4>
+                    <div class="preview-img-wrapper">
+                        <img src="assets/idiom_helper.png" alt="관용구 도우미 화면 스크린샷">
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer>
+            <p>© 2026 PAK JINWOO. All rights reserved. Webtoon Scripter is licensed under the repository regulations.</p>
+        </footer>
+    </div>
+</body>
+</html>
