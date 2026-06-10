@@ -29,8 +29,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "dist\Webtoon_Scripter\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Webtoon Scripter"; Filename: "{app}\Webtoon_Scripter.exe"; IconFilename: "{app}\app_icon\webtoon_scripter_icon_windows.ico"
-Name: "{autodesktop}\Webtoon Scripter"; Filename: "{app}\Webtoon_Scripter.exe"; Tasks: desktopicon; IconFilename: "{app}\app_icon\webtoon_scripter_icon_windows.ico"
+Name: "{group}\Webtoon Scripter"; Filename: "{app}\Webtoon_Scripter.exe"; IconFilename: "{app}\_internal\app_icon\webtoon_scripter_icon_windows.ico"
+Name: "{autodesktop}\Webtoon Scripter"; Filename: "{app}\Webtoon_Scripter.exe"; Tasks: desktopicon; IconFilename: "{app}\_internal\app_icon\webtoon_scripter_icon_windows.ico"
 
 [Run]
 Description: "{cm:LaunchProgram,Webtoon Scripter}"; Filename: "{app}\Webtoon_Scripter.exe"; Flags: nowait postinstall skipifsilent
