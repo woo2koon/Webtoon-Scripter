@@ -358,7 +358,7 @@ class SettingsDialog(QDialog):
             if name in self.local_presets:
                 QMessageBox.warning(self, "중복", "이미 존재하는 이름입니다.")
                 return
-            self.local_presets[name] = {"ocr": "", "ai": ""}
+            self.local_presets[name] = {"ocr": "", "ai": "", "ui_ai": "", "unified": True}
             self.combo_presets.addItem(name)
             self.combo_presets.setCurrentText(name)
             self.input_ocr.setFocus()
