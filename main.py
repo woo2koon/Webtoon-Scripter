@@ -4408,6 +4408,70 @@ class WebtoonManager(QMainWindow):
         self.table_script.resizeRowsToContents() 
         self.save_script_data()
 
+    def trigger_update_download(self, download_url, version_tag, dlg):
+        current_os = platform.system()
+        ext = ".dmg" if current_os == "Darwin" else ".exe"
+        temp_dir = os.path.join(config.CACHE_DIR, "temp_update")
+        os.makedirs(temp_dir, exist_ok=True)
+        dest_path = os.path.join(temp_dir, f"update_{version_tag}{ext}")
+        
+        self.download_worker = UpdateDownloadWorker(download_url, dest_path)
+        self.download_worker.progress.connect(lambda val: dlg.set_progress(val, f"업데이트 파일 다운로드 중... {val}%"))
+        self.download_worker.finished_download.connect(lambda path: self.on_update_download_finished(dlg, path))
+        self.download_worker.error.connect(lambda err: dlg.show_error(err))
+        self.download_worker.start()
+
+    def on_update_download_finished(self, dlg, file_path):
+        dlg.set_progress(100, "다운로드 완료! 업데이트를 적용하는 중...")
+
+        # 업데이트 전에 작성 중이던 모든 문서 강제 자동 저장
+        try:
+            self.save_text_content()
+            self.save_script_data()
+            self.save_char_data()
+        except Exception as e:
+            print(f"Pre-update autosave failed: {e}")
+
+        current_os = platform.system()
+        try:
+            if current_os == "Windows":
+                import subprocess
+                args = [file_path, "/SILENT", "/SUPPRESSMSGBOXES", "/NOCANCEL"]
+                subprocess.Popen(args)
+                sys.exit(0)
+            elif current_os == "Darwin":
+                import subprocess
+                
+                # 임시 마운트 포인트 설정
+                mount_point = "/tmp/Webtoon_Scripter_Mount"
+                
+                script = f"""(
+                    sleep 1 && \
+                    # 1. 기존 임시 마운트 폴더 정리 및 생성
+                    rm -rf "{mount_point}" && \
+                    mkdir -p "{mount_point}" && \
+                    # 2. 다운로드된 dmg 파일을 숨김 마운트
+                    hdiutil attach -nobrowse -mountpoint "{mount_point}" "{file_path}" && \
+                    # 3. 기존 애플리케이션 폴더의 구버전 제거
+                    rm -rf "/Applications/Webtoon Scripter.app" && \
+                    # 4. dmg 내부의 최신 앱을 Applications 폴더로 복사
+                    cp -R "{mount_point}/Webtoon Scripter.app" "/Applications/Webtoon Scripter.app" && \
+                    # 5. macOS 격리 속성(Quarantine) 해제
+                    xattr -d com.apple.quarantine "/Applications/Webtoon Scripter.app" && \
+                    # 6. dmg 디스크 이미지 마운트 해제
+                    hdiutil detach "{mount_point}" && \
+                    # 7. 최신 앱 실행
+                    open "/Applications/Webtoon Scripter.app"
+                ) &"""
+                
+                subprocess.Popen(script, shell=True)
+                sys.exit(0)
+            else:
+                QMessageBox.warning(dlg, "오류", "지원되지 않는 운영체제입니다.")
+                dlg.set_downloading_mode(False)
+        except Exception as e:
+            dlg.show_error(str(e))
+
     def save_script_data(self, *args):
         import pandas as pd
         e_path, _, _ = self.get_paths()
