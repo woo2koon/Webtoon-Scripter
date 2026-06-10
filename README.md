@@ -1,4 +1,4 @@
-# 🎨 Webtoon Script Manager (v2.0)
+# 🎨 Webtoon Script Manager (v3.0)
 
 [![Python Version](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![UI Framework](https://img.shields.io/badge/PySide6-Qt_6-41CD52?style=flat-square&logo=qt&logoColor=white)](https://doc.qt.io/qtforpython-6/)
