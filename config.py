@@ -23,7 +23,7 @@ MY_DEFAULT_AI_KEY = ""   # <-- 여기에 직접 입력하지 마세요!
 
 # 1. 앱 이름 (이 이름으로 사용자의 컴퓨터에 폴더가 생깁니다)
 APP_NAME = "Webtoon Scripter"
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.0.1"
 
 if getattr(sys, 'frozen', False):
     # [읽기전용] EXE 내부에 압축된 아이콘 등 (임시 폴더)
@@ -102,7 +102,7 @@ OCR_API_KEY = ""
 AI_API_KEY = ""
 
 API_PRESETS = {
-    "Default": {"ocr": MY_DEFAULT_OCR_KEY, "ai": MY_DEFAULT_AI_KEY}
+    "Default": {"ocr": MY_DEFAULT_OCR_KEY, "ai": MY_DEFAULT_AI_KEY, "ui_ai": "", "unified": True}
 }
 ACTIVE_PRESET_NAME = "Default"
 
@@ -149,7 +149,7 @@ def load_settings():
     
     # 1. 일단 하드코딩된 키로 초기화
     API_PRESETS = {
-        "Default": {"ocr": MY_DEFAULT_OCR_KEY, "ai": MY_DEFAULT_AI_KEY}
+        "Default": {"ocr": MY_DEFAULT_OCR_KEY, "ai": MY_DEFAULT_AI_KEY, "ui_ai": "", "unified": True}
     }
     ACTIVE_PRESET_NAME = "Default"
 
@@ -165,14 +165,16 @@ def load_settings():
                     cleaned_presets = {}
                     for name, value in loaded_presets.items():
                         if isinstance(value, str):
-                            cleaned_presets[name] = {"ocr": value, "ai": ""}
+                            cleaned_presets[name] = {"ocr": value, "ai": "", "ui_ai": "", "unified": True}
                         elif isinstance(value, dict):
                             cleaned_presets[name] = {
                                   "ocr": value.get("ocr", ""),
-                                  "ai": value.get("ai", "")
+                                  "ai": value.get("ai", ""),
+                                  "ui_ai": value.get("ui_ai", ""),
+                                  "unified": value.get("unified", True)
                             }
                         else:
-                            cleaned_presets[name] = {"ocr": "", "ai": ""}
+                            cleaned_presets[name] = {"ocr": "", "ai": "", "ui_ai": "", "unified": True}
                     
                     # [핵심 로직] 불러온 데이터의 'Default'가 비어있다면, 내 키로 강제 주입
                     if "Default" in cleaned_presets:
@@ -221,7 +223,7 @@ def load_settings():
     if ACTIVE_PRESET_NAME not in API_PRESETS:
         ACTIVE_PRESET_NAME = "Default"
         if "Default" not in API_PRESETS:
-             API_PRESETS["Default"] = {"ocr": MY_DEFAULT_OCR_KEY, "ai": MY_DEFAULT_AI_KEY}
+             API_PRESETS["Default"] = {"ocr": MY_DEFAULT_OCR_KEY, "ai": MY_DEFAULT_AI_KEY, "ui_ai": "", "unified": True}
 
     current_set = API_PRESETS[ACTIVE_PRESET_NAME]
     

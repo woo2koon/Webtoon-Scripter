@@ -358,7 +358,7 @@ class SettingsDialog(QDialog):
             if name in self.local_presets:
                 QMessageBox.warning(self, "중복", "이미 존재하는 이름입니다.")
                 return
-            self.local_presets[name] = {"ocr": "", "ai": ""}
+            self.local_presets[name] = {"ocr": "", "ai": "", "ui_ai": "", "unified": True}
             self.combo_presets.addItem(name)
             self.combo_presets.setCurrentText(name)
             self.input_ocr.setFocus()
@@ -522,21 +522,22 @@ class DragDropListWidget(QListWidget):
         self.setDragDropMode(QAbstractItemView.InternalMove)
         self.drag_src_row = -1
         
-        self.overlay = DropOverlay(self.viewport())
+        self.overlay = DropOverlay(self)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.overlay.setGeometry(self.viewport().rect())
+        self.overlay.setGeometry(self.viewport().geometry())
 
     def startDrag(self, supportedActions):
-        self.drag_src_row = self.currentRow()
-        if self.drag_src_row < 0:
-            return
-            
-        item = self.currentItem()
+        from PySide6.QtGui import QCursor
+        pos = self.viewport().mapFromGlobal(QCursor.pos())
+        item = self.itemAt(pos)
+        if not item:
+            item = self.currentItem()
         if not item:
             return
             
+        self.drag_src_row = self.row(item)
         card_widget = self.itemWidget(item)
         if not card_widget:
             super().startDrag(supportedActions)
@@ -563,8 +564,10 @@ class DragDropListWidget(QListWidget):
 
     def dragMoveEvent(self, event):
         super().dragMoveEvent(event)
+        self.overlay.setGeometry(self.viewport().geometry())
         
-        target_pos = event.position().toPoint()
+        from PySide6.QtGui import QCursor
+        target_pos = self.viewport().mapFromGlobal(QCursor.pos())
         hover_item = self.itemAt(target_pos)
         
         if hover_item:
@@ -598,11 +601,13 @@ class DragDropListWidget(QListWidget):
         self.overlay.line_y = -1
         self.overlay.hide()
         
-        target_pos = event.position().toPoint()
+        from PySide6.QtGui import QCursor
+        target_pos = self.viewport().mapFromGlobal(QCursor.pos())
         hover_item = self.itemAt(target_pos)
         
         N = self.count()
         if N == 0:
+            event.setDropAction(Qt.IgnoreAction)
             event.accept()
             return
             
@@ -626,6 +631,7 @@ class DragDropListWidget(QListWidget):
             else:
                 self.parent_dialog.move_idiom(src_row, L - 1)
             
+        event.setDropAction(Qt.IgnoreAction)
         event.accept()
 
 # =================================================================

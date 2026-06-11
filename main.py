@@ -4492,7 +4492,6 @@ class WebtoonManager(QMainWindow):
         df = pd.DataFrame(rows)
         df.to_csv(os.path.join(e_path, "script_data.csv"), index=False, encoding='utf-8-sig')
         self.table_script.resizeRowsToContents()
-        
         # [추가] 실시간 캐릭터 도우미 "현재 회차" 탭 동기화
         if hasattr(self, 'character_viewer') and self.character_viewer is not None and self.character_viewer.isVisible():
             self.character_viewer.load_current_episode_characters()
