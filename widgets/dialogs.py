@@ -522,11 +522,11 @@ class DragDropListWidget(QListWidget):
         self.setDragDropMode(QAbstractItemView.InternalMove)
         self.drag_src_row = -1
         
-        self.overlay = DropOverlay(self.viewport())
+        self.overlay = DropOverlay(self)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.overlay.setGeometry(self.viewport().rect())
+        self.overlay.setGeometry(self.viewport().geometry())
 
     def startDrag(self, supportedActions):
         from PySide6.QtGui import QCursor
@@ -564,6 +564,7 @@ class DragDropListWidget(QListWidget):
 
     def dragMoveEvent(self, event):
         super().dragMoveEvent(event)
+        self.overlay.setGeometry(self.viewport().geometry())
         
         from PySide6.QtGui import QCursor
         target_pos = self.viewport().mapFromGlobal(QCursor.pos())
