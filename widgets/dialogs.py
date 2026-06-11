@@ -529,14 +529,15 @@ class DragDropListWidget(QListWidget):
         self.overlay.setGeometry(self.viewport().rect())
 
     def startDrag(self, supportedActions):
-        self.drag_src_row = self.currentRow()
-        if self.drag_src_row < 0:
-            return
-            
-        item = self.currentItem()
+        from PySide6.QtGui import QCursor
+        pos = self.viewport().mapFromGlobal(QCursor.pos())
+        item = self.itemAt(pos)
+        if not item:
+            item = self.currentItem()
         if not item:
             return
             
+        self.drag_src_row = self.row(item)
         card_widget = self.itemWidget(item)
         if not card_widget:
             super().startDrag(supportedActions)
