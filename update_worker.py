@@ -12,8 +12,8 @@ class UpdateCheckWorker(QThread):
         self.current_version = current_version
 
     def run(self):
-        url = "https://api.github.com/repos/woo2koon/Webtoon-Script-Manager/releases/latest"
-        req = urllib.request.Request(url, headers={"User-Agent": "Webtoon-Script-Manager-Client"})
+        url = "https://api.github.com/repos/woo2koon/Webtoon-Scripter/releases/latest"
+        req = urllib.request.Request(url, headers={"User-Agent": "Webtoon-Scripter-Client"})
         try:
             with urllib.request.urlopen(req, timeout=8) as response:
                 if response.status == 200:
@@ -58,7 +58,7 @@ class UpdateDownloadWorker(QThread):
 
     def run(self):
         try:
-            req = urllib.request.Request(self.download_url, headers={"User-Agent": "Webtoon-Script-Manager-Client"})
+            req = urllib.request.Request(self.download_url, headers={"User-Agent": "Webtoon-Scripter-Client"})
             with urllib.request.urlopen(req, timeout=20) as response:
                 total_size = int(response.headers.get('content-length', 0))
                 downloaded = 0
