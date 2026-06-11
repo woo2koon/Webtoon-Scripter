@@ -1554,6 +1554,7 @@ class FloatingCharacterViewer(QDialog):
             list_item.setSizeHint(QSize(0, self.avatar_size_all + 16))
             
             container = CharacterListItemWidget(char, self.project_name, self.avatar_size_all, self)
+            container.setAttribute(Qt.WA_TransparentForMouseEvents)
             list_item.setData(Qt.UserRole, char)
             
             self.list_widget.addItem(list_item)
@@ -1626,6 +1627,7 @@ class FloatingCharacterViewer(QDialog):
             list_item.setSizeHint(QSize(0, self.avatar_size_current + 16))
             
             container = CharacterListItemWidget(char, self.project_name, self.avatar_size_current, self)
+            container.setAttribute(Qt.WA_TransparentForMouseEvents)
             list_item.setData(Qt.UserRole, char)
             
             self.list_widget_current.addItem(list_item)

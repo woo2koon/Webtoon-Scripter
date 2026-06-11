@@ -1203,6 +1203,7 @@ class FloatingIdiomViewer(QDialog):
             list_item.setSizeHint(QSize(0, 50))
             
             container = QWidget()
+            container.setAttribute(Qt.WA_TransparentForMouseEvents)
             item_layout = QHBoxLayout(container)
             item_layout.setContentsMargins(15, 0, 15, 0)
             item_layout.setSpacing(10)
