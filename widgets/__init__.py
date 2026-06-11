@@ -9,10 +9,11 @@ from .character import (
     ProfileImageOverwriteDialog
 )
 from .table import (
-    SpreadsheetTable, ExcelTextDelegate
+    SpreadsheetTable, ExcelTextDelegate, Column0Delegate
 )
 from .dialogs import (
     SpellCheckDialog, ScriptMergeDialog, ProjectManagementDialog, SettingsDialog, IdiomSettingsDialog, PreferencesDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog, TextCleanDialog, CustomInputDialog, ShortcutHelpDialog
 )
 from .message_box import CustomMessageBox
+from .search_widget import SearchWidget
 

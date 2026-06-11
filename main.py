@@ -35,7 +35,7 @@ import requests
 
 from config import BASE_DIR, ASSETS_DIR, CACHE_DIR, TEMPLATE_PATH, MODERN_STYLE
 from utils import restore_template, natural_sort_key, clean_ocr_text
-from widgets import ResponsiveLabel, ClickableComboBox, WebtoonScrollArea, PopupItemDelegate, CharacterRow, SpreadsheetTable, ExcelTextDelegate, CharacterListContainer, FloatingCharacterViewer, GlobalCharacterSettingsDialog
+from widgets import ResponsiveLabel, ClickableComboBox, WebtoonScrollArea, PopupItemDelegate, CharacterRow, SpreadsheetTable, ExcelTextDelegate, Column0Delegate, CharacterListContainer, FloatingCharacterViewer, GlobalCharacterSettingsDialog
 from ocr_worker import OCRWorker
 
 # 디렉토리 생성
@@ -48,7 +48,7 @@ restore_template()
 
 
 
-from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, PreferencesDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog, ShortcutHelpDialog, CustomMessageBox
+from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, PreferencesDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog, ShortcutHelpDialog, CustomMessageBox, SearchWidget
 from update_worker import UpdateCheckWorker, UpdateDownloadWorker
 
 class GlobalScrollShortcutFilter(QObject):
@@ -579,6 +579,10 @@ class WebtoonManager(QMainWindow):
         # [추가] 셀 합치기 단축키 등록 (Ctrl+M)
         self.shortcut_merge = QShortcut(QKeySequence("Ctrl+M"), self)
         self.shortcut_merge.activated.connect(self.merge_selected_rows)
+
+        # [신설] 단어 검색 단축키 등록 (Ctrl+F / Cmd+F)
+        self.shortcut_search = QShortcut(QKeySequence("Ctrl+F"), self)
+        self.shortcut_search.activated.connect(self.trigger_search)
 
         # 뷰어 맨 위/아래 이동 단축키 (TKL 대응: Cmd+Up/Down on Mac, Ctrl+Up/Down on Win)
         self.scroll_shortcut_filter = GlobalScrollShortcutFilter(self)
@@ -1688,6 +1692,8 @@ class WebtoonManager(QMainWindow):
                 background-color: white;   /* 흰색 배경 */
                 line-height: 160%;         /* 줄 간격 */
                 color: #333333;            /* 글자색 */
+                selection-background-color: #FF9100; /* 선택 영역 배경 주황색 */
+                selection-color: white;              /* 선택 영역 글자 흰색 */
             }
         """ + "\n" + config.MODERN_MENU_STYLE)
         
@@ -1696,6 +1702,10 @@ class WebtoonManager(QMainWindow):
         self.text_editor.setFont(current_font)
         
         tab1_layout.addWidget(self.text_editor)
+
+        # [신설] 검색바 위젯 초기화 및 에디터 연결
+        self.search_widget_step1 = SearchWidget()
+        self.search_widget_step1.set_text_edit_target(self.text_editor)
 
         # ---------------------------------------------------------
         # 3. 하단 버튼 바 (AI검사 & 저장) - 박스 바깥에 위치
@@ -1936,6 +1946,7 @@ class WebtoonManager(QMainWindow):
         self.table_script.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table_script.setColumnWidth(0, 150)
         self.table_script.verticalHeader().setVisible(True) 
+        self.table_script.setItemDelegateForColumn(0, Column0Delegate(self.table_script))
         self.table_script.setItemDelegateForColumn(1, ExcelTextDelegate(self.table_script))
         self.table_script.itemChanged.connect(lambda item: self.save_script_data())
         self.table_script.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -2109,6 +2120,7 @@ class WebtoonManager(QMainWindow):
         self.table_script.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table_script.setColumnWidth(0, 150)
         self.table_script.verticalHeader().setVisible(True)
+        self.table_script.setItemDelegateForColumn(0, Column0Delegate(self.table_script))
         self.table_script.setItemDelegateForColumn(1, ExcelTextDelegate(self.table_script))
         self.table_script.itemChanged.connect(lambda item: self.save_script_data())
         self.table_script.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -2143,6 +2155,10 @@ class WebtoonManager(QMainWindow):
         """)
 
         container_layout.addWidget(self.table_script)
+
+        # [신설] 검색바 위젯 초기화 및 테이블 연결
+        self.search_widget_step3 = SearchWidget()
+        self.search_widget_step3.set_table_target(self.table_script)
         tab3_layout.addWidget(editor_container) # 컨테이너를 메인 레이아웃에 추가
 
         # C. 하단 액션바 (버튼 영역)
@@ -2227,11 +2243,18 @@ class WebtoonManager(QMainWindow):
             self.tab_headers.append(header)
         self.tabs.blockSignals(False)
         
-        try:
-            self.tabs.currentChanged.disconnect(self.on_tab_changed_refresh_headers)
-        except:
-            pass
+        if not hasattr(self, '_tab_signal_connected'):
+            self._tab_signal_connected = False
+
+        if self._tab_signal_connected:
+            try:
+                self.tabs.currentChanged.disconnect(self.on_tab_changed_refresh_headers)
+            except:
+                pass
+            self._tab_signal_connected = False
+
         self.tabs.currentChanged.connect(self.on_tab_changed_refresh_headers)
+        self._tab_signal_connected = True
 
     def on_tab_changed_refresh_headers(self, index):
         for idx in range(self.tabs.count()):
@@ -2301,14 +2324,22 @@ class WebtoonManager(QMainWindow):
             file_menu.addAction(action_exit)
 
         # 설정 메뉴
-        settings_menu = menubar.addMenu("설정(&S)")
-        settings_menu.setFont(app_font)
-        settings_menu.setStyleSheet("QMenu::item { padding: 8px 16px 8px 16px; }")
+        if platform.system() == "Darwin":
+            self.action_preferences = QAction("환경설정", self)
+            self.action_preferences.setIcon(get_icon(config.ICON_SETTINGS_COG))
+            self.action_preferences.setMenuRole(QAction.PreferencesRole)
+            self.action_preferences.triggered.connect(self.open_preferences_dialog)
+            file_menu.addAction(self.action_preferences) # macOS가 앱 메뉴("Webtoon Scripter" > "설정...")로 자동 이동시킵니다.
+        else:
+            settings_menu = menubar.addMenu("설정(&S)")
+            settings_menu.setFont(app_font)
+            settings_menu.setStyleSheet("QMenu::item { padding: 8px 16px 8px 16px; }")
 
-        self.action_preferences = QAction("환경설정", self)
-        self.action_preferences.setMenuRole(QAction.NoRole)  # macOS 앱 메뉴로 이동하지 않고 설정 메뉴 안에 유지
-        self.action_preferences.triggered.connect(self.open_preferences_dialog)
-        settings_menu.addAction(self.action_preferences)
+            self.action_preferences = QAction("환경설정", self)
+            self.action_preferences.setIcon(get_icon(config.ICON_SETTINGS_COG))
+            self.action_preferences.setMenuRole(QAction.NoRole)
+            self.action_preferences.triggered.connect(self.open_preferences_dialog)
+            settings_menu.addAction(self.action_preferences)
 
         # 도움말 메뉴 추가
         help_menu = menubar.addMenu("도움말\u200b(&H)")
@@ -4336,6 +4367,31 @@ class WebtoonManager(QMainWindow):
         for r in reversed(rows[1:]):
             self.table_script.removeRow(r)
         self.save_script_data()
+
+    def trigger_search(self):
+        """Ctrl+F / Cmd+F 단축키에 대응하여 검색바를 띄웁니다."""
+        # 심플 모드일 때는 무조건 Step 1 에디터가 표출되므로 다이렉트 처리
+        if getattr(self, 'is_simple_mode', False):
+            if hasattr(self, 'search_widget_step1'):
+                self.search_widget_step1.show_search()
+            return
+            
+        curr_idx = self.tabs.currentIndex()
+        if curr_idx < 0:
+            return
+            
+        # CustomTabHeader가 LeftSide 버튼에 지정되어 있으므로 해당 객체에서 텍스트 추출
+        header = self.tabs.tabBar().tabButton(curr_idx, QTabBar.LeftSide)
+        curr_text = header.text if header and hasattr(header, 'text') else ""
+        print(f"[DEBUG] trigger_search: Index={curr_idx}, CustomHeaderText='{curr_text}'")
+        
+        # 탭 텍스트 매칭 처리 (Step 1 텍스트 또는 탭 매칭 실패 시 기본 폴백)
+        if "Step 1" in curr_text or curr_text == "":
+            if hasattr(self, 'search_widget_step1'):
+                self.search_widget_step1.show_search()
+        elif "Step 3" in curr_text:
+            if hasattr(self, 'search_widget_step3'):
+                self.search_widget_step3.show_search()
 
     def add_script_row(self):
         self.table_script.save_state_for_undo() # [추가] 상태 백업

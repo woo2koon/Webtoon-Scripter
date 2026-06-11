@@ -24,8 +24,8 @@ class CustomMessageBox(QDialog):
         super().__init__(parent)
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint)
         self.setWindowTitle(title)
-        self.setMinimumWidth(380)
-        self.setMaximumWidth(550)
+        self.setMinimumWidth(420)
+        self.setMaximumWidth(580)
         
         # OS별 알림음 재생
         try:
@@ -57,6 +57,7 @@ class CustomMessageBox(QDialog):
         """)
         
         main_layout = QVBoxLayout(self)
+        main_layout.setSizeConstraint(QVBoxLayout.SetFixedSize)
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(20)
         
@@ -96,17 +97,18 @@ class CustomMessageBox(QDialog):
         # 2. 텍스트 라벨
         text_label = QLabel(text)
         text_label.setWordWrap(True)
+        text_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         text_label.setStyleSheet(f"""
             QLabel {{
                 font-family: '{app_ff}';
                 font-size: 14px;
                 color: #374151;
-                line-height: 140%;
                 background: transparent;
                 border: none;
+                padding: 4px 0px;
             }}
         """)
-        content_layout.addWidget(text_label, 1, Qt.AlignVCenter)
+        content_layout.addWidget(text_label, 1)
         main_layout.addLayout(content_layout)
         
         # 2.5 체크박스 (있을 경우 추가)
@@ -188,6 +190,7 @@ class CustomMessageBox(QDialog):
             buttons_layout.addWidget(btn)
             
         main_layout.addLayout(buttons_layout)
+        self.adjustSize()
         
     def on_button_clicked(self, role):
         self.result_button = role

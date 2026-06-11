@@ -3,10 +3,11 @@ import json
 
 from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView,
-    QComboBox, QLineEdit, QStyledItemDelegate, QApplication, QPushButton
+    QComboBox, QLineEdit, QStyledItemDelegate, QApplication, QPushButton,
+    QStyleOptionViewItem
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QModelIndex
-from PySide6.QtGui import QPainter, QColor, QPen, QKeySequence, QFont
+from PySide6.QtGui import QPainter, QColor, QPen, QKeySequence, QFont, QBrush
 
 import config
 
@@ -43,9 +44,59 @@ class SheetCellLineEdit(QLineEdit):
                 return
         super().keyPressEvent(event)
 
+class Column0Delegate(QStyledItemDelegate):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def paint(self, painter, option, index):
+        table = self.parent()
+        if table and hasattr(table, 'search_widget') and table.search_widget:
+            sw = table.search_widget
+            if sw.isVisible() and sw.matches:
+                cell = (index.row(), index.column())
+                if cell in sw.matches:
+                    if sw.current_match_idx >= 0 and cell == sw.matches[sw.current_match_idx]:
+                        color = QColor("#FF9100") # Active match: Orange
+                    else:
+                        color = QColor("#FFE082") # Regular match: Gold
+                        
+                    painter.save()
+                    painter.fillRect(option.rect, color)
+                    painter.restore()
+                    
+                    new_option = QStyleOptionViewItem(option)
+                    self.initStyleOption(new_option, index)
+                    new_option.backgroundBrush = QBrush(Qt.NoBrush)
+                    super().paint(painter, new_option, index)
+                    return
+        super().paint(painter, option, index)
+
 class ExcelTextDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
+
+    def paint(self, painter, option, index):
+        table = self.parent()
+        if table and hasattr(table, 'search_widget') and table.search_widget:
+            sw = table.search_widget
+            if sw.isVisible() and sw.matches:
+                cell = (index.row(), index.column())
+                if cell in sw.matches:
+                    if sw.current_match_idx >= 0 and cell == sw.matches[sw.current_match_idx]:
+                        color = QColor("#FF9100") # Active match: Orange
+                    else:
+                        color = QColor("#FFE082") # Regular match: Gold
+                        
+                    painter.save()
+                    painter.fillRect(option.rect, color)
+                    painter.restore()
+                    
+                    new_option = QStyleOptionViewItem(option)
+                    self.initStyleOption(new_option, index)
+                    new_option.backgroundBrush = QBrush(Qt.NoBrush)
+                    super().paint(painter, new_option, index)
+                    return
+        super().paint(painter, option, index)
 
     def createEditor(self, parent, option, index):
         editor = SheetCellLineEdit(parent, delegate=self, index=index)

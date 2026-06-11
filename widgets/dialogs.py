@@ -31,11 +31,16 @@ from .message_box import CustomMessageBox
 # 환경 설정 통합 다이얼로그 (PreferencesDialog)
 # =================================================================
 class PreferencesDialog(QDialog):
-    def __init__(self, parent=None, active_page_idx=0):
+    def __init__(self, parent=None, active_page_idx=0, only_idioms=False):
         super().__init__(parent)
         self.setFont(QApplication.font())
-        self.setWindowTitle("환경 설정")
-        self.setFixedSize(780, 540)
+        self.only_idioms = only_idioms
+        if only_idioms:
+            self.setWindowTitle("관용구 설정")
+            self.setFixedSize(580, 540)
+        else:
+            self.setWindowTitle("환경 설정")
+            self.setFixedSize(780, 540)
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint)
         
         # 1. 로컬 상태 데이터 복사
@@ -330,7 +335,7 @@ class PreferencesDialog(QDialog):
         storage_layout.addWidget(lbl_storage_title)
         
         lbl_storage_desc = QLabel("작품/회차 데이터(대본 CSV, 엑셀, 원본 이미지 등)가 저장될 상위 디렉토리를 변경합니다.\n변경 시 이전 데이터 폴더들은 자동으로 이동하지 않으므로 주의가 필요합니다.")
-        lbl_storage_desc.setStyleSheet(f"color: #6B7280; font-size: 12px; line-height: 140%; font-family: '{app_ff}';")
+        lbl_storage_desc.setStyleSheet(f"color: #6B7280; font-size: 12px; font-family: '{app_ff}';")
         storage_layout.addWidget(lbl_storage_desc)
         
         storage_box = QFrame()
@@ -477,12 +482,18 @@ class PreferencesDialog(QDialog):
         main_layout.addLayout(body_layout, 1)
         main_layout.addWidget(bottom_frame)
         
+
+
         # 4. 연동 이벤트 등록 및 초기 탭 지정
         self.btn_nav_api.clicked.connect(lambda: self.set_active_page(0))
         self.btn_nav_storage.clicked.connect(lambda: self.set_active_page(1))
         self.btn_nav_idiom.clicked.connect(lambda: self.set_active_page(2))
         
-        self.set_active_page(active_page_idx)
+        if self.only_idioms:
+            self.sidebar_container.setVisible(False)
+            self.set_active_page(2)
+        else:
+            self.set_active_page(active_page_idx)
 
     def set_active_page(self, index):
         self.pages.setCurrentIndex(index)
@@ -1150,14 +1161,7 @@ class FloatingIdiomViewer(QDialog):
         lbl_title.setStyleSheet("color: #1F2937; font-weight: 600; font-size: 13px; background: transparent; border: none; font-family: 'Pretendard';")
         title_layout.addWidget(lbl_title)
         
-        title_layout.addStretch()
-        
-        # 자석 토글 버튼 추가
-        self.btn_magnet = MagnetToggleButton(self.is_sticky)
-        self.btn_magnet.clicked.connect(self.toggle_sticky)
-        title_layout.addWidget(self.btn_magnet)
-        
-        # 도움말 (?) 버튼 추가
+        # 도움말 (?) 버튼 추가 (타이틀 바로 옆에 배치)
         svg_help_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>'
         svg_help_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FF5722" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>'
         self.btn_help = TitleBarButton(svg_help_normal, svg_help_hover, "#E5E7EB")
@@ -1167,6 +1171,13 @@ class FloatingIdiomViewer(QDialog):
         help_text = f"빠른 입력: 단축키({shortcut_key}+숫자) 혹은 더블 클릭으로 본문에 자동 삽입"
         self.btn_help.setToolTip(help_text)
         title_layout.addWidget(self.btn_help)
+        
+        title_layout.addStretch()
+        
+        # 자석 토글 버튼 추가
+        self.btn_magnet = MagnetToggleButton(self.is_sticky)
+        self.btn_magnet.clicked.connect(self.toggle_sticky)
+        title_layout.addWidget(self.btn_magnet)
         
         # 설정 (톱니바퀴) 버튼 추가
         svg_settings_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>'
@@ -1329,7 +1340,7 @@ class FloatingIdiomViewer(QDialog):
 
     def open_preferences(self):
         parent = self.parent()
-        dlg = PreferencesDialog(parent, active_page_idx=2)
+        dlg = PreferencesDialog(parent, active_page_idx=2, only_idioms=True)
         if dlg.exec() == QDialog.Accepted:
             self.refresh_list()
             if parent and hasattr(parent, 'setup_idiom_shortcuts'):
@@ -3029,7 +3040,6 @@ class UpdateDialog(QDialog):
                 color: #374151;
                 font-family: 'Pretendard';
                 font-size: 13px;
-                line-height: 140%;
             }
         """)
         layout.addWidget(self.txt_notes)
@@ -3203,7 +3213,6 @@ class UpdateNotificationBanner(QFrame):
                 font-family: 'Pretendard';
                 font-size: 11px;
                 color: #4B5563;
-                line-height: 135%;
             }
         """)
         self.lbl_summary.setWordWrap(True)
@@ -3830,7 +3839,7 @@ class CustomInputDialog(QDialog):
         btn_layout.addWidget(self.btn_ok)
         layout.addLayout(btn_layout)
         
-        self.input_field.returnPressed.connect(self.btn_ok.click)
+        # 엔터 키는 keyPressEvent에서 직접 처리합니다.
         
     def get_text(self):
         return self.input_field.text().strip()
@@ -3854,6 +3863,13 @@ class CustomInputDialog(QDialog):
                 ))
                 return
         self.accept()
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self.on_accept()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
     @classmethod
     def get_input(cls, parent, title, label_text, placeholder_text="", validator=None):
@@ -3902,7 +3918,7 @@ class ShortcutHelpDialog(QDialog):
         layout.addLayout(title_layout)
 
         desc_lbl = QLabel("Webtoon Scripter에서 제공하는 단축키 목록입니다.\n단축키를 활용하여 작업 시간을 획기적으로 줄여보세요.")
-        desc_lbl.setStyleSheet("font-size: 13px; color: #6B7280; font-family: 'Pretendard'; line-height: 140%;")
+        desc_lbl.setStyleSheet("font-size: 13px; color: #6B7280; font-family: 'Pretendard';")
         layout.addWidget(desc_lbl)
 
         # Scroll Area for shortcuts list

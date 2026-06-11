@@ -1233,14 +1233,7 @@ class FloatingCharacterViewer(QDialog):
         lbl_title.setStyleSheet("color: #1F2937; font-weight: 600; font-size: 13px; background: transparent; border: none; font-family: 'Pretendard';")
         title_layout.addWidget(lbl_title)
         
-        title_layout.addStretch()
-        
-        # 자석 토글 버튼 추가
-        self.btn_magnet = MagnetToggleButton(self.is_sticky)
-        self.btn_magnet.clicked.connect(self.toggle_sticky)
-        title_layout.addWidget(self.btn_magnet)
-        
-        # 도움말 (?) 버튼 추가
+        # 도움말 (?) 버튼 추가 (타이틀 바로 옆에 배치)
         svg_help_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>'
         svg_help_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FF4B4B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>'
         self.btn_help = TitleBarButton(svg_help_normal, svg_help_hover, "#E5E7EB")
@@ -1250,6 +1243,13 @@ class FloatingCharacterViewer(QDialog):
                      "- 현재 회차 등장인물: 대본 셀에 배정된 인물 자동 노출 및 빠른 드래그 입력")
         self.btn_help.setToolTip(help_text)
         title_layout.addWidget(self.btn_help)
+        
+        title_layout.addStretch()
+        
+        # 자석 토글 버튼 추가
+        self.btn_magnet = MagnetToggleButton(self.is_sticky)
+        self.btn_magnet.clicked.connect(self.toggle_sticky)
+        title_layout.addWidget(self.btn_magnet)
         
         # SVG 정의
         svg_close_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
