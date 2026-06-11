@@ -565,7 +565,8 @@ class DragDropListWidget(QListWidget):
     def dragMoveEvent(self, event):
         super().dragMoveEvent(event)
         
-        target_pos = self.viewport().mapFrom(self, event.position().toPoint())
+        from PySide6.QtGui import QCursor
+        target_pos = self.viewport().mapFromGlobal(QCursor.pos())
         hover_item = self.itemAt(target_pos)
         
         if hover_item:
@@ -599,7 +600,8 @@ class DragDropListWidget(QListWidget):
         self.overlay.line_y = -1
         self.overlay.hide()
         
-        target_pos = self.viewport().mapFrom(self, event.position().toPoint())
+        from PySide6.QtGui import QCursor
+        target_pos = self.viewport().mapFromGlobal(QCursor.pos())
         hover_item = self.itemAt(target_pos)
         
         N = self.count()
