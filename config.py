@@ -47,15 +47,83 @@ BASE_DIR = BUNDLE_DIR
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 TEMPLATE_PATH = os.path.join(ASSETS_DIR, "template.xlsx")
 
-PROJECTS_DIR = os.path.join(STORAGE_DIR, "projects")
 SETTINGS_FILE = os.path.join(STORAGE_DIR, "settings.json")
 CACHE_DIR = os.path.join(STORAGE_DIR, "cache")
 
-# 폴더 생성 안전장치 (STORAGE_DIR 기준)
+# 사용자 문서(내 문서) 폴더 경로 획득
+def get_default_project_dir():
+    import sys
+    if sys.platform == "darwin":  # macOS
+        doc_dir = os.path.expanduser("~/Documents")
+    else:  # Windows
+        try:
+            import ctypes
+            from ctypes import wintypes
+            CSIDL_PERSONAL = 5       # My Documents
+            SHGFP_TYPE_CURRENT = 0   # Get current
+            buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+            ctypes.windll.shell32.SHGetFolderPathW(None, CSIDL_PERSONAL, None, SHGFP_TYPE_CURRENT, buf)
+            doc_dir = buf.value
+        except Exception:
+            doc_dir = os.path.expanduser("~/Documents")
+    return os.path.join(doc_dir, APP_NAME)
+
+DEFAULT_PROJECT_DIR = get_default_project_dir()
+PROJECT_STORAGE_DIR = DEFAULT_PROJECT_DIR
+
+# settings.json에서 사용자 설정 로드
+if os.path.exists(SETTINGS_FILE):
+    try:
+        with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+            sett = json.load(f)
+            custom_dir = sett.get("project_storage_dir", "")
+            if custom_dir:
+                try:
+                    os.makedirs(custom_dir, exist_ok=True)
+                    PROJECT_STORAGE_DIR = custom_dir
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+PROJECTS_DIR = os.path.join(PROJECT_STORAGE_DIR, "projects")
+
+# 폴더 생성 안전장치
 if not os.path.exists(PROJECTS_DIR):
-    os.makedirs(PROJECTS_DIR)
+    try:
+        os.makedirs(PROJECTS_DIR, exist_ok=True)
+    except Exception:
+        pass
 if not os.path.exists(CACHE_DIR):
-    os.makedirs(CACHE_DIR)
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+    except Exception:
+        pass
+
+def update_project_storage_dir(new_path):
+    global PROJECT_STORAGE_DIR, PROJECTS_DIR
+    if not new_path:
+        return False
+    try:
+        os.makedirs(new_path, exist_ok=True)
+        PROJECT_STORAGE_DIR = new_path
+        PROJECTS_DIR = os.path.join(PROJECT_STORAGE_DIR, "projects")
+        os.makedirs(PROJECTS_DIR, exist_ok=True)
+        
+        sett = {}
+        if os.path.exists(SETTINGS_FILE):
+            try:
+                with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                    sett = json.load(f)
+            except Exception:
+                pass
+        sett["project_storage_dir"] = new_path
+        with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(sett, f, indent=4, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"Error updating project storage dir: {e}")
+        return False
 
 # =================================================================
 # [신규 추가] UI 아이콘 경로 설정 (진우님이 정한 이름들)

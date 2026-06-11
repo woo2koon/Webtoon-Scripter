@@ -33,7 +33,7 @@ import config
 import threading
 import requests
 
-from config import BASE_DIR, ASSETS_DIR, CACHE_DIR, PROJECTS_DIR, TEMPLATE_PATH, MODERN_STYLE
+from config import BASE_DIR, ASSETS_DIR, CACHE_DIR, TEMPLATE_PATH, MODERN_STYLE
 from utils import restore_template, natural_sort_key, clean_ocr_text
 from widgets import ResponsiveLabel, ClickableComboBox, WebtoonScrollArea, PopupItemDelegate, CharacterRow, SpreadsheetTable, ExcelTextDelegate, CharacterListContainer, FloatingCharacterViewer, GlobalCharacterSettingsDialog
 from ocr_worker import OCRWorker
@@ -48,7 +48,7 @@ restore_template()
 
 
 
-from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog, ShortcutHelpDialog
+from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, PreferencesDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog, ShortcutHelpDialog
 from update_worker import UpdateCheckWorker, UpdateDownloadWorker
 
 class GlobalScrollShortcutFilter(QObject):
@@ -2309,18 +2309,10 @@ class WebtoonManager(QMainWindow):
         settings_menu = menubar.addMenu("설정(&S)")
         settings_menu.setFont(app_font)
 
-        # [순서 변경] 관용구 설정을 맨 위로
-        action_idiom = QAction("관용구(지문) 설정", self)
-        action_idiom.triggered.connect(self.open_idiom_settings_dialog)
-        settings_menu.addAction(action_idiom)
-
-        settings_menu.addSeparator()
-
-        # API 키 설정을 아래로
-        self.action_settings = QAction("API 키 설정", self)
-        self.action_settings.setMenuRole(QAction.NoRole)  # macOS 앱 메뉴로 이동하지 않고 설정 메뉴 안에 유지
-        self.action_settings.triggered.connect(self.open_settings_dialog)
-        settings_menu.addAction(self.action_settings)
+        self.action_preferences = QAction("환경설정 (Preferences)", self)
+        self.action_preferences.setMenuRole(QAction.NoRole)  # macOS 앱 메뉴로 이동하지 않고 설정 메뉴 안에 유지
+        self.action_preferences.triggered.connect(self.open_preferences_dialog)
+        settings_menu.addAction(self.action_preferences)
 
         # 도움말 메뉴 추가
         help_menu = menubar.addMenu("도움말\u200b(&H)")
@@ -2401,17 +2393,12 @@ class WebtoonManager(QMainWindow):
         dlg = ShortcutHelpDialog(self)
         dlg.exec()
 
-    def open_settings_dialog(self):
-        dlg = SettingsDialog(self)
-        dlg.exec()
-
-    def open_idiom_settings_dialog(self):
-        dlg = IdiomSettingsDialog(self)
+    def open_preferences_dialog(self, active_page_idx=0):
+        dlg = PreferencesDialog(self, active_page_idx=active_page_idx)
         if dlg.exec() == QDialog.Accepted:
             self.setup_idiom_shortcuts()
             if self.idiom_viewer:
                 self.idiom_viewer.refresh_list()
-            self.toast.show_message("✅ 관용구 설정이 저장되었습니다.", 2000)
 
     def move_window_safely(self, window, x, y):
         """윈도우가 화면(모니터) 영역 밖으로 벗어나 보이지 않는 현상을 방지하고 화면 안쪽으로 가둡니다."""
@@ -2824,8 +2811,7 @@ class WebtoonManager(QMainWindow):
             return simple_dir, simple_dir, os.path.join(simple_dir, "script.txt")
 
         if not self.current_title or not self.current_episode: return None, None, None
-        # [수정] 경로의 뿌리를 PROJECTS_DIR로 변경
-        t_path = os.path.join(PROJECTS_DIR, self.current_title)
+        t_path = os.path.join(config.PROJECTS_DIR, self.current_title)
         e_path = os.path.join(t_path, self.current_episode)
         i_path = os.path.join(e_path, "images")
         os.makedirs(i_path, exist_ok=True)
@@ -2834,10 +2820,9 @@ class WebtoonManager(QMainWindow):
     def refresh_project_list(self):
         self.combo_project.blockSignals(True)
         self.combo_project.clear()
-        # [수정] BASE_DIR 대신 PROJECTS_DIR 내부 폴더만 검색합니다.
-        if os.path.exists(PROJECTS_DIR):
-            projects = sorted([d for d in os.listdir(PROJECTS_DIR) 
-                              if os.path.isdir(os.path.join(PROJECTS_DIR, d))])
+        if os.path.exists(config.PROJECTS_DIR):
+            projects = sorted([d for d in os.listdir(config.PROJECTS_DIR) 
+                              if os.path.isdir(os.path.join(config.PROJECTS_DIR, d))])
             self.combo_project.addItems(projects)
             
         self.combo_project.setCurrentIndex(-1) 
@@ -2846,7 +2831,7 @@ class WebtoonManager(QMainWindow):
 
     def create_project(self):
         def project_validator(name):
-            project_path = os.path.join(PROJECTS_DIR, name)
+            project_path = os.path.join(config.PROJECTS_DIR, name)
             if os.path.exists(project_path):
                 return False, "이미 존재하는 작품 이름입니다."
             return True, ""
@@ -2860,8 +2845,7 @@ class WebtoonManager(QMainWindow):
         )
         if ok and name.strip():
             name = name.strip()
-            project_path = os.path.join(PROJECTS_DIR, name)
-            # [수정] projects 폴더 안에 새 작품 폴더를 만듭니다.
+            project_path = os.path.join(config.PROJECTS_DIR, name)
             os.makedirs(project_path, exist_ok=True)
             self.refresh_project_list()
             self.combo_project.setCurrentText(name)
@@ -2885,8 +2869,7 @@ class WebtoonManager(QMainWindow):
             return
             
         import pandas as pd
-        # 1. 기존 글로벌 캐릭터 목록을 로드합니다.
-        from config import load_global_characters, save_global_characters, PROJECTS_DIR
+        from config import load_global_characters, save_global_characters
         global_chars = load_global_characters(self.current_title)
         global_dict = {char["name"]: char for char in global_chars if "name" in char}
         
@@ -2898,7 +2881,7 @@ class WebtoonManager(QMainWindow):
         color_idx = len(global_chars) % len(PASTEL_COLORS)
         
         # 2. 작품 디렉토리 내의 회차 폴더들을 스캔합니다.
-        t_path = os.path.join(PROJECTS_DIR, self.current_title)
+        t_path = os.path.join(config.PROJECTS_DIR, self.current_title)
         if not os.path.exists(t_path):
             return
             
@@ -2967,9 +2950,7 @@ class WebtoonManager(QMainWindow):
         self.combo_episode.clear()
         
         if self.current_title:
-            # [수정] BASE_DIR이 아니라 PROJECTS_DIR을 뿌리로 잡습니다.
-            from config import PROJECTS_DIR
-            t_path = os.path.join(PROJECTS_DIR, self.current_title)
+            t_path = os.path.join(config.PROJECTS_DIR, self.current_title)
             
             # 폴더가 존재하는지 한 번 더 확인하여 에러를 방지합니다.
             if os.path.exists(t_path):
@@ -2989,7 +2970,7 @@ class WebtoonManager(QMainWindow):
             return
 
         def episode_validator(name):
-            episode_path = os.path.join(PROJECTS_DIR, self.current_title, name)
+            episode_path = os.path.join(config.PROJECTS_DIR, self.current_title, name)
             if os.path.exists(episode_path):
                 return False, "이미 존재하는 회차 이름입니다."
             return True, ""
@@ -3003,7 +2984,7 @@ class WebtoonManager(QMainWindow):
         )
         if ok and name.strip():
             name = name.strip()
-            episode_path = os.path.join(PROJECTS_DIR, self.current_title, name)
+            episode_path = os.path.join(config.PROJECTS_DIR, self.current_title, name)
             os.makedirs(episode_path, exist_ok=True)
             self.refresh_episode_list()
             self.combo_episode.setCurrentText(name)

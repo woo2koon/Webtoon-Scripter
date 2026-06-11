@@ -27,32 +27,34 @@ from .common import PopupItemDelegate, SingleClickLineEdit
 from .character import GlobalCharacterSettingsDialog
 
 # =================================================================
-# API 키 프리셋 관리 다이얼로그 (SettingsDialog)
+# 환경 설정 통합 다이얼로그 (PreferencesDialog)
 # =================================================================
-class SettingsDialog(QDialog):
-    def __init__(self, parent=None):
+class PreferencesDialog(QDialog):
+    def __init__(self, parent=None, active_page_idx=0):
         super().__init__(parent)
-        self.setWindowTitle("API 키 프리셋 관리")
-        self.setFixedWidth(550)
+        self.setWindowTitle("환경 설정")
+        self.setFixedSize(780, 540)
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint)
         
+        # 1. 로컬 상태 데이터 복사
         self.local_presets = config.API_PRESETS.copy()
         self.local_active = config.ACTIVE_PRESET_NAME
         self.is_unified = False
+        self.local_storage_dir = config.PROJECT_STORAGE_DIR
+        self.local_idioms = [item.copy() for item in config.IDIOMS]
         
-        self.init_ui()
-    
+        self.init_ui(active_page_idx)
+
     SVG_EYE_OPEN = b"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>"""
     SVG_EYE_CLOSE = b"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>"""
     SVG_CHEVRON_DOWN = b"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>"""
     SVG_CHEVRON_UP = b"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>"""
 
     def get_svg_icon(self, svg_data):
-        """SVG 데이터를 QIcon으로 변환하는 헬퍼 함수"""
         pixmap = QPixmap()
         pixmap.loadFromData(svg_data)
         return QIcon(pixmap)
-    
+
     def toggle_password_visibility(self, line_edit, button):
         if line_edit.echoMode() == QLineEdit.Password:
             line_edit.setEchoMode(QLineEdit.Normal)
@@ -61,138 +63,123 @@ class SettingsDialog(QDialog):
             line_edit.setEchoMode(QLineEdit.Password)
             button.setIcon(self.get_svg_icon(self.SVG_EYE_OPEN))
 
-    def init_ui(self):
-        layout = QVBoxLayout(self)
-        self.setStyleSheet("")
-        layout.setContentsMargins(25, 20, 25, 30) 
-        layout.setSpacing(12) 
-
-        preset_group = QVBoxLayout()
-        preset_group.setContentsMargins(0, 0, 0, 0)
-        preset_group.setSpacing(8)
+    def init_ui(self, active_page_idx):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
-        preset_header = QWidget()
-        preset_header_layout = QHBoxLayout(preset_header)
-        preset_header_layout.setContentsMargins(0, 5, 0, 0) 
-        preset_header_layout.setSpacing(4) 
-
-        icon_preset = QLabel()
-        icon_preset.setPixmap(get_icon(config.ICON_KEY).pixmap(18, 18))
-
-        lbl_preset = QLabel("프리셋 선택")
-        lbl_preset.setStyleSheet("font-size: 15px; font-weight: bold; color: #333;")
-
-        preset_header_layout.addWidget(icon_preset)
-        preset_header_layout.addWidget(lbl_preset)
-        preset_header_layout.addStretch()
-
-        preset_group.addWidget(preset_header)
-
-        row_preset = QHBoxLayout()
+        # 가로 배치 레이아웃 (사이드바 + 컨텐츠)
+        body_layout = QHBoxLayout()
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+        
+        # 1. 좌측 사이드바
+        self.sidebar = QListWidget()
+        self.sidebar.setFixedWidth(200)
+        self.sidebar.setStyleSheet("""
+            QListWidget {
+                border: none;
+                background-color: #F3F4F6;
+                outline: none;
+            }
+            QListWidget::item {
+                padding: 14px 16px;
+                border-radius: 8px;
+                margin: 4px 8px;
+                font-size: 13px;
+                color: #4B5563;
+                font-weight: 500;
+                font-family: 'Pretendard';
+            }
+            QListWidget::item:hover {
+                background-color: #E5E7EB;
+                color: #1F2937;
+            }
+            QListWidget::item:selected {
+                background-color: #FFECEC;
+                color: #FF5722;
+                font-weight: bold;
+            }
+        """)
+        
+        self.sidebar.addItem("🔑  API 키 설정")
+        self.sidebar.addItem("📂  저장소 설정")
+        self.sidebar.addItem("💬  관용구 설정")
+        
+        # 2. 우측 스택 위젯
+        self.pages = QStackedWidget()
+        self.pages.setStyleSheet("background-color: white;")
+        
+        # --- [페이지 1] API 키 설정 ---
+        self.page_api = QWidget()
+        api_layout = QVBoxLayout(self.page_api)
+        api_layout.setContentsMargins(30, 25, 30, 25)
+        api_layout.setSpacing(15)
+        
+        lbl_api_title = QLabel("API 키 프리셋 관리")
+        lbl_api_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #111827; font-family: 'Pretendard';")
+        api_layout.addWidget(lbl_api_title)
+        
+        preset_row = QHBoxLayout()
         self.combo_presets = QComboBox()
         self.combo_presets.setObjectName("PresetCombo")
         self.combo_presets.setFixedHeight(33)
-
-        self.combo_presets.setView(QListView()) 
+        self.combo_presets.setView(QListView())
         self.combo_presets.setItemDelegate(PopupItemDelegate())
-
         self.combo_presets.view().window().setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
         self.combo_presets.view().window().setAttribute(Qt.WA_TranslucentBackground)
-
+        
         if sys.platform == "darwin":
-            self.combo_presets.setStyleSheet("""
-                QComboBox#PresetCombo {
-                    combobox-popup: 0;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    padding-left: 10px;
-                    background: white;
-                    min-height: 33px;
-                    max-height: 33px;
-                    height: 33px;
-                    font-size: 14pt;
-                }
-                QComboBox QAbstractItemView {
-                    border: 1px solid #ddd;
-                    border-radius: 8px;
-                    background-color: white;
-                    outline: 0;
-                    padding: 2px;
-                    font-size: 14pt;
-                }
-                QComboBox QAbstractItemView::item {
-                    font-family: 'Pretendard';
-                    min-height: 30px;
-                    padding: 5px;
-                    margin: 1px;
-                    border-radius: 5px;
-                    font-size: 14pt;
-                }
-            """)
+            self.combo_presets.setStyleSheet("QComboBox#PresetCombo { border: 1px solid #ccc; border-radius: 4px; padding-left: 10px; background: white; font-size: 13px; }")
         else:
             self.combo_presets.setStyleSheet("""
                 QComboBox#PresetCombo {
-                    combobox-popup: 0;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
+                    border: 1px solid #D1D5DB;
+                    border-radius: 6px;
                     padding-left: 10px;
                     background: white;
-                    min-height: 33px;
-                    max-height: 33px;
-                    height: 33px;
+                    font-size: 13px;
                 }
-                QComboBox QAbstractItemView {
-                    border: 1px solid #ddd;
-                    border-radius: 8px;
-                    background-color: white;
-                    outline: 0;
-                    padding: 2px;
-                }
-                QComboBox QAbstractItemView::item {
-                    font-family: 'Pretendard';
-                    min-height: 30px;
-                    padding: 5px;
-                    margin: 1px;
-                    border-radius: 5px;
-                }
+                QComboBox#PresetCombo:hover { border-color: #FF5722; }
             """)
-
-        self.combo_presets.addItems(list(self.local_presets.keys()))
+            
+        for preset_name in self.local_presets.keys():
+            self.combo_presets.addItem(preset_name)
         self.combo_presets.setCurrentText(self.local_active)
         self.combo_presets.currentTextChanged.connect(self.on_preset_changed)
         
-        btn_add = QPushButton("추가")
-        btn_add.setFixedSize(60, 33)
-        btn_add.setCursor(Qt.PointingHandCursor)
-        btn_add.clicked.connect(self.add_preset)
+        btn_preset_add = QPushButton("추가")
+        btn_preset_add.setFixedSize(70, 33)
+        btn_preset_add.setCursor(Qt.PointingHandCursor)
+        btn_preset_add.clicked.connect(self.add_preset)
+        btn_preset_add.setStyleSheet("QPushButton { background-color: #FF5722; color: white; border: none; border-radius: 6px; font-weight: bold; } QPushButton:hover { background-color: #E64A19; }")
         
-        btn_del = QPushButton("삭제")
-        btn_del.setFixedSize(60, 33)
-        btn_del.setCursor(Qt.PointingHandCursor)
-        btn_del.clicked.connect(self.delete_preset)
+        btn_preset_del = QPushButton("삭제")
+        btn_preset_del.setFixedSize(70, 33)
+        btn_preset_del.setCursor(Qt.PointingHandCursor)
+        btn_preset_del.clicked.connect(self.delete_preset)
+        btn_preset_del.setStyleSheet("QPushButton { background-color: white; border: 1px solid #D1D5DB; border-radius: 6px; color: #4B5563; font-weight: bold; } QPushButton:hover { border-color: #EF4444; color: #EF4444; }")
         
-        row_preset.addWidget(self.combo_presets)
-        row_preset.addWidget(btn_add)
-        row_preset.addWidget(btn_del)
-        preset_group.addLayout(row_preset)
+        preset_row.addWidget(self.combo_presets, 1)
+        preset_row.addWidget(btn_preset_add)
+        preset_row.addWidget(btn_preset_del)
+        api_layout.addLayout(preset_row)
         
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("color: #ddd; margin: 0px;") 
-        preset_group.addWidget(line)
+        keys_box = QFrame()
+        keys_box.setStyleSheet("QFrame { background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; }")
+        keys_layout = QVBoxLayout(keys_box)
+        keys_layout.setContentsMargins(15, 15, 15, 15)
+        keys_layout.setSpacing(10)
         
-        layout.addLayout(preset_group)
-
-        keys_layout = QVBoxLayout()
-        
-        lbl_ocr = QLabel("Google Cloud API 키 (Vision + Gemini)")
-        lbl_ocr.setStyleSheet("font-weight: bold; color: #555;")
+        lbl_ocr = QLabel("Google Cloud Vision API 키 (OCR 전용)")
+        lbl_ocr.setStyleSheet("font-weight: bold; color: #FF5722; font-size: 13px; border: none; background: transparent;")
         
         row_ocr_input = QHBoxLayout()
         self.input_ocr = QLineEdit()
-        self.input_ocr.setPlaceholderText("Google Cloud API Key")
+        self.input_ocr.setPlaceholderText("Google Cloud Vision API Key")
         self.input_ocr.setEchoMode(QLineEdit.Password)
         self.input_ocr.setFixedHeight(36)
+        self.input_ocr.setStyleSheet("QLineEdit { border: 1px solid #D1D5DB; border-radius: 6px; padding-left: 10px; background: white; } QLineEdit:focus { border: 2px solid #FF5722; }")
         self.input_ocr.textChanged.connect(self.save_temp_data)
         
         self.btn_toggle_ocr = QPushButton()
@@ -200,98 +187,230 @@ class SettingsDialog(QDialog):
         self.btn_toggle_ocr.setIconSize(QSize(20, 20))
         self.btn_toggle_ocr.setFixedSize(40, 36)
         self.btn_toggle_ocr.setCursor(Qt.PointingHandCursor)
-        self.btn_toggle_ocr.setStyleSheet("""
-            QPushButton { border: none; background: transparent; }
-            QPushButton:hover { background-color: #f0f0f0; border-radius: 4px; }
-        """)
+        self.btn_toggle_ocr.setStyleSheet("QPushButton { border: none; background: transparent; } QPushButton:hover { background-color: #E5E7EB; border-radius: 6px; }")
         self.btn_toggle_ocr.clicked.connect(lambda: self.toggle_password_visibility(self.input_ocr, self.btn_toggle_ocr))
         
         row_ocr_input.addWidget(self.input_ocr)
         row_ocr_input.addWidget(self.btn_toggle_ocr)
-        
         keys_layout.addWidget(lbl_ocr)
         keys_layout.addLayout(row_ocr_input)
-        keys_layout.addSpacing(5)
         
         self.btn_toggle_advanced = QPushButton("Google AI Studio API 키 별도 설정 (선택 사항)")
         self.btn_toggle_advanced.setIcon(self.get_svg_icon(self.SVG_CHEVRON_DOWN))
         self.btn_toggle_advanced.setIconSize(QSize(12, 12))
-        self.btn_toggle_advanced.setStyleSheet("""
-            QPushButton {
-                text-align: left;
-                color: #666;
-                background: transparent;
-                border: none;
-                font-size: 13px;
-                padding: 5px 0;
-            }
-            QPushButton:hover { color: #333; font-weight: bold; }
-        """)
+        self.btn_toggle_advanced.setStyleSheet("QPushButton { text-align: left; color: #6B7280; background: transparent; border: none; font-size: 12px; } QPushButton:hover { color: #1F2937; font-weight: bold; }")
         self.btn_toggle_advanced.setCursor(Qt.PointingHandCursor)
-        self.btn_toggle_advanced.setToolTip("Google AI Studio에서 발급받은 API 키를 별도로 설정할 수 있습니다.\n설정 시 맞춤법 검사 용도로 사용됩니다.")
         self.btn_toggle_advanced.clicked.connect(self.toggle_advanced_mode)
         keys_layout.addWidget(self.btn_toggle_advanced)
         
-        keys_layout.addSpacing(5)
-
         self.ai_container = QWidget()
+        self.ai_container.setStyleSheet("border: none; background: transparent;")
         ai_layout = QVBoxLayout(self.ai_container)
-        ai_layout.setContentsMargins(0, 5, 0, 5)
+        ai_layout.setContentsMargins(0, 5, 0, 0)
         ai_layout.setSpacing(8)
-
+        
         lbl_ai = QLabel("Google AI Studio API 키 (맞춤법 전용)")
-        lbl_ai.setStyleSheet("font-weight: bold; color: #2ecc71;")
+        lbl_ai.setStyleSheet("font-weight: bold; color: #2563EB; font-size: 13px; border: none;")
         
         row_ai_input = QHBoxLayout()
         self.input_ai = QLineEdit()
         self.input_ai.setPlaceholderText("Google AI Studio API Key")
         self.input_ai.setEchoMode(QLineEdit.Password)
         self.input_ai.setFixedHeight(36)
+        self.input_ai.setStyleSheet("QLineEdit { border: 1px solid #D1D5DB; border-radius: 6px; padding-left: 10px; background: white; } QLineEdit:focus { border: 2px solid #FF5722; }")
         self.input_ai.textChanged.connect(self.save_temp_data)
-        
-        self.input_ocr.textChanged.connect(self.sync_keys)
         
         self.btn_toggle_ai = QPushButton()
         self.btn_toggle_ai.setIcon(self.get_svg_icon(self.SVG_EYE_OPEN))
         self.btn_toggle_ai.setIconSize(QSize(20, 20))
         self.btn_toggle_ai.setFixedSize(40, 36)
         self.btn_toggle_ai.setCursor(Qt.PointingHandCursor)
-        self.btn_toggle_ai.setStyleSheet("""
-            QPushButton { border: none; background: transparent; }
-            QPushButton:hover { background-color: #f0f0f0; border-radius: 4px; }
-        """)
+        self.btn_toggle_ai.setStyleSheet("QPushButton { border: none; background: transparent; } QPushButton:hover { background-color: #E5E7EB; border-radius: 6px; }")
         self.btn_toggle_ai.clicked.connect(lambda: self.toggle_password_visibility(self.input_ai, self.btn_toggle_ai))
         
         row_ai_input.addWidget(self.input_ai)
         row_ai_input.addWidget(self.btn_toggle_ai)
-        
         ai_layout.addWidget(lbl_ai)
         ai_layout.addLayout(row_ai_input)
         
         keys_layout.addWidget(self.ai_container)
+        api_layout.addWidget(keys_box)
+        api_layout.addStretch()
         
-        layout.addLayout(keys_layout)
+        self.load_preset_to_ui(self.local_active)
+        self.pages.addWidget(self.page_api)
         
-        layout.addSpacing(25)
-
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
+        # --- [페이지 2] 저장소 설정 ---
+        self.page_storage = QWidget()
+        storage_layout = QVBoxLayout(self.page_storage)
+        storage_layout.setContentsMargins(30, 25, 30, 25)
+        storage_layout.setSpacing(15)
         
-        btn_save = QPushButton("설정 저장")
+        lbl_storage_title = QLabel("프로젝트 저장소 설정")
+        lbl_storage_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #111827; font-family: 'Pretendard';")
+        storage_layout.addWidget(lbl_storage_title)
+        
+        lbl_storage_desc = QLabel("작품/회차 데이터(대본 CSV, 엑셀, 원본 이미지 등)가 저장될 상위 디렉토리를 변경합니다.\n변경 시 이전 데이터 폴더들은 자동으로 이동하지 않으므로 주의가 필요합니다.")
+        lbl_storage_desc.setStyleSheet("color: #6B7280; font-size: 12px; line-height: 140%; font-family: 'Pretendard';")
+        storage_layout.addWidget(lbl_storage_desc)
+        
+        storage_box = QFrame()
+        storage_box.setStyleSheet("QFrame { background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; }")
+        box_layout = QVBoxLayout(storage_box)
+        box_layout.setContentsMargins(15, 15, 15, 15)
+        box_layout.setSpacing(10)
+        
+        lbl_path_title = QLabel("기본 프로젝트 저장 경로")
+        lbl_path_title.setStyleSheet("font-weight: bold; color: #374151; font-size: 13px; border: none; background: transparent;")
+        box_layout.addWidget(lbl_path_title)
+        
+        path_row = QHBoxLayout()
+        self.input_storage_path = QLineEdit()
+        self.input_storage_path.setReadOnly(True)
+        self.input_storage_path.setText(self.local_storage_dir)
+        self.input_storage_path.setFixedHeight(36)
+        self.input_storage_path.setStyleSheet("QLineEdit { border: 1px solid #D1D5DB; border-radius: 6px; padding-left: 10px; background: #F3F4F6; color: #4B5563; }")
+        
+        btn_browse_storage = QPushButton("폴더 선택...")
+        btn_browse_storage.setFixedSize(90, 36)
+        btn_browse_storage.setCursor(Qt.PointingHandCursor)
+        btn_browse_storage.clicked.connect(self.browse_storage_path)
+        btn_browse_storage.setStyleSheet("QPushButton { background-color: #FF5722; color: white; border: none; border-radius: 6px; font-weight: bold; } QPushButton:hover { background-color: #E64A19; }")
+        
+        path_row.addWidget(self.input_storage_path, 1)
+        path_row.addWidget(btn_browse_storage)
+        box_layout.addLayout(path_row)
+        
+        # 복구용 기본값 설정 링크 단추
+        btn_reset_storage = QPushButton("↩ 기본값(내 문서)으로 초기화")
+        btn_reset_storage.setCursor(Qt.PointingHandCursor)
+        btn_reset_storage.setStyleSheet("QPushButton { text-align: left; color: #4B5563; border: none; background: transparent; font-size: 11px; text-decoration: underline; } QPushButton:hover { color: #FF5722; }")
+        btn_reset_storage.clicked.connect(self.reset_storage_path)
+        box_layout.addWidget(btn_reset_storage)
+        
+        storage_layout.addWidget(storage_box)
+        storage_layout.addStretch()
+        self.pages.addWidget(self.page_storage)
+        
+        # --- [페이지 3] 관용구 설정 ---
+        self.page_idiom = QWidget()
+        idiom_layout = QVBoxLayout(self.page_idiom)
+        idiom_layout.setContentsMargins(30, 25, 30, 25)
+        idiom_layout.setSpacing(12)
+        
+        lbl_idiom_title = QLabel("관용구(지문) 리스트 관리")
+        lbl_idiom_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #111827; font-family: 'Pretendard';")
+        idiom_layout.addWidget(lbl_idiom_title)
+        
+        lbl_idiom_desc = QLabel(f"마우스 드래그로 순서를 편집할 수 있으며, 상위 10개는 {config.MODIFIER_NAME} + [숫자] 단축키로 본문에 고속 입력됩니다.")
+        lbl_idiom_desc.setStyleSheet("color: #6B7280; font-size: 12px; font-family: 'Pretendard';")
+        idiom_layout.addWidget(lbl_idiom_desc)
+        
+        idiom_input_row = QHBoxLayout()
+        self.input_idiom_text = QLineEdit()
+        self.input_idiom_text.setObjectName("IdiomInputText")
+        self.input_idiom_text.setPlaceholderText("예: (속)")
+        self.input_idiom_text.setFixedHeight(33)
+        self.input_idiom_text.setStyleSheet("QLineEdit#IdiomInputText { border: 1px solid #D1D5DB; border-radius: 6px; padding-left: 10px; background: white; } QLineEdit#IdiomInputText:focus { border: 2px solid #FF5722; }")
+        self.input_idiom_text.returnPressed.connect(self.add_idiom)
+        
+        btn_idiom_add = QPushButton("추가")
+        btn_idiom_add.setFixedSize(70, 33)
+        btn_idiom_add.setCursor(Qt.PointingHandCursor)
+        btn_idiom_add.clicked.connect(self.add_idiom)
+        btn_idiom_add.setStyleSheet("QPushButton { background-color: #FF5722; color: white; border: none; border-radius: 6px; font-weight: bold; } QPushButton:hover { background-color: #E64A19; }")
+        
+        idiom_input_row.addWidget(self.input_idiom_text, 1)
+        idiom_input_row.addWidget(btn_idiom_add)
+        idiom_layout.addLayout(idiom_input_row)
+        
+        self.scroll_container = QFrame()
+        self.scroll_container.setStyleSheet("QFrame { border: 1px solid #E5E7EB; border-radius: 8px; background-color: #F9FAFB; }")
+        container_layout = QVBoxLayout(self.scroll_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+        
+        self.header_widget = QWidget()
+        self.header_widget.setFixedHeight(35)
+        self.header_widget.setStyleSheet("QWidget { background-color: #F3F4F6; border: none; border-bottom: 1px solid #E5E7EB; border-top-left-radius: 7px; border-top-right-radius: 7px; }")
+        self.header_layout = QHBoxLayout(self.header_widget)
+        self.header_layout.setContentsMargins(10, 0, 10, 0)
+        self.header_layout.setSpacing(8)
+        
+        def create_header_box(text, width=None):
+            box = QFrame()
+            box.setStyleSheet("background: transparent; border: none;")
+            lay = QHBoxLayout(box)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lbl = QLabel(text)
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setStyleSheet("color: #4B5563; font-size: 12px; font-weight: bold; border: none; font-family: 'Pretendard';")
+            lay.addWidget(lbl)
+            if width: box.setFixedWidth(width)
+            return box
+            
+        self.header_layout.addWidget(create_header_box("이동", width=30))
+        self.header_layout.addWidget(create_header_box("지문 내용"), 1)
+        self.header_layout.addWidget(create_header_box("단축키", width=80))
+        self.header_layout.addWidget(create_header_box("삭제", width=40))
+        self.header_layout.addSpacing(12)
+        container_layout.addWidget(self.header_widget)
+        
+        self.list_widget = DragDropListWidget(self)
+        self.list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.list_widget.setStyleSheet("""
+            QListWidget { background-color: transparent; border: none; outline: none; padding: 0px; margin: 0px; }
+            QListWidget::item { background-color: transparent; border: none; padding: 0px; }
+            QListWidget::item:selected { background-color: transparent; }
+            QListWidget::drop-indicator { background-color: #FF5722; height: 3px; }
+            QScrollBar:vertical { border: none; background: transparent; width: 12px; margin: 0; }
+            QScrollBar::handle:vertical { background: #D1D5DB; border-radius: 6px; min-height: 20px; margin: 2px; }
+            QScrollBar::handle:vertical:hover { background: #9CA3AF; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+        """)
+        container_layout.addWidget(self.list_widget)
+        idiom_layout.addWidget(self.scroll_container)
+        
+        self.refresh_list()
+        self.pages.addWidget(self.page_idiom)
+        
+        # 바디 레이아웃 배치
+        body_layout.addWidget(self.sidebar)
+        body_layout.addWidget(self.pages, 1)
+        
+        # 3. 하단 공통 버튼바
+        bottom_frame = QFrame()
+        bottom_frame.setFixedHeight(60)
+        bottom_frame.setStyleSheet("QFrame { background-color: white; border-top: 1px solid #E5E7EB; }")
+        bottom_layout = QHBoxLayout(bottom_frame)
+        bottom_layout.setContentsMargins(25, 0, 25, 0)
+        bottom_layout.setSpacing(10)
+        bottom_layout.addStretch()
+        
+        btn_save = QPushButton("환경 설정 저장")
         btn_save.setObjectName("PrimaryBtn")
-        btn_save.setFixedSize(120, 40)
-        btn_save.clicked.connect(self.save_final)
+        btn_save.setFixedSize(140, 38)
+        btn_save.setCursor(Qt.PointingHandCursor)
+        btn_save.clicked.connect(self.save_all)
+        btn_save.setStyleSheet("QPushButton { background-color: #FF5722; color: white; border: none; border-radius: 6px; font-weight: bold; } QPushButton:hover { background-color: #E64A19; }")
         
         btn_cancel = QPushButton("취소")
-        btn_cancel.setFixedSize(80, 40)
+        btn_cancel.setFixedSize(80, 38)
+        btn_cancel.setCursor(Qt.PointingHandCursor)
         btn_cancel.clicked.connect(self.reject)
+        btn_cancel.setStyleSheet("QPushButton { background-color: white; border: 1px solid #D1D5DB; border-radius: 6px; color: #4B5563; font-weight: bold; } QPushButton:hover { border-color: #FF5722; color: #FF5722; background-color: #FFF9F7; }")
         
-        btn_layout.addWidget(btn_save)
-        btn_layout.addWidget(btn_cancel)
-        layout.addLayout(btn_layout)
+        bottom_layout.addWidget(btn_save)
+        bottom_layout.addWidget(btn_cancel)
+        
+        main_layout.addLayout(body_layout, 1)
+        main_layout.addWidget(bottom_frame)
+        
+        # 4. 연동 이벤트 등록 및 초기 탭 지정
+        self.sidebar.currentRowChanged.connect(self.pages.setCurrentIndex)
+        self.sidebar.setCurrentRow(active_page_idx)
 
-        self.load_preset_to_ui(self.local_active)
-
+    # --- API 키 설정 로직 ---
     def on_preset_changed(self, text):
         if text:
             self.local_active = text
@@ -303,17 +422,15 @@ class SettingsDialog(QDialog):
         
         self.input_ocr.blockSignals(True)
         self.input_ai.blockSignals(True)
-        
         self.input_ocr.setText(data.get("ocr", ""))
+        
         ui_ai = data.get("ui_ai", "")
         if not ui_ai and not self.is_unified:
             ui_ai = data.get("ai", "")
-        
         self.input_ai.setText(ui_ai)
         
         self.input_ocr.blockSignals(False)
         self.input_ai.blockSignals(False)
-        
         self.set_unified_mode(self.is_unified)
 
     def toggle_advanced_mode(self):
@@ -322,26 +439,19 @@ class SettingsDialog(QDialog):
     def set_unified_mode(self, is_unified):
         self.is_unified = is_unified
         self.ai_container.setVisible(not is_unified)
-        self.layout().activate()
-        self.resize(550, self.sizeHint().height())
-
+        
         if is_unified:
             self.btn_toggle_advanced.setIcon(self.get_svg_icon(self.SVG_CHEVRON_DOWN))
             self.btn_toggle_advanced.setText("Google AI Studio API 키 별도 설정 (선택 사항)")
         else:
             self.btn_toggle_advanced.setIcon(self.get_svg_icon(self.SVG_CHEVRON_UP))
             self.btn_toggle_advanced.setText("Google AI Studio API 키 별도 설정 (닫기)")
-
         self.save_temp_data()
-
-    def sync_keys(self):
-        pass
 
     def save_temp_data(self):
         if self.local_active:
             ocr_val = self.input_ocr.text().strip()
             text_ai = self.input_ai.text().strip()
-            
             actual_ai = ocr_val if self.is_unified else text_ai
             
             self.local_presets[self.local_active] = {
@@ -361,7 +471,6 @@ class SettingsDialog(QDialog):
             self.local_presets[name] = {"ocr": "", "ai": "", "ui_ai": "", "unified": True}
             self.combo_presets.addItem(name)
             self.combo_presets.setCurrentText(name)
-            self.input_ocr.setFocus()
 
     def delete_preset(self):
         if len(self.local_presets) <= 1:
@@ -381,9 +490,70 @@ class SettingsDialog(QDialog):
             del self.local_presets[current]
             self.combo_presets.removeItem(self.combo_presets.currentIndex())
 
-    def save_final(self):
+    # --- 저장소 설정 로직 ---
+    def browse_storage_path(self):
+        dir_path = QFileDialog.getExistingDirectory(self, "저장 폴더 선택", self.local_storage_dir)
+        if dir_path:
+            norm_path = os.path.normpath(dir_path)
+            self.local_storage_dir = norm_path
+            self.input_storage_path.setText(norm_path)
+
+    def reset_storage_path(self):
+        self.local_storage_dir = config.DEFAULT_PROJECT_DIR
+        self.input_storage_path.setText(config.DEFAULT_PROJECT_DIR)
+
+    # --- 관용구 설정 로직 ---
+    def refresh_list(self):
+        self.list_widget.clear()
+        for i, idiom in enumerate(self.local_idioms):
+            item = QListWidgetItem(self.list_widget)
+            item.setSizeHint(QSize(0, 45))
+            card = IdiomCard(idiom, i, self)
+            card.delete_signal.connect(self.delete_idiom_by_data)
+            self.list_widget.setItemWidget(item, card)
+
+    def delete_idiom_by_data(self, data):
+        if data in self.local_idioms:
+            self.local_idioms.remove(data)
+            self.refresh_list()
+
+    def add_idiom(self):
+        text = self.input_idiom_text.text().strip()
+        if not text:
+            QMessageBox.warning(self, "알림", "내용을 입력해주세요.")
+            return
+        self.local_idioms.append({"text": text, "key": ""})
+        self.input_idiom_text.clear()
+        self.refresh_list()
+
+    def move_idiom(self, src, dst):
+        if src >= 0 and dst >= 0 and src < len(self.local_idioms) and dst < len(self.local_idioms):
+            item = self.local_idioms.pop(src)
+            self.local_idioms.insert(dst, item)
+            self.refresh_list()
+
+    # --- 최종 일괄 저장 및 반영 ---
+    def save_all(self):
+        # 1. API 키 프리셋 최종 확정
+        self.save_temp_data()
         config.save_settings(self.local_presets, self.local_active)
-        QMessageBox.information(self, "저장 완료", f"'{self.local_active}' 프리셋이 적용되었습니다.")
+        
+        # 2. 저장소 변경 사항 확정
+        if self.local_storage_dir:
+            config.update_project_storage_dir(self.local_storage_dir)
+            
+        # 3. 관용구 단축키 재인덱싱 및 확정
+        for index, item in enumerate(self.local_idioms):
+            if index < 9:
+                item["key"] = str(index + 1)
+            elif index == 9:
+                item["key"] = "0"
+            else:
+                item["key"] = ""
+        config.IDIOMS = self.local_idioms
+        config.save_settings(config.API_PRESETS, config.ACTIVE_PRESET_NAME)
+        
+        QMessageBox.information(self, "저장 완료", "모든 환경 설정이 적용 및 저장되었습니다.")
         self.accept()
 
 # =================================================================
@@ -1128,6 +1298,14 @@ class FloatingIdiomViewer(QDialog):
         self.btn_help.setToolTip(help_text)
         title_layout.addWidget(self.btn_help)
         
+        # 설정 (톱니바퀴) 버튼 추가
+        svg_settings_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>'
+        svg_settings_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FF5722" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>'
+        self.btn_settings = TitleBarButton(svg_settings_normal, svg_settings_hover, "#E5E7EB")
+        self.btn_settings.setToolTip("환경 설정 (관용구 및 기본 옵션 변경)")
+        self.btn_settings.clicked.connect(self.open_preferences)
+        title_layout.addWidget(self.btn_settings)
+        
         # SVG 정의
         svg_close_normal = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
         svg_close_hover = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
@@ -1278,6 +1456,14 @@ class FloatingIdiomViewer(QDialog):
             event.accept()
         else:
             super().keyPressEvent(event)
+
+    def open_preferences(self):
+        parent = self.parent()
+        dlg = PreferencesDialog(parent, active_page_idx=2)
+        if dlg.exec() == QDialog.Accepted:
+            self.refresh_list()
+            if parent and hasattr(parent, 'setup_idiom_shortcuts'):
+                parent.setup_idiom_shortcuts()
 
 # =================================================================
 # 선택적 취소를 위한 플로팅 버튼 (FloatingUndoButton)
