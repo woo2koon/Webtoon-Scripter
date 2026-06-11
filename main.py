@@ -48,7 +48,7 @@ restore_template()
 
 
 
-from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, PreferencesDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog, ShortcutHelpDialog
+from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, PreferencesDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog, ShortcutHelpDialog, CustomMessageBox
 from update_worker import UpdateCheckWorker, UpdateDownloadWorker
 
 class GlobalScrollShortcutFilter(QObject):
@@ -732,17 +732,14 @@ class WebtoonManager(QMainWindow):
                 has_work = True
         
         if has_work:
-            msg_box = QMessageBox(self)
-            msg_box.setWindowTitle('기존 작업 불러오기')
-            msg_box.setText('심플 모드에 기존 작업 내용이 있습니다.\n이어서 작업하시겠습니까?\n(아니오를 누르면 기존 내용을 삭제하고 새로 시작합니다.)')
-            
-            btn_yes = msg_box.addButton(" 예 ", QMessageBox.ActionRole)
-            btn_no = msg_box.addButton(" 아니오 ", QMessageBox.ActionRole)
-            
-            msg_box.setDefaultButton(btn_yes)
-            msg_box.exec()
+            reply = CustomMessageBox.question(
+                self,
+                '기존 작업 불러오기',
+                '심플 모드에 기존 작업 내용이 있습니다.\n이어서 작업하시겠습니까?\n(아니오를 누르면 기존 내용을 삭제하고 새로 시작합니다.)',
+                [CustomMessageBox.Yes, CustomMessageBox.No]
+            )
 
-            if msg_box.clickedButton() == btn_no:
+            if reply == CustomMessageBox.No:
                 self.clear_simple_mode_cache()
                 self.clear_workspace()
                 self.load_images()
@@ -750,17 +747,14 @@ class WebtoonManager(QMainWindow):
             # '예'를 누른 경우는 이미 toggle_simple_mode 등에서 로드가 완료되었으므로 추가 로드가 필요 없습니다.
             
     def prompt_clear_workspace(self):
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle('새 작업 시작')
-        msg_box.setText('이미지와 텍스트를 모두 지우고 새 작업을 시작하시겠습니까?')
-        
-        btn_yes = msg_box.addButton(" 예 ", QMessageBox.ActionRole)
-        btn_no = msg_box.addButton(" 아니오 ", QMessageBox.ActionRole)
-        
-        msg_box.setDefaultButton(btn_no) # 실수 방지를 위해 '아니오'를 기본값으로
-        msg_box.exec()
+        reply = CustomMessageBox.question(
+            self,
+            '새 작업 시작',
+            '이미지와 텍스트를 모두 지우고 새 작업을 시작하시겠습니까?',
+            [CustomMessageBox.Yes, CustomMessageBox.No]
+        )
 
-        if msg_box.clickedButton() == btn_yes:
+        if reply == CustomMessageBox.Yes:
             self.analysis_menu.hide()
             if getattr(self, 'is_simple_mode', False):
                 self.clear_simple_mode_cache()
@@ -2280,6 +2274,7 @@ class WebtoonManager(QMainWindow):
         # 파일 메뉴
         file_menu = menubar.addMenu("파일(&F)")
         file_menu.setFont(app_font)
+        file_menu.setStyleSheet("QMenu::item { padding: 8px 16px 8px 16px; }")
         
         # 새 작업(심플 모드) 액션 추가
         self.action_new_simple = QAction("새 작업 (심플 모드)", self)
@@ -2308,8 +2303,9 @@ class WebtoonManager(QMainWindow):
         # 설정 메뉴
         settings_menu = menubar.addMenu("설정(&S)")
         settings_menu.setFont(app_font)
+        settings_menu.setStyleSheet("QMenu::item { padding: 8px 16px 8px 16px; }")
 
-        self.action_preferences = QAction("환경설정 (Preferences)", self)
+        self.action_preferences = QAction("환경설정", self)
         self.action_preferences.setMenuRole(QAction.NoRole)  # macOS 앱 메뉴로 이동하지 않고 설정 메뉴 안에 유지
         self.action_preferences.triggered.connect(self.open_preferences_dialog)
         settings_menu.addAction(self.action_preferences)
@@ -2318,6 +2314,7 @@ class WebtoonManager(QMainWindow):
         help_menu = menubar.addMenu("도움말\u200b(&H)")
         help_menu.setFont(app_font)
         help_menu.menuAction().setMenuRole(QAction.NoRole) # macOS의 넓은 검색창 생성 방지
+        help_menu.setStyleSheet("QMenu::item { padding: 8px 16px 8px 16px; }")
         action_update_check = QAction("업데이트 확인", self)
         action_update_check.triggered.connect(lambda: self.check_for_updates(manual=True))
         help_menu.addAction(action_update_check)
@@ -3359,17 +3356,15 @@ class WebtoonManager(QMainWindow):
     def run_ocr(self):
         # 0. API 키 등록 여부 검증
         if not config.OCR_API_KEY or not config.OCR_API_KEY.strip():
-            msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("API 키 필요")
-            msg_box.setText("⚠️ 구글 클라우드 API 키가 설정되지 않았습니다.\n\n"
-                            "분석을 시작하려면 먼저 설정에서 API 키를 입력해 주세요.")
-            msg_box.setIcon(QMessageBox.Warning)
-            btn_settings = msg_box.addButton("설정 열기", QMessageBox.ActionRole)
-            btn_close = msg_box.addButton("닫기", QMessageBox.RejectRole)
-            msg_box.setDefaultButton(btn_settings)
-            msg_box.exec()
+            reply = CustomMessageBox.warning(
+                self,
+                "API 키 필요",
+                "⚠️ 구글 클라우드 API 키가 설정되지 않았습니다.\n\n"
+                "분석을 시작하려면 먼저 설정에서 API 키를 입력해 주세요.",
+                ["설정 열기", "닫기"]
+            )
             
-            if msg_box.clickedButton() == btn_settings:
+            if reply == "설정 열기":
                 self.open_settings_dialog()
             return
 
@@ -3399,19 +3394,17 @@ class WebtoonManager(QMainWindow):
         # '새로 분석하기'가 꺼져 있고 + 에디터에 글이 있을 때만 묻습니다.
         # -----------------------------------------------------------
         if not force_mode and self.text_editor.toPlainText().strip():
-            msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("분석 확인")
-            msg_box.setText("⚠️ 이미 분석된 내용이나 수정 중인 텍스트가 있습니다.\n"
-                            "다시 분석을 시작하면 Step 1의 모든 정보가 초기화됩니다.\n\n"
-                            "그래도 진행하시겠습니까?")
-            msg_box.setIcon(QMessageBox.Question)
-            btn_yes = msg_box.addButton("예", QMessageBox.YesRole)
-            btn_no = msg_box.addButton("아니오", QMessageBox.NoRole)
-            msg_box.setDefaultButton(btn_no)
-            msg_box.exec()
+            reply = CustomMessageBox.question(
+                self,
+                "분석 확인",
+                "⚠️ 이미 분석된 내용이나 수정 중인 텍스트가 있습니다.\n"
+                "다시 분석을 시작하면 Step 1의 모든 정보가 초기화됩니다.\n\n"
+                "그래도 진행하시겠습니까?",
+                [CustomMessageBox.Yes, CustomMessageBox.No]
+            )
             
             # 사용자가 '아니오'를 누르거나 창을 닫으면 여기서 바로 함수를 종료합니다.
-            if msg_box.clickedButton() != btn_yes:
+            if reply != CustomMessageBox.Yes:
                 return
         
         # 5. [실행] 이제 모든 준비가 끝났습니다! 분석 로직으로 전달합니다.
@@ -3968,7 +3961,7 @@ class WebtoonManager(QMainWindow):
     def migrate_external_characters(self):
         """외부 저장된 HTML 또는 마이그레이션 폴더로부터 글로벌 캐릭터 DB로 캐릭터 데이터를 가져옵니다."""
         if not self.current_title:
-            QMessageBox.warning(self, "마이그레이션 오류", "먼저 마이그레이션할 작품을 선택해주세요.")
+            CustomMessageBox.warning(self, "마이그레이션 오류", "먼저 마이그레이션할 작품을 선택해주세요.")
             return
 
         import os
@@ -3977,7 +3970,7 @@ class WebtoonManager(QMainWindow):
         import config
         from widgets import get_round_rect_pixmap
         from PySide6.QtGui import QPixmap
-        from PySide6.QtWidgets import QMessageBox, QInputDialog, QApplication
+        from PySide6.QtWidgets import QInputDialog, QApplication
 
         migration_dir = "migration"
         os.makedirs(migration_dir, exist_ok=True)
@@ -3985,7 +3978,7 @@ class WebtoonManager(QMainWindow):
         # 1. migration 폴더에서 HTML 파일 스캔
         html_files = [f for f in os.listdir(migration_dir) if f.endswith(".html")]
         if not html_files:
-            QMessageBox.information(
+            CustomMessageBox.information(
                 self, 
                 "캐릭터 가져오기 안내", 
                 "마이그레이션 폴더 내에 HTML 파일이 없습니다.\n\n"
@@ -4019,12 +4012,12 @@ class WebtoonManager(QMainWindow):
             with open(html_path, "r", encoding="utf-8") as f:
                 html_content = f.read()
         except Exception as e:
-            QMessageBox.critical(self, "파일 오류", f"HTML 파일을 읽는 데 실패했습니다:\n{e}")
+            CustomMessageBox.critical(self, "파일 오류", f"HTML 파일을 읽는 데 실패했습니다:\n{e}")
             return
 
         blocks = html_content.split('class="character-image')
         if len(blocks) <= 1:
-            QMessageBox.warning(self, "파싱 오류", "HTML 파일에서 유효한 캐릭터 영역을 찾을 수 없습니다.\n올바른 덥라이트 캐릭터 페이지 HTML 파일이 맞는지 확인해 주세요.")
+            CustomMessageBox.warning(self, "파싱 오류", "HTML 파일에서 유효한 캐릭터 영역을 찾을 수 없습니다.\n올바른 덥라이트 캐릭터 페이지 HTML 파일이 맞는지 확인해 주세요.")
             return
 
         role_map = {
@@ -4171,7 +4164,7 @@ class WebtoonManager(QMainWindow):
                 self.character_viewer.load_data()
 
             self.toast.show_message("✅ 외부 캐릭터 DB 마이그레이션 완료!", 3000)
-            QMessageBox.information(
+            CustomMessageBox.information(
                 self,
                 "마이그레이션 완료",
                 f"캐릭터 마이그레이션이 완료되었습니다!\n\n"
@@ -4180,7 +4173,7 @@ class WebtoonManager(QMainWindow):
                 f"• 프로필 이미지 가져옴: {img_copied_count}개"
             )
         else:
-            QMessageBox.information(
+            CustomMessageBox.information(
                 self,
                 "마이그레이션 결과",
                 "HTML 파일에서 새로 추가하거나 보완할 캐릭터 정보가 없습니다.\n이미 모두 최신 상태로 등록되어 있습니다."
@@ -4329,7 +4322,7 @@ class WebtoonManager(QMainWindow):
             if hasattr(self, 'toast'):
                 self.toast.show_message("⚠️ 합칠 행을 2개 이상 선택해주세요.", 1500)
             else:
-                QMessageBox.warning(self, "알림", "합칠 행을 2개 이상 선택해주세요.")
+                CustomMessageBox.warning(self, "알림", "합칠 행을 2개 이상 선택해주세요.")
             return
             
         self.table_script.save_state_for_undo()
@@ -4459,7 +4452,7 @@ class WebtoonManager(QMainWindow):
                 subprocess.Popen(script, shell=True)
                 sys.exit(0)
             else:
-                QMessageBox.warning(dlg, "오류", "지원되지 않는 운영체제입니다.")
+                CustomMessageBox.warning(dlg, "오류", "지원되지 않는 운영체제입니다.")
                 dlg.set_downloading_mode(False)
         except Exception as e:
             dlg.show_error(str(e))
@@ -4668,23 +4661,16 @@ class WebtoonManager(QMainWindow):
         if save_path:
             config.update_last_save_dir(save_path)
             if os.path.exists(save_path):
-                msg_box = QMessageBox(self)
-                msg_box.setWindowTitle("파일 중복 확인")
-                msg_box.setText(f"'{os.path.basename(save_path)}' 파일이 이미 존재합니다.")
-                msg_box.setInformativeText("기존 파일을 대체할까요, 아니면 새 이름으로 저장할까요?")
+                reply = CustomMessageBox.question(
+                    self,
+                    "파일 중복 확인",
+                    f"'{os.path.basename(save_path)}' 파일이 이미 존재합니다.\n기존 파일을 대체할까요, 아니면 새 이름으로 저장할까요?",
+                    ["덮어쓰기", "새 이름으로 저장", "취소"]
+                )
                 
-                # 버튼 순서 조정: [덮어쓰기] [새 이름으로 저장] [취소]
-                btn_yes = msg_box.addButton("덮어쓰기", QMessageBox.ActionRole)
-                btn_rename = msg_box.addButton("새 이름으로 저장", QMessageBox.ActionRole)
-                btn_cancel = msg_box.addButton("취소", QMessageBox.RejectRole)
-                msg_box.setDefaultButton(btn_rename)
-                
-                msg_box.exec()
-                clicked = msg_box.clickedButton()
-                
-                if clicked == btn_yes:
+                if reply == "덮어쓰기":
                     pass 
-                elif clicked == btn_rename:
+                elif reply == "새 이름으로 저장":
                     base, ext = os.path.splitext(save_path)
                     counter = 1
                     while os.path.exists(f"{base}({counter}){ext}"):
@@ -4696,7 +4682,7 @@ class WebtoonManager(QMainWindow):
             try:
                 with open(save_path, 'w', encoding='utf-8') as f: f.write(content)
                 self.toast.show_message("✅ 텍스트 파일이 저장되었습니다!", 2000) # 토스트 사용
-            except Exception as e: QMessageBox.critical(self, "오류", f"저장 중 오류가 발생했습니다.\n{e}")
+            except Exception as e: CustomMessageBox.critical(self, "오류", f"저장 중 오류가 발생했습니다.\n{e}")
 
     def remove_line_numbers(self):
         cursor = self.text_editor.textCursor()
@@ -4710,17 +4696,15 @@ class WebtoonManager(QMainWindow):
     def run_spell_check(self):
         # 0. API 키 등록 여부 검증
         if not config.AI_API_KEY or not config.AI_API_KEY.strip():
-            msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("API 키 필요")
-            msg_box.setText("⚠️ 구글 Cloud API 키가 설정되지 않았습니다.\n\n"
-                            "AI 맞춤법 검사를 시작하려면 먼저 설정에서 API 키를 입력해 주세요.")
-            msg_box.setIcon(QMessageBox.Warning)
-            btn_settings = msg_box.addButton("설정 열기", QMessageBox.ActionRole)
-            btn_close = msg_box.addButton("닫기", QMessageBox.RejectRole)
-            msg_box.setDefaultButton(btn_settings)
-            msg_box.exec()
+            reply = CustomMessageBox.warning(
+                self,
+                "API 키 필요",
+                "⚠️ 구글 Cloud API 키가 설정되지 않았습니다.\n\n"
+                "AI 맞춤법 검사를 시작하려면 먼저 설정에서 API 키를 입력해 주세요.",
+                ["설정 열기", "닫기"]
+            )
             
-            if msg_box.clickedButton() == btn_settings:
+            if reply == "설정 열기":
                 self.open_settings_dialog()
             return
 
@@ -4797,7 +4781,7 @@ class WebtoonManager(QMainWindow):
         if hasattr(self, 'spellcheck_progress') and self.spellcheck_progress:
             self.spellcheck_progress.close()
             self.spellcheck_progress = None
-        QMessageBox.critical(self, "오류", err_msg)
+        CustomMessageBox.critical(self, "오류", err_msg)
 
     def toggle_sidebar(self):
         width = self.sidebar.width()
@@ -4839,11 +4823,11 @@ class WebtoonManager(QMainWindow):
     def on_update_check_finished(self, release_data, manual=False):
         if not release_data:
             if manual:
-                msg_box = QMessageBox(self)
-                msg_box.setWindowTitle("업데이트 정보")
-                msg_box.setText(f"현재 최신 버전을 사용 중입니다.\n(버전: v{config.APP_VERSION})")
-                msg_box.setIcon(QMessageBox.Information)
-                msg_box.exec()
+                CustomMessageBox.information(
+                    self,
+                    "업데이트 정보",
+                    f"현재 최신 버전을 사용 중입니다.\n(버전: v{config.APP_VERSION})"
+                )
             return
             
         version_tag = release_data.get("tag_name", "")
@@ -4878,7 +4862,7 @@ class WebtoonManager(QMainWindow):
 
         if not download_url:
             if manual:
-                QMessageBox.warning(self, "업데이트 정보", "현재 운영체제에 맞는 설치 파일이 존재하지 않습니다.")
+                CustomMessageBox.warning(self, "업데이트 정보", "현재 운영체제에 맞는 설치 파일이 존재하지 않습니다.")
             return
 
         if manual:
@@ -4980,7 +4964,7 @@ class WebtoonManager(QMainWindow):
                 subprocess.Popen(script, shell=True)
                 sys.exit(0)
             else:
-                QMessageBox.warning(dlg, "오류", "지원되지 않는 운영체제입니다.")
+                CustomMessageBox.warning(dlg, "오류", "지원되지 않는 운영체제입니다.")
                 dlg.set_downloading_mode(False)
         except Exception as e:
             dlg.show_error(str(e))
@@ -5008,7 +4992,7 @@ class WebtoonManager(QMainWindow):
         try:
             subdirs = [d for d in os.listdir(src_projects_dir) if os.path.isdir(os.path.join(src_projects_dir, d))]
         except Exception as e:
-            QMessageBox.warning(
+            CustomMessageBox.warning(
                 self, 
                 "가져오기 실패", 
                 f"폴더를 읽는 중 오류가 발생했습니다.\n올바른 폴더인지 확인해 주세요.\n(에러: {e})"
@@ -5022,7 +5006,7 @@ class WebtoonManager(QMainWindow):
             valid_projects.append(d)
 
         if not valid_projects:
-            QMessageBox.warning(
+            CustomMessageBox.warning(
                 self, 
                 "가져오기 실패", 
                 "선택한 폴더 내에서 프로젝트 데이터를 찾을 수 없습니다.\n올바른 폴더를 선택했는지 확인해 주세요."
@@ -5030,16 +5014,15 @@ class WebtoonManager(QMainWindow):
             return
 
         # 4. 가져오기 진행 여부 확인
-        reply = QMessageBox.question(
+        reply = CustomMessageBox.question(
             self,
             "프로젝트 가져오기",
             f"선택한 폴더에서 총 {len(valid_projects)}개의 작품(프로젝트)을 발견했습니다.\n"
             f"이 데이터를 현재 저장소로 가져오시겠습니까?\n\n"
             f"(이미 동일한 이름의 작품/회차가 존재할 경우 새로운 내용으로 덮어쓰거나 병합됩니다.)",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes
+            [CustomMessageBox.Yes, CustomMessageBox.No]
         )
-        if reply == QMessageBox.No:
+        if reply == CustomMessageBox.No:
             return
 
         # 5. 복사 및 병합 작업 진행
@@ -5048,7 +5031,7 @@ class WebtoonManager(QMainWindow):
 
         for project_name in valid_projects:
             src_project_path = os.path.join(src_projects_dir, project_name)
-            dst_project_path = os.path.join(PROJECTS_DIR, project_name)
+            dst_project_path = os.path.join(config.PROJECTS_DIR, project_name)
 
             try:
                 if not os.path.exists(dst_project_path):
@@ -5089,13 +5072,13 @@ class WebtoonManager(QMainWindow):
         
         if error_list:
             error_msg = "\n".join(error_list)
-            QMessageBox.warning(
+            CustomMessageBox.warning(
                 self,
                 "가져오기 완료 (일부 오류)",
                 f"총 {imported_count}개의 프로젝트를 성공적으로 가져왔으나, 다음 프로젝트 복사 중 오류가 발생했습니다:\n\n{error_msg}"
             )
         else:
-            QMessageBox.information(
+            CustomMessageBox.information(
                 self,
                 "가져오기 성공",
                 f"총 {imported_count}개의 프로젝트 데이터를 성공적으로 가져왔습니다!\n좌측의 작품 목록을 확인해 주세요."

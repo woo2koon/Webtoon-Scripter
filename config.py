@@ -424,6 +424,8 @@ EXCEL_TEMPLATE_BASE64 = ""
 
 MODERN_STYLE = """
 QWidget { font-family: 'Pretendard', 'Malgun Gothic', 'AppleGothic', sans-serif; font-size: 14px; color: #333333; }
+QMessageBox QLabel { font-family: 'Pretendard'; font-size: 14px; }
+QMessageBox QPushButton { font-family: 'Pretendard'; font-size: 13px; font-weight: bold; min-width: 80px; min-height: 28px; }
 QMainWindow, QDialog { background-color: #ffffff; }
 QMenuBar { font-family: 'Pretendard'; background-color: white; border-bottom: 1px solid #e5e7eb; }
 QMenuBar::item { font-family: 'Pretendard'; padding: 8px 12px; background: transparent; color: #333; }

@@ -14,9 +14,10 @@ import base64
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
     QPushButton, QFrame, QListWidget, QListWidgetItem, QApplication,
-    QDialog, QMenu, QFileDialog, QMessageBox, QTabWidget, QGridLayout,
+    QDialog, QMenu, QFileDialog, QTabWidget, QGridLayout,
     QScrollArea, QSlider, QToolTip
 )
+from .message_box import CustomMessageBox
 from PySide6.QtCore import Qt, Signal, QMimeData, QPoint, QSize, QRect, QRectF, QByteArray, QEvent
 from PySide6.QtGui import (
     QPixmap, QDrag, QPainter, QColor, QPen, QFont, QIcon, QRegion, QAction, QBrush,
@@ -475,7 +476,7 @@ class CharacterRow(QFrame):
                 if hasattr(mw, 'toast'):
                     mw.toast.show_message(f"⚠️ '{new_name}' 캐릭터는 이미 추가되어 있습니다.", 1500)
                 else:
-                    QMessageBox.warning(self, "중복 경고", f"'{new_name}' 캐릭터는 이미 추가되어 있습니다.")
+                    CustomMessageBox.warning(self, "중복 경고", f"'{new_name}' 캐릭터는 이미 추가되어 있습니다.")
                 
                 # Revert text
                 self.input_name.blockSignals(True)
@@ -2381,12 +2382,12 @@ class GlobalCharacterSettingsDialog(QDialog):
                 break
                 
         if not main_win or not hasattr(main_win, 'scroll_area') or not main_win.scroll_area:
-            QMessageBox.warning(self, "경고", "메인 화면의 웹툰 뷰어를 찾을 수 없습니다.")
+            CustomMessageBox.warning(self, "경고", "메인 화면의 웹툰 뷰어를 찾을 수 없습니다.")
             return
             
         viewport = main_win.scroll_area.viewport()
         if not viewport:
-            QMessageBox.warning(self, "경고", "웹툰 뷰포트 영역을 획득할 수 없습니다.")
+            CustomMessageBox.warning(self, "경고", "웹툰 뷰포트 영역을 획득할 수 없습니다.")
             return
             
         self.hide()
@@ -2446,7 +2447,7 @@ class GlobalCharacterSettingsDialog(QDialog):
 
     def adjust_profile_image(self):
         if not self.temp_orig_image_path or not os.path.exists(self.temp_orig_image_path):
-            QMessageBox.warning(self, "경고", "원본 이미지를 찾을 수 없어 조절할 수 없습니다.")
+            CustomMessageBox.warning(self, "경고", "원본 이미지를 찾을 수 없어 조절할 수 없습니다.")
             return
             
         crop_dlg = ImageCropDialog(self.temp_orig_image_path, self, initial_crop_rect=self.temp_crop_rect)
@@ -2605,7 +2606,7 @@ class GlobalCharacterSettingsDialog(QDialog):
     def submit_character(self):
         name = self.input_name.text().strip()
         if not name:
-            QMessageBox.warning(self, "입력 오류", "캐릭터 이름을 입력해주세요.")
+            CustomMessageBox.warning(self, "입력 오류", "캐릭터 이름을 입력해주세요.")
             return
             
         chars = config.load_global_characters(self.project_name)
@@ -2613,11 +2614,11 @@ class GlobalCharacterSettingsDialog(QDialog):
         if self.editing_name:
             if self.editing_name != name:
                 if any(c.get("name", "").strip() == name for c in chars):
-                    QMessageBox.warning(self, "중복 오류", f"'{name}' 캐릭터는 이미 등록되어 있습니다.")
+                    CustomMessageBox.warning(self, "중복 오류", f"'{name}' 캐릭터는 이미 등록되어 있습니다.")
                     return
         else:
             if any(c.get("name", "").strip() == name for c in chars):
-                QMessageBox.warning(self, "중복 오류", f"'{name}' 캐릭터는 이미 등록되어 있습니다.")
+                CustomMessageBox.warning(self, "중복 오류", f"'{name}' 캐릭터는 이미 등록되어 있습니다.")
                 return
                 
         img_dir = os.path.join(config.PROJECTS_DIR, self.project_name, "character_images")
@@ -2824,15 +2825,13 @@ class GlobalCharacterSettingsDialog(QDialog):
         self.load_characters()
 
     def delete_character(self, name):
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("캐릭터 삭제")
-        msg_box.setText(f"'{name}' 캐릭터를 정말 삭제하시겠습니까?")
-        msg_box.setIcon(QMessageBox.Question)
-        btn_yes = msg_box.addButton("예", QMessageBox.YesRole)
-        btn_no = msg_box.addButton("아니오", QMessageBox.NoRole)
-        msg_box.setDefaultButton(btn_no)
-        msg_box.exec()
-        if msg_box.clickedButton() == btn_yes:
+        reply = CustomMessageBox.question(
+            self,
+            "캐릭터 삭제",
+            f"'{name}' 캐릭터를 정말 삭제하시겠습니까?",
+            [CustomMessageBox.Yes, CustomMessageBox.No]
+        )
+        if reply == CustomMessageBox.Yes:
             chars = config.load_global_characters(self.project_name)
             
             existing = next((c for c in chars if c.get("name", "") == name), None)
@@ -2888,17 +2887,15 @@ class GlobalCharacterSettingsDialog(QDialog):
                         widget.load_data()
                 
     def sync_all_episodes_confirm(self):
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("모든 회차 동기화")
-        msg_box.setText("⚠️ 이 작업은 생성된 기존 모든 회차 폴더의 character_info.csv 파일을 검사하여,\n"
-                        "현재 글로벌 DB에 저장된 나이, 성별, 역할 정보로 일괄 덮어쓰고 동기화합니다.\n"
-                        "계속하시겠습니까?")
-        msg_box.setIcon(QMessageBox.Question)
-        btn_yes = msg_box.addButton("예", QMessageBox.YesRole)
-        btn_no = msg_box.addButton("아니오", QMessageBox.NoRole)
-        msg_box.setDefaultButton(btn_no)
-        msg_box.exec()
-        if msg_box.clickedButton() == btn_yes:
+        reply = CustomMessageBox.question(
+            self,
+            "모든 회차 동기화",
+            "⚠️ 이 작업은 생성된 기존 모든 회차 폴더의 character_info.csv 파일을 검사하여,\n"
+            "현재 글로벌 DB에 저장된 나이, 성별, 역할 정보로 일괄 덮어쓰고 동기화합니다.\n"
+            "계속하시겠습니까?",
+            [CustomMessageBox.Yes, CustomMessageBox.No]
+        )
+        if reply == CustomMessageBox.Yes:
             self.sync_all_episodes()
             
     def sync_all_episodes(self):
@@ -2942,7 +2939,7 @@ class GlobalCharacterSettingsDialog(QDialog):
                     print(f"회차 '{ep_dir}' 동기화 오류: {e}")
                     error_count += 1
                     
-        QMessageBox.information(self, "동기화 완료", 
+        CustomMessageBox.information(self, "동기화 완료", 
                                 f"총 {success_count}개 회차의 캐릭터 정보 동기화가 성공적으로 완료되었습니다.\n"
                                 f"(실패 회차 수: {error_count})")
 
@@ -2995,7 +2992,7 @@ class GlobalCharacterSettingsDialog(QDialog):
                 with open(html_path, 'r', encoding='utf-8', errors='ignore') as f:
                     html_content = f.read()
         except Exception as e:
-            QMessageBox.critical(self, "가져오기 오류", f"MHTML 파일을 디코딩하는 중 오류가 발생했습니다:\n{str(e)}")
+            CustomMessageBox.critical(self, "가져오기 오류", f"MHTML 파일을 디코딩하는 중 오류가 발생했습니다:\n{str(e)}")
             return
             
         div_pattern = re.compile(
@@ -3005,7 +3002,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         matches = list(div_pattern.finditer(html_content))
         
         if not matches:
-            QMessageBox.warning(
+            CustomMessageBox.warning(
                 self, 
                 "파싱 실패", 
                 "선택한 파일에서 유효한 캐릭터 정보를 찾지 못했습니다.\n"
@@ -3143,7 +3140,7 @@ class GlobalCharacterSettingsDialog(QDialog):
         if mw and hasattr(mw, 'load_project_characters'):
             mw.load_project_characters()
             
-        QMessageBox.information(
+        CustomMessageBox.information(
             self, 
             "가져오기 완료", 
             f"캐릭터 정보 가져오기가 완료되었습니다!\n\n- 신규 추가: {imported_count}명\n- 업데이트(프로필 포함): {updated_count}명"

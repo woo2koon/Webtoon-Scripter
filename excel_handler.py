@@ -7,7 +7,8 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.worksheet.datavalidation import DataValidation
 from copy import copy
-from PySide6.QtWidgets import QFileDialog, QApplication, QMessageBox
+from PySide6.QtWidgets import QFileDialog, QApplication
+from widgets.message_box import CustomMessageBox
 
 import config
 from utils import restore_template, open_path
@@ -25,7 +26,7 @@ def export_to_excel(main_window):
         
         export_episode_to_excel_core(main_window, e_path, main_window.current_title, main_window.current_episode, toast_target=main_window)
     except Exception as e:
-        QMessageBox.critical(main_window, "오류", f"저장 중 오류 발생: {e}")
+        CustomMessageBox.critical(main_window, "오류", f"저장 중 오류 발생: {e}")
 
 def export_episode_to_excel_core(parent_widget, e_path, title, episode, toast_target=None):
     """
@@ -43,23 +44,16 @@ def export_episode_to_excel_core(parent_widget, e_path, title, episode, toast_ta
         config.update_last_save_dir(save_path)
         # 중복 확인 얼럿 실행 (시스템 기본 테마)
         if os.path.exists(save_path):
-            msg_box = QMessageBox(parent_widget)
-            msg_box.setWindowTitle("파일 중복 확인")
-            msg_box.setText(f"'{os.path.basename(save_path)}' 파일이 이미 존재합니다.")
-            msg_box.setInformativeText("기존 파일을 대체할까요, 아니면 새 이름으로 저장할까요?")
+            reply = CustomMessageBox.question(
+                parent_widget,
+                "파일 중복 확인",
+                f"'{os.path.basename(save_path)}' 파일이 이미 존재합니다.\n기존 파일을 대체할까요, 아니면 새 이름으로 저장할까요?",
+                ["덮어쓰기", "새 이름으로 저장", "취소"]
+            )
             
-            # 버튼 순서 조정: [덮어쓰기] [새 이름으로 저장] [취소]
-            btn_yes = msg_box.addButton("덮어쓰기", QMessageBox.ActionRole)
-            btn_rename = msg_box.addButton("새 이름으로 저장", QMessageBox.ActionRole)
-            btn_cancel = msg_box.addButton("취소", QMessageBox.RejectRole)
-            msg_box.setDefaultButton(btn_rename)
-            
-            msg_box.exec()
-            clicked = msg_box.clickedButton()
-            
-            if clicked == btn_yes:
+            if reply == "덮어쓰기":
                 pass 
-            elif clicked == btn_rename:
+            elif reply == "새 이름으로 저장":
                 base, ext = os.path.splitext(save_path)
                 counter = 1
                 while os.path.exists(f"{base}({counter}){ext}"):

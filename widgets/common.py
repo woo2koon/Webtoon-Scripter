@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QLabel, QComboBox, QListView, QStyledItemDelegate, QScrollArea, QFrame,
     QHBoxLayout, QLineEdit, QPushButton, QWidget, QSizePolicy, QTextEdit,
     QTableWidget, QAbstractItemView, QTableWidgetItem, QApplication, QHeaderView,
-    QGraphicsOpacityEffect, QMenu, QDialog, QVBoxLayout, QMessageBox, QInputDialog,
+    QGraphicsOpacityEffect, QMenu, QDialog, QVBoxLayout, QInputDialog,
     QListWidget, QListWidgetItem, QStackedWidget, QFileDialog, QCheckBox
 )
 from PySide6.QtCore import (
