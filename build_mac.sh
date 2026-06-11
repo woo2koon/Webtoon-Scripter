@@ -99,7 +99,7 @@ sleep 2
 hdiutil detach "${MOUNT_DIR}"
 
 # 6. 최종 압축 DMG 생성 (UDZO 포맷)
-DMG_FILE="dist/${APP_NAME}_v3.0.1.dmg"
+DMG_FILE="dist/${APP_NAME}_v3.0.0.dmg"
 rm -f "${DMG_FILE}"
 hdiutil convert "${TEMP_DMG}" -format UDZO -imagekey zlib-level=9 -o "${DMG_FILE}"
 

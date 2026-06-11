@@ -997,16 +997,35 @@ class FloatingIdiomViewer(QDialog):
         self.show_help = False # 사용 안내 토글 상태 (기본값: 숨김)
         
         # 프레임리스 윈도우 및 투명 배경 설정
-        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFocusPolicy(Qt.NoFocus)
         self.resize(300, 450)
         
         self.init_ui()
+        self.list_widget.setFocusPolicy(Qt.NoFocus)
         self.refresh_list()
         
         # 8방향 리사이즈 및 타이틀바 드래그 이동 등록
         from .window_resizer import FramelessWindowResizer
         self.resizer = FramelessWindowResizer(self, self.title_bar)
+        
+        self.search_bar.installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        from PySide6.QtCore import QEvent
+        if watched == self.search_bar:
+            if event.type() == QEvent.FocusIn:
+                flags = self.windowFlags()
+                if flags & Qt.WindowDoesNotAcceptFocus:
+                    self.setWindowFlags(flags & ~Qt.WindowDoesNotAcceptFocus)
+                    self.show()
+            elif event.type() == QEvent.FocusOut:
+                flags = self.windowFlags()
+                if not (flags & Qt.WindowDoesNotAcceptFocus):
+                    self.setWindowFlags(flags | Qt.WindowDoesNotAcceptFocus)
+                    self.show()
+        return super().eventFilter(watched, event)
 
     def toggle_sticky(self):
         self.is_sticky = not self.is_sticky

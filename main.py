@@ -2545,9 +2545,16 @@ class WebtoonManager(QMainWindow):
         if old and isinstance(old, QLineEdit):
             if hasattr(self, 'table_script') and self.table_script and self.table_script.isAncestorOf(old):
                 pos = old.cursorPosition()
-                if pos > 0:  # 포커스 아웃 시점의 강제 0 리셋 방지
+                if pos >= 0:  # 기존 pos > 0 에서 pos >= 0 으로 수정하여 맨 앞자리 커서도 캡처
                     self.last_sheet_editor_cursor_pos = pos
                     self.last_sheet_editor_cell = (self.table_script.currentRow(), self.table_script.currentColumn())
+                    self.last_active_editor_was_sheet = True
+                else:
+                    self.last_active_editor_was_sheet = False
+            else:
+                self.last_active_editor_was_sheet = False
+        else:
+            self.last_active_editor_was_sheet = False
         
         if now and isinstance(now, (QLineEdit, QTextEdit)):
             # 도우미 팝업이나 설정 다이얼로그 내의 검색창 등은 주 대본 에디터가 아니므로 제외
@@ -2558,80 +2565,83 @@ class WebtoonManager(QMainWindow):
             if isinstance(now, QLineEdit) and now.isReadOnly():
                 return
             self.last_active_editor = now
+            if hasattr(self, 'table_script') and self.table_script and self.table_script.isAncestorOf(now):
+                self.last_active_editor_was_sheet = True
 
     def handle_idiom_viewer_select(self, text):
         """플로팅 뷰어에서 선택된 문구를 현재 활성화된 에디터(메인 또는 셀 입력창)에 스마트하게 삽입합니다."""
         from PySide6.QtWidgets import QLineEdit, QTextEdit, QTableWidgetItem
         
-        # 1. 이전 활성 에디터 기록이 있는 경우 스마트 체크
-        if hasattr(self, 'last_active_editor') and self.last_active_editor:
-            try:
-                editor = self.last_active_editor
-                
-                # 이전 에디터가 스텝 3 스프레드시트의 셀 에디터(QLineEdit 등)였는지 여부 판별
-                is_sheet_editor = False
+        is_sheet_editor = getattr(self, 'last_active_editor_was_sheet', False)
+        
+        # 1. 시트 에디터 처리 (포커스를 뺏겨서 에디터 객체가 소멸했어도 안전하게 복구 삽입)
+        if is_sheet_editor:
+            editor_alive = False
+            editor = getattr(self, 'last_active_editor', None)
+            if editor:
+                try:
+                    if editor.isVisible() and not editor.isReadOnly():
+                        editor_alive = True
+                except RuntimeError:
+                    pass
+            
+            if editor_alive and editor and isinstance(editor, QLineEdit):
+                pos = editor.cursorPosition()
+                editor.insert(text)
+                editor.setCursorPosition(pos + len(text))
+                editor.setFocus()
+                return
+            else:
                 if hasattr(self, 'table_script') and self.table_script:
-                    try:
-                        if self.table_script.isAncestorOf(editor):
-                            is_sheet_editor = True
-                    except Exception:
-                        pass
-                
-                if is_sheet_editor:
-                    # 셀 에디터가 아직 떠 있는 상태라면 직접 삽입
-                    if editor.isVisible() and not editor.isReadOnly():
-                        if isinstance(editor, QLineEdit):
-                            pos = editor.cursorPosition()
-                            editor.insert(text)
-                            editor.setCursorPosition(pos + len(text))
-                            editor.setFocus()
-                            return
-                    else:
-                        # 포커스 아웃 등으로 셀 에디터가 닫혔다면, 저장된 커서 위치에 정확히 삽입 후 에디터 재진입
-                        row = self.table_script.currentRow()
-                        col = self.table_script.currentColumn()
-                        if row >= 0 and col >= 0:
-                            item = self.table_script.item(row, col)
-                            if not item:
-                                item = QTableWidgetItem("")
-                                self.table_script.setItem(row, col, item)
-                            current_text = item.text()
-                            
-                            # 포커스 아웃 전 캡처해 두었던 커서 위치가 존재하면 그 위치에 정확히 삽입
-                            cursor_pos = len(current_text)
-                            if hasattr(self, 'last_sheet_editor_cell') and self.last_sheet_editor_cell == (row, col):
-                                cursor_pos = getattr(self, 'last_sheet_editor_cursor_pos', len(current_text))
-                                if cursor_pos < 0 or cursor_pos > len(current_text):
-                                    cursor_pos = len(current_text)
-                            
-                            new_text = current_text[:cursor_pos] + text + current_text[cursor_pos:]
-                            item.setText(new_text)
-                            self.table_script.editItem(item)
-                            
-                            # 새 에디터 오픈 시 커서를 방금 삽입한 텍스트 바로 뒤에 안착시킵니다.
-                            new_cursor_pos = cursor_pos + len(text)
-                            self.last_sheet_editor_cursor_pos = new_cursor_pos
-                            self.last_sheet_editor_cell = (row, col)
-                            QTimer.singleShot(50, lambda: self.set_sheet_editor_cursor(new_cursor_pos))
-                            return
-                else:
-                    # 일반 에디터(메인 대본창 등) 처리
-                    if editor.isVisible() and not editor.isReadOnly():
-                        if isinstance(editor, QTextEdit):
-                            editor.insertPlainText(text)
-                            editor.setFocus()
-                            return
-                        elif isinstance(editor, QLineEdit):
-                            pos = editor.cursorPosition()
-                            editor.insert(text)
-                            editor.setCursorPosition(pos + len(text))
-                            editor.setFocus()
-                            return
+                    row = self.table_script.currentRow()
+                    col = self.table_script.currentColumn()
+                    if (row < 0 or col < 0) and hasattr(self, 'last_sheet_editor_cell'):
+                        row, col = self.last_sheet_editor_cell
+                        
+                    if row >= 0 and col >= 0:
+                        item = self.table_script.item(row, col)
+                        if not item:
+                            item = QTableWidgetItem("")
+                            self.table_script.setItem(row, col, item)
+                        current_text = item.text()
+                        
+                        cursor_pos = len(current_text)
+                        if hasattr(self, 'last_sheet_editor_cell') and self.last_sheet_editor_cell == (row, col):
+                            cursor_pos = getattr(self, 'last_sheet_editor_cursor_pos', len(current_text))
+                            if cursor_pos < 0 or cursor_pos > len(current_text):
+                                cursor_pos = len(current_text)
+                        
+                        new_text = current_text[:cursor_pos] + text + current_text[cursor_pos:]
+                        item.setText(new_text)
+                        
+                        self.table_script.setCurrentCell(row, col)
+                        self.table_script.editItem(item)
+                        
+                        new_cursor_pos = cursor_pos + len(text)
+                        self.last_sheet_editor_cursor_pos = new_cursor_pos
+                        self.last_sheet_editor_cell = (row, col)
+                        QTimer.singleShot(150, lambda: self.set_sheet_editor_cursor(new_cursor_pos))
+                        return
+        
+        # 2. 일반 에디터(메인 대본창 등) 처리
+        editor = getattr(self, 'last_active_editor', None)
+        if editor:
+            try:
+                if editor.isVisible() and not editor.isReadOnly():
+                    if isinstance(editor, QTextEdit):
+                        editor.insertPlainText(text)
+                        editor.setFocus()
+                        return
+                    elif isinstance(editor, QLineEdit):
+                        pos = editor.cursorPosition()
+                        editor.insert(text)
+                        editor.setCursorPosition(pos + len(text))
+                        editor.setFocus()
+                        return
             except RuntimeError:
-                # C++ 객체가 이미 소멸된 경우 대비 안전망
                 self.last_active_editor = None
                 
-        # 2. 현재 탭이 Step 3 (배정 시트 탭)인 경우 활성 셀에 스마트 삽입
+        # 3. 현재 탭이 Step 3 (배정 시트 탭)인 경우 활성 셀에 스마트 삽입
         if hasattr(self, 'tabs') and self.tabs.currentIndex() == 2:
             if hasattr(self, 'table_script') and self.table_script:
                 row = self.table_script.currentRow()
@@ -2643,7 +2653,6 @@ class WebtoonManager(QMainWindow):
                         self.table_script.setItem(row, col, item)
                     current_text = item.text()
                     
-                    # 커서 위치 판별 및 중간 삽입
                     cursor_pos = len(current_text)
                     if hasattr(self, 'last_sheet_editor_cell') and self.last_sheet_editor_cell == (row, col):
                         cursor_pos = getattr(self, 'last_sheet_editor_cursor_pos', len(current_text))
@@ -2652,15 +2661,17 @@ class WebtoonManager(QMainWindow):
                             
                     new_text = current_text[:cursor_pos] + text + current_text[cursor_pos:]
                     item.setText(new_text)
+                    
+                    self.table_script.setCurrentCell(row, col)
                     self.table_script.editItem(item)
                     
                     new_cursor_pos = cursor_pos + len(text)
                     self.last_sheet_editor_cursor_pos = new_cursor_pos
                     self.last_sheet_editor_cell = (row, col)
-                    QTimer.singleShot(50, lambda: self.set_sheet_editor_cursor(new_cursor_pos))
+                    QTimer.singleShot(150, lambda: self.set_sheet_editor_cursor(new_cursor_pos))
                     return
                 
-        # 3. 기본 폴백: 메인 에디터(Step 1)에 삽입
+        # 4. 기본 폴백: 메인 에디터(Step 1)에 삽입
         if hasattr(self, 'text_editor') and self.text_editor:
             try:
                 self.text_editor.insertPlainText(text)
