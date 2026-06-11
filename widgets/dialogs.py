@@ -565,7 +565,7 @@ class DragDropListWidget(QListWidget):
     def dragMoveEvent(self, event):
         super().dragMoveEvent(event)
         
-        target_pos = event.position().toPoint()
+        target_pos = self.viewport().mapFrom(self, event.position().toPoint())
         hover_item = self.itemAt(target_pos)
         
         if hover_item:
@@ -599,11 +599,12 @@ class DragDropListWidget(QListWidget):
         self.overlay.line_y = -1
         self.overlay.hide()
         
-        target_pos = event.position().toPoint()
+        target_pos = self.viewport().mapFrom(self, event.position().toPoint())
         hover_item = self.itemAt(target_pos)
         
         N = self.count()
         if N == 0:
+            event.setDropAction(Qt.IgnoreAction)
             event.accept()
             return
             
@@ -627,6 +628,7 @@ class DragDropListWidget(QListWidget):
             else:
                 self.parent_dialog.move_idiom(src_row, L - 1)
             
+        event.setDropAction(Qt.IgnoreAction)
         event.accept()
 
 # =================================================================
