@@ -21,7 +21,7 @@ from PySide6.QtGui import (
 )
 
 import config
-from config import PROJECTS_DIR
+from config import PROJECTS_DIR, STORAGE_DIR
 from utils import get_icon, get_colored_icon, get_colored_pixmap, open_path
 from .common import PopupItemDelegate, SingleClickLineEdit
 from .character import GlobalCharacterSettingsDialog
@@ -181,12 +181,20 @@ class PreferencesDialog(QDialog):
         self.btn_nav_idiom.setFocusPolicy(Qt.NoFocus)
         self.btn_nav_idiom.setStyleSheet(sidebar_btn_style)
         
+        self.btn_nav_usage = QPushButton(" 사용량 조회")
+        self.btn_nav_usage.setIcon(self.get_sidebar_icon(config.ICON_INFO))
+        self.btn_nav_usage.setIconSize(QSize(18, 18))
+        self.btn_nav_usage.setCursor(Qt.PointingHandCursor)
+        self.btn_nav_usage.setFocusPolicy(Qt.NoFocus)
+        self.btn_nav_usage.setStyleSheet(sidebar_btn_style)
+        
         sidebar_layout.addWidget(self.btn_nav_api)
         sidebar_layout.addWidget(self.btn_nav_storage)
         sidebar_layout.addWidget(self.btn_nav_idiom)
+        sidebar_layout.addWidget(self.btn_nav_usage)
         sidebar_layout.addStretch()
         
-        self.sidebar_buttons = [self.btn_nav_api, self.btn_nav_storage, self.btn_nav_idiom]
+        self.sidebar_buttons = [self.btn_nav_api, self.btn_nav_storage, self.btn_nav_idiom, self.btn_nav_usage]
         
         # 2. 우측 스택 위젯
         self.pages = QStackedWidget()
@@ -509,6 +517,125 @@ class PreferencesDialog(QDialog):
         self.refresh_list()
         self.pages.addWidget(self.page_idiom)
         
+        # --- [페이지 4] 사용량 조회 ---
+        self.page_usage = QWidget()
+        usage_layout = QVBoxLayout(self.page_usage)
+        usage_layout.setContentsMargins(30, 25, 30, 25)
+        usage_layout.setSpacing(15)
+        
+        # 타이틀 영역 + 연월 선택 콤보박스 가로 배치
+        title_row = QHBoxLayout()
+        lbl_usage_title = QLabel("API 사용량 조회")
+        lbl_usage_title.setStyleSheet(f"font-size: 16px; font-weight: bold; color: #111827; font-family: '{app_ff}';")
+        title_row.addWidget(lbl_usage_title)
+        title_row.addStretch()
+        
+        self.combo_months = QComboBox()
+        self.combo_months.setObjectName("MonthCombo")
+        self.combo_months.setFixedHeight(36)
+        self.combo_months.setFixedWidth(130)
+        self.combo_months.setView(QListView())
+        self.combo_months.setItemDelegate(PopupItemDelegate())
+        self.combo_months.view().window().setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        self.combo_months.view().window().setAttribute(Qt.WA_TranslucentBackground)
+        self.combo_months.setStyleSheet(f"""
+            QComboBox#MonthCombo {{
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                padding-left: 10px;
+                background-color: white;
+                font-family: '{app_ff}';
+                font-size: 13px;
+                color: #374151;
+            }}
+            QComboBox#MonthCombo::drop-down {{
+                border: none;
+                width: 30px;
+            }}
+            QComboBox#MonthCombo::down-arrow {{
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 5px solid #6B7280;
+                width: 0;
+                height: 0;
+            }}
+        """)
+        self.combo_months.currentIndexChanged.connect(self.update_usage_table)
+        title_row.addWidget(self.combo_months)
+        usage_layout.addLayout(title_row)
+        
+        # 요약 카드 가로 배치
+        cards_row = QHBoxLayout()
+        cards_row.setSpacing(15)
+        
+        # 카드 1: 선택 월 총 사용량
+        card1 = QFrame()
+        card1.setStyleSheet("QFrame { background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; }")
+        c1_layout = QVBoxLayout(card1)
+        c1_layout.setContentsMargins(15, 12, 15, 12)
+        c1_lbl = QLabel("선택 월 총 사용 횟수")
+        c1_lbl.setStyleSheet(f"font-size: 12px; color: #6B7280; font-family: '{app_ff}'; border: none; background: transparent;")
+        self.lbl_usage_total = QLabel("0회")
+        self.lbl_usage_total.setStyleSheet(f"font-size: 20px; font-weight: bold; color: #111827; font-family: '{app_ff}'; border: none; background: transparent;")
+        c1_layout.addWidget(c1_lbl)
+        c1_layout.addWidget(self.lbl_usage_total)
+        
+        # 카드 2: 선택 월 예상 비용
+        card2 = QFrame()
+        card2.setStyleSheet("QFrame { background-color: #FFF9F7; border: 1px solid #FFEFEA; border-radius: 8px; }")
+        c2_layout = QVBoxLayout(card2)
+        c2_layout.setContentsMargins(15, 12, 15, 12)
+        c2_lbl = QLabel("선택 월 예상 비용")
+        c2_lbl.setStyleSheet(f"font-size: 12px; color: #FF5722; font-family: '{app_ff}'; border: none; background: transparent;")
+        self.lbl_usage_cost = QLabel("약 0원")
+        self.lbl_usage_cost.setStyleSheet(f"font-size: 20px; font-weight: bold; color: #FF5722; font-family: '{app_ff}'; border: none; background: transparent;")
+        c2_layout.addWidget(c2_lbl)
+        c2_layout.addWidget(self.lbl_usage_cost)
+        
+        cards_row.addWidget(card1, 1)
+        cards_row.addWidget(card2, 1)
+        usage_layout.addLayout(cards_row)
+        
+        # 테이블 위젯 추가
+        self.table_usage = QTableWidget()
+        self.table_usage.setColumnCount(3)
+        self.table_usage.setHorizontalHeaderLabels(["날짜", "사용 횟수", "예상 비용"])
+        self.table_usage.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table_usage.setSelectionMode(QAbstractItemView.NoSelection)
+        self.table_usage.verticalHeader().setVisible(False)
+        self.table_usage.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table_usage.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: white;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                gridline-color: #F3F4F6;
+                font-family: '{app_ff}';
+            }}
+            QHeaderView::section {{
+                background-color: #F9FAFB;
+                color: #374151;
+                font-weight: bold;
+                border: none;
+                border-bottom: 1px solid #E5E7EB;
+                height: 35px;
+            }}
+            QTableWidget::item {{
+                border-bottom: 1px solid #F3F4F6;
+                padding: 5px;
+                color: #4B5563;
+            }}
+        """)
+        usage_layout.addWidget(self.table_usage, 1)
+        
+        # 하단 안내 문구
+        lbl_info = QLabel("💡 Google Cloud API 단가 1회당 약 2원(0.0015 USD) 기준으로 계산한 예상 금액입니다.")
+        lbl_info.setStyleSheet(f"color: #9CA3AF; font-size: 11px; font-family: '{app_ff}';")
+        usage_layout.addWidget(lbl_info)
+        
+        self.pages.addWidget(self.page_usage)
+        
         # 바디 레이아웃 배치
         body_layout.addWidget(self.sidebar_container)
         body_layout.addWidget(self.pages, 1)
@@ -539,6 +666,7 @@ class PreferencesDialog(QDialog):
         self.btn_nav_api.clicked.connect(lambda: self.set_active_page(0))
         self.btn_nav_storage.clicked.connect(lambda: self.set_active_page(1))
         self.btn_nav_idiom.clicked.connect(lambda: self.set_active_page(2))
+        self.btn_nav_usage.clicked.connect(lambda: self.set_active_page(3))
         
         if self.only_idioms:
             self.sidebar_container.setVisible(False)
@@ -555,6 +683,85 @@ class PreferencesDialog(QDialog):
             btn.style().unpolish(btn)
             btn.style().polish(btn)
             btn.update()
+        if index == 3:
+            self.load_usage_data()
+
+    def load_usage_data(self):
+        import json
+        from datetime import datetime
+        daily_path = os.path.join(STORAGE_DIR, "daily_api_usage.json")
+        self.usage_history = {}
+        
+        if os.path.exists(daily_path):
+            try:
+                with open(daily_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.usage_history = data.get("history", {})
+            except Exception as e:
+                print(f"Error loading usage data in dialog: {e}")
+                
+        # 콤보박스 아이템 생성
+        self.combo_months.blockSignals(True)
+        self.combo_months.clear()
+        
+        # 현재 날짜 기준의 연-월도 항상 포함
+        current_ym = datetime.now().strftime("%Y-%m")
+        ym_set = {current_ym}
+        for date_str in self.usage_history.keys():
+            if len(date_str) >= 7:
+                ym_set.add(date_str[:7])
+                
+        # 정렬하여 역순으로 목록 추가 (최신 월이 위로 가도록)
+        sorted_ym = sorted(list(ym_set), reverse=True)
+        for ym in sorted_ym:
+            try:
+                dt = datetime.strptime(ym, "%Y-%m")
+                display_str = dt.strftime("%Y년 %m월")
+            except Exception:
+                display_str = ym
+            self.combo_months.addItem(display_str, ym)
+            
+        self.combo_months.blockSignals(False)
+        self.update_usage_table()
+
+    def update_usage_table(self):
+        selected_ym = self.combo_months.currentData()
+        if not selected_ym:
+            return
+            
+        # 선택된 월의 데이터 필터링
+        monthly_data = []
+        total_count = 0
+        for date_str, count in self.usage_history.items():
+            if date_str.startswith(selected_ym):
+                monthly_data.append((date_str, count))
+                total_count += count
+                
+        # 날짜 기준 내림차순 정렬
+        monthly_data.sort(key=lambda x: x[0], reverse=True)
+        
+        # 요약 수치 갱신
+        self.lbl_usage_total.setText(f"{total_count}회")
+        cost = total_count * 2
+        self.lbl_usage_cost.setText(f"약 {cost:,}원")
+        
+        # 테이블 채우기
+        self.table_usage.setRowCount(len(monthly_data))
+        for row_idx, (date_str, count) in enumerate(monthly_data):
+            # 날짜 셀
+            item_date = QTableWidgetItem(date_str)
+            item_date.setTextAlignment(Qt.AlignCenter)
+            self.table_usage.setItem(row_idx, 0, item_date)
+            
+            # 사용 횟수 셀
+            item_count = QTableWidgetItem(f"{count}회")
+            item_count.setTextAlignment(Qt.AlignCenter)
+            self.table_usage.setItem(row_idx, 1, item_count)
+            
+            # 예상 비용 셀
+            item_cost = QTableWidgetItem(f"약 {count*2:,}원")
+            item_cost.setTextAlignment(Qt.AlignCenter)
+            self.table_usage.setItem(row_idx, 2, item_cost)
 
     # --- API 키 설정 로직 ---
     def on_preset_changed(self, text):

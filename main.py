@@ -33,7 +33,7 @@ import config
 import threading
 import requests
 
-from config import BASE_DIR, ASSETS_DIR, CACHE_DIR, TEMPLATE_PATH, MODERN_STYLE
+from config import BASE_DIR, ASSETS_DIR, CACHE_DIR, TEMPLATE_PATH, MODERN_STYLE, STORAGE_DIR
 from utils import restore_template, natural_sort_key, clean_ocr_text
 from widgets import ResponsiveLabel, ClickableComboBox, WebtoonScrollArea, PopupItemDelegate, CharacterRow, SpreadsheetTable, ExcelTextDelegate, Column0Delegate, CharacterListContainer, FloatingCharacterViewer, GlobalCharacterSettingsDialog
 from ocr_worker import OCRWorker
@@ -3557,7 +3557,8 @@ class WebtoonManager(QMainWindow):
             
         # 2. 오늘 총 누적 카운트 로드 (공용 경로)
         self.daily_api_count = 0
-        daily_path = os.path.join(BASE_DIR, "daily_api_usage.json")
+        self.daily_api_history = {}
+        daily_path = os.path.join(STORAGE_DIR, "daily_api_usage.json")
         try:
             if os.path.exists(daily_path):
                 with open(daily_path, "r", encoding='utf-8') as f:
@@ -3568,6 +3569,7 @@ class WebtoonManager(QMainWindow):
                     else:
                         # 날짜가 다르면 0으로 리셋 (데이터는 save_api_count에서 오늘 날짜로 갱신됨)
                         self.daily_api_count = 0
+                    self.daily_api_history = data.get("history", {})
         except Exception as e:
             print(f"Error loading Daily API count: {e}")
         
@@ -3576,7 +3578,7 @@ class WebtoonManager(QMainWindow):
     def save_api_count(self):
         """현재 회차 및 오늘 누적 API 호출 수를 파일로 저장합니다."""
         import json
-        from datetime import datetime
+        from datetime import datetime, timedelta
         today_str = datetime.now().strftime("%Y-%m-%d")
         
         try:
@@ -3591,12 +3593,32 @@ class WebtoonManager(QMainWindow):
                 with open(os.path.join(e_path, "api_count.json"), "w", encoding='utf-8') as f:
                     json.dump({"api_call_count": self.api_call_count}, f)
                     
-            # 2. 오늘 누적 저장
-            daily_path = os.path.join(BASE_DIR, "daily_api_usage.json")
+            # 2. 오늘 누적 및 히스토리 갱신
+            if not hasattr(self, 'daily_api_history') or self.daily_api_history is None:
+                self.daily_api_history = {}
+            
+            self.daily_api_history[today_str] = self.daily_api_count
+            
+            # 365일이 지난 데이터 자동 정리
+            cleaned_history = {}
+            cutoff_date = datetime.now() - timedelta(days=365)
+            for date_key, count in self.daily_api_history.items():
+                try:
+                    dt = datetime.strptime(date_key, "%Y-%m-%d")
+                    if dt >= cutoff_date:
+                        cleaned_history[date_key] = count
+                except Exception:
+                    # 날짜 형식이 아니면 유지
+                    cleaned_history[date_key] = count
+            self.daily_api_history = cleaned_history
+
+            # 3. 오늘 누적 및 히스토리 저장
+            daily_path = os.path.join(STORAGE_DIR, "daily_api_usage.json")
             with open(daily_path, "w", encoding='utf-8') as f:
                 json.dump({
                     "last_date": today_str,
-                    "daily_total": self.daily_api_count
+                    "daily_total": self.daily_api_count,
+                    "history": self.daily_api_history
                 }, f)
                 
         except Exception as e:
