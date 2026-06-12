@@ -19,6 +19,8 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
+
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -49,28 +51,30 @@ coll = COLLECT(
     upx_exclude=[],
     name='Webtoon_Scripter',
 )
-app = BUNDLE(
-    coll,
-    name='Webtoon Scripter.app',
-    icon='app_icon/webtoon_scripter_icon_mac.icns',
-    bundle_identifier='com.woo2koon.webtoonscripter',
-    info_plist={
-        # 기본 앱 식별 정보
-        'CFBundleName': 'Webtoon Scripter',
-        'CFBundleDisplayName': 'Webtoon Scripter',
-        'CFBundleExecutable': 'Webtoon_Scripter',
-        'CFBundleShortVersionString': '3.0.0',
-        'CFBundleVersion': '3.0.0',
-        'CFBundleIdentifier': 'com.woo2koon.webtoonscripter',
-        # macOS가 About 메뉴에 표시하는 저작권 문자열
-        # NSHumanReadableCopyright가 있어야 macOS가 앱을 완전한 네이티브 앱으로 인식함
-        'NSHumanReadableCopyright': '© 2026 PAK JINWOO. All rights reserved.',
-        # Retina 디스플레이 고해상도 지원 명시
-        'NSHighResolutionCapable': True,
-        # NSApplication 진입점 (Qt 앱 필수)
-        'NSPrincipalClass': 'NSApplication',
-        # 최소 macOS 버전 (Ventura 이상)
-        'LSMinimumSystemVersion': '13.0',
-    }
-)
+if sys.platform == 'darwin':
+    app = BUNDLE(
+        coll,
+        name='Webtoon Scripter.app',
+        icon='app_icon/webtoon_scripter_icon_mac.icns',
+        bundle_identifier='com.woo2koon.webtoonscripter',
+        info_plist={
+            # 기본 앱 식별 정보
+            'CFBundleName': 'Webtoon Scripter',
+            'CFBundleDisplayName': 'Webtoon Scripter',
+            'CFBundleExecutable': 'Webtoon_Scripter',
+            'CFBundleShortVersionString': '3.0.0',
+            'CFBundleVersion': '3.0.0',
+            'CFBundleIdentifier': 'com.woo2koon.webtoonscripter',
+            # macOS가 About 메뉴에 표시하는 저작권 문자열
+            # NSHumanReadableCopyright가 있어야 macOS가 앱을 완전한 네이티브 앱으로 인식함
+            'NSHumanReadableCopyright': '© 2026 PAK JINWOO. All rights reserved.',
+            # Retina 디스플레이 고해상도 지원 명시
+            'NSHighResolutionCapable': True,
+            # NSApplication 진입점 (Qt 앱 필수)
+            'NSPrincipalClass': 'NSApplication',
+            # 최소 macOS 버전 (Ventura 이상)
+            'LSMinimumSystemVersion': '13.0',
+        }
+    )
+
 

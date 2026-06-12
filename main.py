@@ -48,7 +48,7 @@ restore_template()
 
 
 
-from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, PreferencesDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog, ShortcutHelpDialog, CustomMessageBox, SearchWidget
+from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, PreferencesDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog, ShortcutHelpDialog, CustomMessageBox, SearchWidget, OnboardingMigrationDialog
 from update_worker import UpdateCheckWorker, UpdateDownloadWorker
 
 class GlobalScrollShortcutFilter(QObject):
@@ -599,6 +599,9 @@ class WebtoonManager(QMainWindow):
 
         # 2초 뒤 자동 업데이트 확인 실행 (백그라운드)
         QTimer.singleShot(2000, lambda: self.check_for_updates(manual=False))
+
+        # [신설] 첫 실행 시 이전 버전 데이터 마이그레이션 안내창
+        QTimer.singleShot(1500, self.prompt_first_run_migration)
 
     def update_button_pos(self):
         """사이드바의 현재 너비에 맞춰 버튼 위치를 실시간으로 이동시킵니다."""
@@ -2350,10 +2353,6 @@ class WebtoonManager(QMainWindow):
         action_update_check.triggered.connect(lambda: self.check_for_updates(manual=True))
         help_menu.addAction(action_update_check)
 
-        # [신설] 이전 버전 마이그레이션 기능 추가
-        action_migration = QAction("이전 버전 데이터 가져오기 (마이그레이션)", self)
-        action_migration.triggered.connect(self.migrate_old_projects)
-        help_menu.addAction(action_migration)
 
         # [신설] 단축키 도움말 기능 추가
         action_shortcut_help = QAction("단축키 도움말(&K)", self)
@@ -3396,7 +3395,7 @@ class WebtoonManager(QMainWindow):
             )
             
             if reply == "설정 열기":
-                self.open_settings_dialog()
+                self.open_preferences_dialog(0)
             return
 
         # 1. 파일 경로 및 대상 확인
@@ -4761,7 +4760,7 @@ class WebtoonManager(QMainWindow):
             )
             
             if reply == "설정 열기":
-                self.open_settings_dialog()
+                self.open_preferences_dialog(0)
             return
 
         text = self.text_editor.toPlainText().strip()
@@ -5024,6 +5023,15 @@ class WebtoonManager(QMainWindow):
                 dlg.set_downloading_mode(False)
         except Exception as e:
             dlg.show_error(str(e))
+
+    def prompt_first_run_migration(self):
+        if not config.MIGRATION_PROMPTED:
+            config.MIGRATION_PROMPTED = True
+            config.save_settings()
+
+            dlg = OnboardingMigrationDialog(self)
+            if dlg.exec() == QDialog.Accepted:
+                self.migrate_old_projects()
 
     def migrate_old_projects(self):
         # 1. 파일 다이얼로그로 이전 버전 폴더 선택받기

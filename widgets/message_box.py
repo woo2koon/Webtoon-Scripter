@@ -183,7 +183,7 @@ class CustomMessageBox(QDialog):
             else:
                 btn = QPushButton(str(btn_type))
                 btn.setObjectName("SecondaryBtn")
-                btn.clicked.connect(lambda b=btn_type: self.on_button_clicked(b))
+                btn.clicked.connect(lambda checked=False, b=btn_type: self.on_button_clicked(b))
                 
             btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet(button_style)

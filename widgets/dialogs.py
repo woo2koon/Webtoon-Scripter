@@ -373,6 +373,57 @@ class PreferencesDialog(QDialog):
         box_layout.addWidget(btn_reset_storage)
         
         storage_layout.addWidget(storage_box)
+
+        # 2. 이전 버전 데이터 가져오기 (별개 박스로 분리)
+        migration_box = QFrame()
+        migration_box.setStyleSheet("QFrame { background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; }")
+        mig_box_layout = QVBoxLayout(migration_box)
+        mig_box_layout.setContentsMargins(15, 15, 15, 15)
+        mig_box_layout.setSpacing(10)
+
+        # 이전 버전 데이터 가져오기 (마이그레이션) 안내 및 버튼
+        lbl_mig_title = QLabel("이전 버전 데이터 가져오기")
+        lbl_mig_title.setStyleSheet(f"font-weight: bold; color: #374151; font-size: 13px; border: none; background: transparent; font-family: '{app_ff}';")
+        mig_box_layout.addWidget(lbl_mig_title)
+
+        lbl_mig_desc = QLabel("이전 실행파일 버전(.exe)에 생성된 프로젝트 폴더(작품 및 회차 데이터가 모여있는 폴더) 데이터를\n안전하게 마이그레이션(가져오기) 합니다.")
+        lbl_mig_desc.setStyleSheet(f"color: #6B7280; font-size: 12px; border: none; background: transparent; font-family: '{app_ff}';")
+        mig_box_layout.addWidget(lbl_mig_desc)
+
+        btn_migrate = QPushButton("이전 버전 데이터 마이그레이션 실행...")
+        btn_migrate.setFixedHeight(36)
+        btn_migrate.setCursor(Qt.PointingHandCursor)
+        btn_migrate.setStyleSheet(f"""
+            QPushButton {{
+                background-color: white; 
+                border: 1px solid #D1D5DB; 
+                border-radius: 6px; 
+                color: #374151;
+                font-weight: bold; 
+                font-family: '{app_ff}'; 
+                font-size: 13px;
+                margin-top: 5px;
+            }} 
+            QPushButton:hover {{ 
+                background-color: #F9FAFB; 
+                border-color: #9CA3AF; 
+            }}
+            QPushButton:pressed {{
+                background-color: #F3F4F6;
+            }}
+        """)
+        
+        def run_migration():
+            main_win = self.parent()
+            if main_win and hasattr(main_win, 'migrate_old_projects'):
+                main_win.migrate_old_projects()
+            else:
+                CustomMessageBox.warning(self, "알림", "마이그레이션 기능을 실행할 수 없습니다.")
+                
+        btn_migrate.clicked.connect(run_migration)
+        mig_box_layout.addWidget(btn_migrate)
+        
+        storage_layout.addWidget(migration_box)
         storage_layout.addStretch()
         self.pages.addWidget(self.page_storage)
         
@@ -609,6 +660,44 @@ class PreferencesDialog(QDialog):
         dir_path = QFileDialog.getExistingDirectory(self, "저장 폴더 선택", self.local_storage_dir)
         if dir_path:
             norm_path = os.path.normpath(dir_path)
+            if norm_path == self.local_storage_dir:
+                return
+
+            old_projects_dir = os.path.join(self.local_storage_dir, "projects")
+            new_projects_dir = os.path.join(norm_path, "projects")
+
+            has_old_projects = False
+            if os.path.exists(old_projects_dir):
+                try:
+                    subdirs = [d for d in os.listdir(old_projects_dir) if os.path.isdir(os.path.join(old_projects_dir, d))]
+                    if subdirs:
+                        has_old_projects = True
+                except Exception:
+                    pass
+
+            if has_old_projects:
+                reply = CustomMessageBox.question(
+                    self,
+                    "프로젝트 복사",
+                    "저장 위치가 변경되었습니다.\n기존 저장 위치에 있는 프로젝트 폴더들을 새 위치로 복사하시겠습니까?",
+                    [CustomMessageBox.Yes, CustomMessageBox.No]
+                )
+                
+                if reply == CustomMessageBox.Yes:
+                    try:
+                        import shutil
+                        os.makedirs(new_projects_dir, exist_ok=True)
+                        for d in os.listdir(old_projects_dir):
+                            src_path = os.path.join(old_projects_dir, d)
+                            dst_path = os.path.join(new_projects_dir, d)
+                            if os.path.isdir(src_path):
+                                shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+                            else:
+                                shutil.copy2(src_path, dst_path)
+                        CustomMessageBox.information(self, "완료", "기존 프로젝트 복사가 완료되었습니다.")
+                    except Exception as e:
+                        CustomMessageBox.critical(self, "오류", f"프로젝트 복사 중 오류가 발생했습니다:\n{e}")
+
             self.local_storage_dir = norm_path
             self.input_storage_path.setText(norm_path)
             config.update_project_storage_dir(norm_path)
@@ -4080,6 +4169,104 @@ class ShortcutHelpDialog(QDialog):
             event.accept()
         else:
             super().keyPressEvent(event)
+
+class OnboardingMigrationDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("이전 버전 데이터 가져오기")
+        self.setFixedSize(450, 330)
+        self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint)
+        self.setFont(QApplication.font())
+        self.setStyleSheet("QDialog { background-color: white; }")
+        
+        self.init_ui()
+
+    def init_ui(self):
+        app_ff = QApplication.font().family() or 'Pretendard'
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 24, 20, 24)
+        layout.setSpacing(18)
+
+        # Header section
+        lbl_title = QLabel("Webtoon Scripter v3.0 시작")
+        lbl_title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: #111827; font-family: '{app_ff}';")
+        layout.addWidget(lbl_title)
+
+        # Card container (styled like settings pages cards)
+        card = QFrame()
+        card.setStyleSheet("QFrame { background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 10px; }")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(18, 16, 18, 16)
+        card_layout.setSpacing(12)
+
+        lbl_mig_title = QLabel("이전 버전 데이터 마이그레이션")
+        lbl_mig_title.setStyleSheet(f"font-weight: bold; color: #FF5722; font-size: 14px; border: none; background: transparent; font-family: '{app_ff}';")
+        card_layout.addWidget(lbl_mig_title)
+
+        lbl_mig_desc = QLabel("이전 실행파일 버전(.exe)에 생성된 프로젝트 폴더\n(작품 및 회차 데이터가 모여있는 폴더) 데이터를\n현재 프로그램으로 안전하게 가져오시겠습니까?")
+        lbl_mig_desc.setStyleSheet(f"color: #4B5563; font-size: 13px; border: none; background: transparent; font-family: '{app_ff}'; line-height: 140%;")
+        card_layout.addWidget(lbl_mig_desc)
+
+        lbl_tip = QLabel("💡 나중에도 [설정 -> 저장소 설정] 메뉴에서 언제든 실행할 수 있습니다.")
+        lbl_tip.setStyleSheet(f"color: #4B5563; font-size: 12px; font-weight: 500; border: none; background: transparent; font-family: '{app_ff}';")
+        card_layout.addWidget(lbl_tip)
+
+        layout.addWidget(card)
+
+        # Action Buttons Layout (styled like PreferencesDialog bottom buttons)
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+        
+        btn_no = QPushButton("나중에 하기")
+        btn_no.setFixedHeight(40)
+        btn_no.setCursor(Qt.PointingHandCursor)
+        btn_no.setStyleSheet(f"""
+            QPushButton {{ 
+                background-color: white; 
+                border: 1px solid #D1D5DB; 
+                border-radius: 6px; 
+                color: #4B5563; 
+                font-weight: bold; 
+                font-size: 13px;
+                font-family: '{app_ff}'; 
+            }} 
+            QPushButton:hover {{ 
+                border-color: #FF5722; 
+                color: #FF5722; 
+                background-color: #FFF9F7;
+            }}
+            QPushButton:pressed {{ 
+                background-color: #FFEFEA; 
+            }}
+        """)
+        btn_no.clicked.connect(self.reject)
+
+        btn_yes = QPushButton("이전 데이터 가져오기")
+        btn_yes.setFixedHeight(40)
+        btn_yes.setCursor(Qt.PointingHandCursor)
+        btn_yes.setStyleSheet(f"""
+            QPushButton {{ 
+                background-color: #FF5722; 
+                color: white; 
+                border: none; 
+                border-radius: 6px; 
+                font-weight: bold; 
+                font-size: 13px;
+                font-family: '{app_ff}'; 
+            }} 
+            QPushButton:hover {{ 
+                background-color: #E64A19; 
+            }}
+            QPushButton:pressed {{ 
+                background-color: #D84315; 
+            }}
+        """)
+        btn_yes.clicked.connect(self.accept)
+
+        btn_layout.addWidget(btn_yes, 1)
+        btn_layout.addWidget(btn_no, 1)
+        layout.addLayout(btn_layout)
+
 
 
 
