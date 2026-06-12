@@ -576,11 +576,11 @@ class PreferencesDialog(QDialog):
         card1.setStyleSheet("QFrame { background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; }")
         c1_layout = QVBoxLayout(card1)
         c1_layout.setContentsMargins(15, 12, 15, 12)
-        c1_lbl = QLabel("선택 월 총 사용 횟수")
-        c1_lbl.setStyleSheet(f"font-size: 12px; color: #6B7280; font-family: '{app_ff}'; border: none; background: transparent;")
+        self.lbl_usage_total_title = QLabel("총 사용 횟수")
+        self.lbl_usage_total_title.setStyleSheet(f"font-size: 12px; color: #6B7280; font-family: '{app_ff}'; border: none; background: transparent;")
         self.lbl_usage_total = QLabel("0회")
         self.lbl_usage_total.setStyleSheet(f"font-size: 20px; font-weight: bold; color: #111827; font-family: '{app_ff}'; border: none; background: transparent;")
-        c1_layout.addWidget(c1_lbl)
+        c1_layout.addWidget(self.lbl_usage_total_title)
         c1_layout.addWidget(self.lbl_usage_total)
         
         # 카드 2: 선택 월 예상 비용
@@ -588,11 +588,11 @@ class PreferencesDialog(QDialog):
         card2.setStyleSheet("QFrame { background-color: #FFF9F7; border: 1px solid #FFEFEA; border-radius: 8px; }")
         c2_layout = QVBoxLayout(card2)
         c2_layout.setContentsMargins(15, 12, 15, 12)
-        c2_lbl = QLabel("선택 월 예상 비용")
-        c2_lbl.setStyleSheet(f"font-size: 12px; color: #FF5722; font-family: '{app_ff}'; border: none; background: transparent;")
+        self.lbl_usage_cost_title = QLabel("예상 비용")
+        self.lbl_usage_cost_title.setStyleSheet(f"font-size: 12px; color: #FF5722; font-family: '{app_ff}'; border: none; background: transparent;")
         self.lbl_usage_cost = QLabel("약 0원")
         self.lbl_usage_cost.setStyleSheet(f"font-size: 20px; font-weight: bold; color: #FF5722; font-family: '{app_ff}'; border: none; background: transparent;")
-        c2_layout.addWidget(c2_lbl)
+        c2_layout.addWidget(self.lbl_usage_cost_title)
         c2_layout.addWidget(self.lbl_usage_cost)
         
         cards_row.addWidget(card1, 1)
@@ -829,6 +829,10 @@ class PreferencesDialog(QDialog):
         monthly_data.sort(key=lambda x: x[0], reverse=True)
         
         # 요약 수치 갱신
+        formatted_ym = selected_ym.replace('-', '.')
+        self.lbl_usage_total_title.setText(f"{formatted_ym} 총 사용 횟수")
+        self.lbl_usage_cost_title.setText(f"{formatted_ym} 예상 비용")
+        
         self.lbl_usage_total.setText(f"{total_count}회")
         cost = total_count * 2
         self.lbl_usage_cost.setText(f"약 {cost:,}원")
