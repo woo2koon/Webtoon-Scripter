@@ -5131,6 +5131,36 @@ class WebtoonManager(QMainWindow):
             except Exception as e:
                 error_list.append(f"{project_name} ({e})")
 
+        # 5.5 settings.json 마이그레이션 (관용구 병합)
+        src_settings_file = None
+        if os.path.exists(os.path.join(selected_path, "settings.json")):
+            src_settings_file = os.path.join(selected_path, "settings.json")
+        elif os.path.exists(os.path.join(os.path.dirname(selected_path), "settings.json")):
+            src_settings_file = os.path.join(os.path.dirname(selected_path), "settings.json")
+
+        if src_settings_file:
+            try:
+                with open(src_settings_file, "r", encoding="utf-8") as f:
+                    old_settings = json.load(f)
+                
+                # 관용구 가져오기 및 병합
+                old_idioms = old_settings.get("idioms", [])
+                if old_idioms:
+                    current_idioms = list(config.IDIOMS)
+                    added_count = 0
+                    for idiom in old_idioms:
+                        if idiom not in current_idioms:
+                            current_idioms.append(idiom)
+                            added_count += 1
+                    if added_count > 0:
+                        config.IDIOMS = current_idioms
+                        config.save_settings()
+                        # 관용구 뷰어 갱신
+                        if hasattr(self, 'idiom_viewer') and self.idiom_viewer:
+                            self.idiom_viewer.refresh_list()
+            except Exception as e:
+                print(f"이전 설정 파일(settings.json) 마이그레이션 실패: {e}")
+
         # 6. 목록 갱신 및 결과 표시
         self.refresh_project_list()
         
