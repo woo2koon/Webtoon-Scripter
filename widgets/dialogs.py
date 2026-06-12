@@ -612,6 +612,7 @@ class PreferencesDialog(QDialog):
         
         self.table_usage.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table_usage.setSelectionMode(QAbstractItemView.NoSelection)
+        self.table_usage.setFocusPolicy(Qt.NoFocus)
         self.table_usage.verticalHeader().setVisible(False)
         self.table_usage.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         
@@ -687,6 +688,12 @@ class PreferencesDialog(QDialog):
                 border-bottom: 1px solid #F3F4F6;
                 padding: 5px;
                 color: #4B5563;
+            }}
+            QTableWidget::item:selected, QTableWidget::item:focus {{
+                background-color: transparent;
+                color: #4B5563;
+                border: none;
+                outline: none;
             }}
             QScrollBar:vertical {{
                 border: none;
