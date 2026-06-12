@@ -14,6 +14,8 @@ OutputDir=dist
 OutputBaseFilename=Webtoon_Scripter_v3.0.0_Setup
 ; 바탕화면 바로가기 아이콘 설정용 아이콘 경로
 SetupIconFile=app_icon\webtoon_scripter_icon_windows.ico
+WizardImageFile=app_icon\setup_left.bmp
+WizardSmallImageFile=app_icon\setup_top.bmp
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
