@@ -112,7 +112,9 @@ class PreferencesDialog(QDialog):
         # Qt CSS 스코프 문제: 개별 위젯에 setStyleSheet()로 font-size/weight를 지정하면
         # font-family는 앱 전체 stylesheet가 아닌 시스템 기본값(맑은 고딕)으로 폴백됨.
         # 따라서 font-size/weight를 쓰는 모든 stylesheet에 font-family를 동적으로 주입해야 함.
-        app_ff = QApplication.font().family() or 'Pretendard'
+        app_ff = QApplication.font().family()
+        if not app_ff or app_ff == "sans-serif":
+            app_ff = "Pretendard"
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -601,33 +603,119 @@ class PreferencesDialog(QDialog):
         self.table_usage = QTableWidget()
         self.table_usage.setColumnCount(3)
         self.table_usage.setHorizontalHeaderLabels(["날짜", "사용 횟수", "예상 비용"])
+        
+        # 3단계 시트와 동일하게 강제 안티앨리어싱 및 폰트 렌더링 옵션 지정
+        table_font = QFont(app_ff, 11)
+        table_font.setStyleStrategy(QFont.PreferAntialias)
+        table_font.setHintingPreference(QFont.PreferNoHinting)
+        self.table_usage.setFont(table_font)
+        
         self.table_usage.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table_usage.setSelectionMode(QAbstractItemView.NoSelection)
         self.table_usage.verticalHeader().setVisible(False)
+        self.table_usage.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        
+        # 기본 헤더는 숨기고 글자 깨짐 및 렌더러 버그 방지를 위해 QLabel 기반 커스텀 프레임 헤더 구성
+        self.table_usage.horizontalHeader().setVisible(False)
         self.table_usage.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        
+        # 커스텀 테이블 헤더 컨테이너 구성 (QLabel 조합)
+        self.custom_header = QFrame()
+        self.custom_header.setFixedHeight(38)
+        self.custom_header.setStyleSheet("""
+            QFrame {
+                background-color: #F9FAFB;
+                border: 1px solid #E5E7EB;
+                border-bottom: none;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+            }
+        """)
+        custom_header_layout = QHBoxLayout(self.custom_header)
+        custom_header_layout.setContentsMargins(0, 0, 0, 0)
+        custom_header_layout.setSpacing(0)
+        
+        lbl_header_date = QLabel("날짜")
+        lbl_header_count = QLabel("사용 횟수")
+        lbl_header_cost = QLabel("예상 비용")
+        
+        # Qt stylesheet가 QFont 설정을 덮어쓰지 않도록 stylesheet에는 font 관련 프로퍼티를 완전히 제외합니다.
+        header_lbl_style = """
+            QLabel {
+                color: #374151;
+                background: transparent;
+                border: none;
+            }
+        """
+        
+        # 선명하고 굵은 Pretendard 폰트를 위해 QFont 기반으로 직접 설정
+        header_font = QFont(app_ff, 11)
+        header_font.setBold(True)
+        header_font.setStyleStrategy(QFont.PreferAntialias)
+        header_font.setHintingPreference(QFont.PreferNoHinting)
+        
+        for lbl in [lbl_header_date, lbl_header_count, lbl_header_cost]:
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setFont(header_font)
+            lbl.setStyleSheet(header_lbl_style)
+            
+        custom_header_layout.addWidget(lbl_header_date, 1)
+        custom_header_layout.addWidget(lbl_header_count, 1)
+        custom_header_layout.addWidget(lbl_header_cost, 1)
+        
+        # 구분선 지정 (CSS로만 선 표현)
+        lbl_header_date.setStyleSheet(header_lbl_style + " QLabel { border-right: 1px solid #E5E7EB; }")
+        lbl_header_count.setStyleSheet(header_lbl_style + " QLabel { border-right: 1px solid #E5E7EB; }")
+        
+        # 스크롤바 영역 (12px) 만큼 오른쪽 마진 확보하여 열 정렬 맞춤
+        scrollbar_spacer = QWidget()
+        scrollbar_spacer.setFixedWidth(12)
+        scrollbar_spacer.setStyleSheet("background: transparent; border: none;")
+        custom_header_layout.addWidget(scrollbar_spacer)
+        
         self.table_usage.setStyleSheet(f"""
             QTableWidget {{
                 background-color: white;
                 border: 1px solid #E5E7EB;
-                border-radius: 8px;
+                border-top: none;
+                border-radius: 0px;
+                border-bottom-left-radius: 8px;
+                border-bottom-right-radius: 8px;
                 gridline-color: #F3F4F6;
-                font-family: '{app_ff}';
-            }}
-            QHeaderView::section {{
-                background-color: #F9FAFB;
-                color: #374151;
-                font-weight: bold;
-                border: none;
-                border-bottom: 1px solid #E5E7EB;
-                height: 35px;
             }}
             QTableWidget::item {{
                 border-bottom: 1px solid #F3F4F6;
                 padding: 5px;
                 color: #4B5563;
             }}
+            QScrollBar:vertical {{
+                border: none;
+                background: transparent;
+                width: 12px;
+                margin: 0;
+            }}
+            QScrollBar::handle:vertical {{
+                background: #D1D5DB;
+                border-radius: 6px;
+                min-height: 20px;
+                margin: 2px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: #9CA3AF;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
         """)
-        usage_layout.addWidget(self.table_usage, 1)
+        
+        # 헤더와 테이블을 Spacing 0인 세로 레이아웃에 묶어 간격 없이 배치
+        table_container_layout = QVBoxLayout()
+        table_container_layout.setContentsMargins(0, 0, 0, 0)
+        table_container_layout.setSpacing(0)
+        table_container_layout.addWidget(self.custom_header)
+        table_container_layout.addWidget(self.table_usage, 1)
+        
+        usage_layout.addLayout(table_container_layout, 1)
         
         # 하단 안내 문구
         lbl_info = QLabel("💡 Google Cloud API 단가 1회당 약 2원(0.0015 USD) 기준으로 계산한 예상 금액입니다.")
