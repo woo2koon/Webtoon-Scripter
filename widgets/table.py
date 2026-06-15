@@ -42,6 +42,27 @@ class SheetCellLineEdit(QLineEdit):
                 QTimer.singleShot(50, lambda: main_win.split_script_row(row_idx, left_text, right_text))
                 event.accept()
                 return
+
+        # Ctrl+Z / Ctrl+Shift+Z 실행 취소/다시 실행 처리
+        if event.modifiers() & Qt.ControlModifier:
+            target_table = None
+            p = self.parent()
+            while p:
+                if isinstance(p, QTableWidget):
+                    target_table = p
+                    break
+                p = p.parent()
+            
+            if target_table and hasattr(target_table, 'undo'):
+                if event.modifiers() & Qt.ShiftModifier and event.key() == Qt.Key_Z:
+                    target_table.redo()
+                    event.accept()
+                    return
+                elif event.key() == Qt.Key_Z:
+                    target_table.undo()
+                    event.accept()
+                    return
+
         super().keyPressEvent(event)
 
 class Column0Delegate(QStyledItemDelegate):
@@ -389,14 +410,20 @@ class SpreadsheetTable(QTableWidget):
                             combo = self.cellWidget(row, 0)
                             if isinstance(combo, QComboBox):
                                 combo.setCurrentText(char_name)
+                                combo.setFocus(Qt.OtherFocusReason)
                             else:
                                 item = self.item(row, 0)
                                 if item:
                                     item.setText(char_name)
                             
+                            self.setCurrentCell(row, 0)
+                            
                             mw = self.window()
-                            if hasattr(mw, 'save_script_data'):
-                                mw.save_script_data()
+                            if mw:
+                                mw.activateWindow()
+                                mw.raise_()
+                                if hasattr(mw, 'save_script_data'):
+                                    mw.save_script_data()
                 except Exception as e:
                     print("Error dropping character:", e)
             return
