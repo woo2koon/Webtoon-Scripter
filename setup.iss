@@ -35,4 +35,5 @@ Name: "{group}\Webtoon Scripter"; Filename: "{app}\Webtoon_Scripter.exe"; IconFi
 Name: "{autodesktop}\Webtoon Scripter"; Filename: "{app}\Webtoon_Scripter.exe"; Tasks: desktopicon; IconFilename: "{app}\_internal\app_icon\webtoon_scripter_icon_windows.ico"
 
 [Run]
+Filename: "{app}\Webtoon_Scripter.exe"; Flags: nowait; Check: WizardSilent
 Description: "{cm:LaunchProgram,Webtoon Scripter}"; Filename: "{app}\Webtoon_Scripter.exe"; Flags: nowait postinstall skipifsilent
