@@ -21,7 +21,7 @@
     <td><img src="assets/simple_mode.png" width="450" alt="심플 모드 스크린샷"></td>
   </tr>
   <tr>
-    <td align="center"><b>👥 캐릭터 DB & 도우미</b></td>
+    <td align="center"><b>👥 캐릭터 도우미</b></td>
     <td align="center"><b>📚 관용구 도우미</b></td>
   </tr>
   <tr>
