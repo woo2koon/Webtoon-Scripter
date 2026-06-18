@@ -3550,7 +3550,7 @@ class UpdateNotificationBanner(QFrame):
         self.on_direct_update = on_direct_update
         
         self.setObjectName("UpdateNotificationBanner")
-        self.setFixedSize(420, 115)
+        self.setFixedSize(420, 130)
         self.setStyleSheet("""
             QFrame#UpdateNotificationBanner {
                 background-color: #FFFFFF;
@@ -3771,7 +3771,7 @@ class UpdateNotificationBanner(QFrame):
         if active:
             self.setFixedSize(420, 85)
         else:
-            self.setFixedSize(420, 115)
+            self.setFixedSize(420, 130)
             
         # 크기가 변경되었으므로 부모창 내에서의 y 위치(바닥 기준 위치)를 재정렬합니다.
         if self.parent():
