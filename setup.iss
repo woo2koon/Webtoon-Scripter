@@ -1,8 +1,8 @@
-; Inno Setup Script for Webtoon Scripter (v3.1.0)
+; Inno Setup Script for Webtoon Scripter (v3.2.0)
 
 [Setup]
 AppName=Webtoon Scripter
-AppVersion=3.1.0
+AppVersion=3.2.0
 AppPublisher=woo2koon
 AppPublisherURL=https://github.com/woo2koon/Webtoon-Scripter
 AppSupportURL=https://github.com/woo2koon/Webtoon-Scripter
@@ -11,7 +11,7 @@ DefaultDirName={autopf}\Webtoon Scripter
 DefaultGroupName=Webtoon Scripter
 ; 설치 파일 저장 경로 및 이름
 OutputDir=dist
-OutputBaseFilename=Webtoon_Scripter_v3.1.0_Setup
+OutputBaseFilename=Webtoon_Scripter_v3.2.0_Setup
 ; 바탕화면 바로가기 아이콘 설정용 아이콘 경로
 SetupIconFile=app_icon\webtoon_scripter_icon_windows.ico
 WizardImageFile=app_icon\setup_left.bmp
