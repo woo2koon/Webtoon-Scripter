@@ -444,18 +444,26 @@ class SelectionOverlay(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        # 전체 화면 어둡게 처리 (딤 효과)
-        dim_color = QColor(0, 0, 0, 100)
-        painter.fillRect(self.rect(), dim_color)
+        # 전체 영역 크기
+        full_rect = self.rect()
 
         if self.start_pos and self.end_pos:
-            # 선택 영역 계산
             rect = QRect(self.start_pos, self.end_pos).normalized()
 
-            # 선택 영역 뚫기
-            painter.setCompositionMode(QPainter.CompositionMode_Clear)
-            painter.fillRect(rect, Qt.transparent)
-            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+            # QPainterPath로 어두운 영역 설정 (전체 영역 - 선택 영역)
+            from PySide6.QtGui import QPainterPath
+            path = QPainterPath()
+            path.addRect(QRectF(full_rect))
+            
+            sub_path = QPainterPath()
+            sub_path.addRect(QRectF(rect))
+            
+            # 전체 영역에서 드래그 사각형을 뺍니다
+            draw_path = path.subtracted(sub_path)
+
+            # 도려낸 어두운 영역 칠하기
+            dim_color = QColor(0, 0, 0, 100)
+            painter.fillPath(draw_path, QBrush(dim_color))
 
             # 테두리 그리기 (오렌지 점선)
             border_pen = QPen(QColor("#FF5722"), 2, Qt.DashLine)
@@ -469,6 +477,10 @@ class SelectionOverlay(QWidget):
             painter.setFont(font)
             text = f"{rect.width()} x {rect.height()}"
             painter.drawText(rect.adjusted(5, -25, 0, 0), Qt.AlignLeft | Qt.AlignBottom, text)
+        else:
+            # 드래그 전에는 전체를 어둡게 표시
+            dim_color = QColor(0, 0, 0, 100)
+            painter.fillRect(full_rect, dim_color)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
