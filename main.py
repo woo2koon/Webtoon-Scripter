@@ -3643,6 +3643,10 @@ class WebtoonManager(QMainWindow):
         self.increment_api_counter()
         print(f"[부분 OCR] API 사용 횟수 증가 처리 완료 (현재 회차 API 카운트: {self.api_call_count})")
 
+        # 0. 어떤 분기로 가든 관계없이 무조건 결과값을 클립보드에 동시 복사해 둡니다 (사용성 유지)
+        QApplication.clipboard().setText(combined_text)
+        print(f"[부분 OCR] 결과 텍스트가 클립보드에 복사되었습니다.")
+
         # 오버레이 시작 시 저장해 둔 마지막 포커스 위젯을 타겟으로 사용
         focus_widget = getattr(self, 'last_active_focus_widget', None)
         text_inserted = False
@@ -3668,7 +3672,7 @@ class WebtoonManager(QMainWindow):
             self.text_editor.setFocus()
             text_inserted = True
             print(f"[부분 OCR] 현재 활성 탭이 Step 1이므로 텍스트가 '스마트 텍스트 에디터' 커서 위치에 강제 삽입되었습니다.")
-            self.toast.show_message(f"✅ 에디터 커서 위치에 삽입됨: \"{combined_text[:15]}...\"")
+            self.toast.show_message(f"📋 클립보드 복사 및 에디터에 삽입됨: \"{combined_text[:15]}...\"")
         
         # 2. 그 외 탭이거나 포커스가 명확히 에디터에 있었던 경우
         elif focus_widget and (focus_widget == self.text_editor or focus_widget.parent() == self.text_editor):
@@ -3685,7 +3689,7 @@ class WebtoonManager(QMainWindow):
             self.text_editor.setFocus()
             text_inserted = True
             print(f"[부분 OCR] 텍스트가 '스마트 텍스트 에디터' 커서 위치에 삽입되었습니다.")
-            self.toast.show_message(f"✅ 에디터 커서 위치에 삽입됨: \"{combined_text[:15]}...\"")
+            self.toast.show_message(f"📋 클립보드 복사 및 에디터에 삽입됨: \"{combined_text[:15]}...\"")
             
         elif "Step 3" in current_tab_title and hasattr(self, 'table_script'):
             curr_row = self.table_script.currentRow()
@@ -3703,11 +3707,11 @@ class WebtoonManager(QMainWindow):
                 self.save_script_data()
                 text_inserted = True
                 print(f"[부분 OCR] 텍스트가 '대본 표(행 번호: {curr_row + 1})' 셀에 자동 삽입되었습니다.")
-                self.toast.show_message(f"✅ 대본 시트 셀에 자동 삽입됨: \"{combined_text[:15]}...\"")
+                self.toast.show_message(f"📋 클립보드 복사 및 대본 셀에 삽입됨: \"{combined_text[:15]}...\"")
 
-        # 둘 다 아닐 경우 안전장치로 에디터와 클립보드에 동시 복사
+        # 둘 다 아닐 경우 안전장치로 에디터에만 복사 (클립보드는 위에서 이미 복사됨)
         if not text_inserted:
-            # 텍스트 에디터 맨 뒤에 임시 추가 및 클립보드 복사
+            # 텍스트 에디터 맨 뒤에 임시 추가
             cursor = self.text_editor.textCursor()
             cursor.movePosition(QTextCursor.End)
             cursor.beginEditBlock()
@@ -3716,7 +3720,6 @@ class WebtoonManager(QMainWindow):
             cursor.insertText(combined_text)
             cursor.endEditBlock()
             
-            QApplication.clipboard().setText(combined_text)
             print(f"[부분 OCR] 포커스 타겟이 없어 결과 텍스트가 '에디터'에 자동 추가되고 클립보드에 복사되었습니다.")
             self.toast.show_message(f"📋 클립보드 복사 및 에디터에 추가됨: \"{combined_text[:15]}...\"")
 
