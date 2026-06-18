@@ -3647,7 +3647,31 @@ class WebtoonManager(QMainWindow):
         focus_widget = getattr(self, 'last_active_focus_widget', None)
         text_inserted = False
 
-        if focus_widget and (focus_widget == self.text_editor or focus_widget.parent() == self.text_editor):
+        # 현재 열려 있는 탭의 제목(텍스트) 확인
+        current_tab_title = ""
+        current_idx = self.tabs.currentIndex()
+        header = self.tabs.tabBar().tabButton(current_idx, QTabBar.LeftSide)
+        if hasattr(header, 'text'):
+            current_tab_title = header.text
+
+        # 1. 사용자가 'Step 1' 탭을 활성화해 둔 경우 무조건 텍스트 에디터로 입력 처리
+        if "Step 1" in current_tab_title:
+            cursor = self.text_editor.textCursor()
+            cursor.beginEditBlock()
+            # 띄어쓰기 가이드 추가
+            if cursor.position() > 0:
+                text_before = self.text_editor.toPlainText()[:cursor.position()]
+                if text_before and not text_before[-1].isspace():
+                    cursor.insertText(" ")
+            cursor.insertText(combined_text)
+            cursor.endEditBlock()
+            self.text_editor.setFocus()
+            text_inserted = True
+            print(f"[부분 OCR] 현재 활성 탭이 Step 1이므로 텍스트가 '스마트 텍스트 에디터' 커서 위치에 강제 삽입되었습니다.")
+            self.toast.show_message(f"✅ 에디터 커서 위치에 삽입됨: \"{combined_text[:15]}...\"")
+        
+        # 2. 그 외 탭이거나 포커스가 명확히 에디터에 있었던 경우
+        elif focus_widget and (focus_widget == self.text_editor or focus_widget.parent() == self.text_editor):
             # 텍스트 에디터에 직접 삽입
             cursor = self.text_editor.textCursor()
             cursor.beginEditBlock()
@@ -3662,7 +3686,8 @@ class WebtoonManager(QMainWindow):
             text_inserted = True
             print(f"[부분 OCR] 텍스트가 '스마트 텍스트 에디터' 커서 위치에 삽입되었습니다.")
             self.toast.show_message(f"✅ 에디터 커서 위치에 삽입됨: \"{combined_text[:15]}...\"")
-        elif hasattr(self, 'table_script'):
+            
+        elif "Step 3" in current_tab_title and hasattr(self, 'table_script'):
             curr_row = self.table_script.currentRow()
             # 3단계 대본 탭이 활성화되어 있고 표의 특정 셀이 선택되어 있는 경우
             if curr_row >= 0:
