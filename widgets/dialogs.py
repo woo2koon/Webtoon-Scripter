@@ -3425,7 +3425,7 @@ class UpdateDialog(QDialog):
         
         self.txt_notes = QTextEdit()
         self.txt_notes.setReadOnly(True)
-        self.txt_notes.setPlainText(release_notes if release_notes else "제공된 업데이트 정보가 없습니다.")
+        self.txt_notes.setMarkdown(release_notes if release_notes else "제공된 업데이트 정보가 없습니다.")
         self.txt_notes.setStyleSheet("""
             QTextEdit {
                 border: 1px solid #D1D5DB;
