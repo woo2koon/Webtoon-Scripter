@@ -3532,6 +3532,92 @@ class UpdateDialog(QDialog):
 
 
 # =================================================================
+# 업데이트 완료 변경 내역 안내 다이얼로그 (WhatNewDialog)
+# =================================================================
+class WhatNewDialog(QDialog):
+    def __init__(self, parent=None, version_tag="", release_notes=""):
+        super().__init__(parent)
+        self.setWindowTitle("업데이트 완료")
+        self.setFixedSize(500, 480)
+        self.setWindowFlags(Qt.Dialog | Qt.MSWindowsFixedSizeDialogHint | Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(25, 25, 25, 25)
+        layout.setSpacing(15)
+        
+        # 1. 상단 타이틀 영역
+        self.header_layout = QHBoxLayout()
+        self.header_layout.setSpacing(15)
+        
+        self.lbl_party = QLabel("🎉")
+        self.lbl_party.setStyleSheet("font-size: 28px; background: transparent; border: none;")
+        self.header_layout.addWidget(self.lbl_party)
+        
+        self.title_text_layout = QVBoxLayout()
+        self.title_text_layout.setSpacing(4)
+        
+        self.lbl_title = QLabel("성공적으로 업데이트되었습니다!")
+        self.lbl_title.setStyleSheet("font-size: 18px; font-weight: bold; color: #FF5722; font-family: 'Pretendard';")
+        self.title_text_layout.addWidget(self.lbl_title)
+        
+        self.lbl_info = QLabel(f"새로운 v{version_tag} 버전으로 시작합니다.")
+        self.lbl_info.setStyleSheet("font-size: 13px; color: #4B5563; font-family: 'Pretendard';")
+        self.title_text_layout.addWidget(self.lbl_info)
+        
+        self.header_layout.addLayout(self.title_text_layout)
+        self.header_layout.addStretch()
+        layout.addLayout(self.header_layout)
+        
+        # 2. 업데이트 상세 변경점 표시
+        self.lbl_notes_title = QLabel("새로운 변경 사항:")
+        self.lbl_notes_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #374151; font-family: 'Pretendard';")
+        layout.addWidget(self.lbl_notes_title)
+        
+        self.txt_notes = QTextEdit()
+        self.txt_notes.setReadOnly(True)
+        self.txt_notes.setMarkdown(release_notes if release_notes else "제공된 업데이트 정보가 없습니다.")
+        self.txt_notes.setStyleSheet("""
+            QTextEdit {
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                background-color: #F9FAFB;
+                padding: 15px;
+                color: #374151;
+                font-family: 'Pretendard';
+                font-size: 13px;
+                line-height: 150%;
+            }
+        """)
+        layout.addWidget(self.txt_notes)
+        
+        # 3. 하단 닫기 버튼
+        self.button_layout = QHBoxLayout()
+        self.button_layout.addStretch()
+        
+        self.btn_close = QPushButton("시작하기")
+        self.btn_close.setFixedSize(120, 38)
+        self.btn_close.setCursor(Qt.PointingHandCursor)
+        self.btn_close.setStyleSheet("""
+            QPushButton {
+                background-color: #FF5722;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                color: white;
+                font-family: 'Pretendard';
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #E64A19;
+            }
+            QPushButton:pressed {
+                background-color: #D84315;
+            }
+        """)
+        self.btn_close.clicked.connect(self.accept)
+        self.button_layout.addWidget(self.btn_close)
+        
+        layout.addLayout(self.button_layout)
 # 업데이트 알림 배너 (UpdateNotificationBanner) - 좌측 하단 슬라이드 업 팝업
 # =================================================================
 class UpdateNotificationBanner(QFrame):

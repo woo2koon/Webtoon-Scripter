@@ -184,6 +184,7 @@ AVATAR_SIZE_ALL = 45
 AVATAR_SIZE_CURRENT = 45
 TEXT_ZOOM_STEP = 0
 MIGRATION_PROMPTED = False
+APP_VERSION_LAST = ""
 
 # [관용구 설정] 자주 쓰는 지문 리스트
 IDIOMS = []
@@ -213,7 +214,7 @@ MODERN_STYLE = f"""
 """
 
 def load_settings():
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST
     IS_SIMPLE_MODE = False
     
     # 1. 일단 하드코딩된 키로 초기화
@@ -222,12 +223,14 @@ def load_settings():
     }
     ACTIVE_PRESET_NAME = "Default"
     MIGRATION_PROMPTED = False
+    APP_VERSION_LAST = ""
 
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 MIGRATION_PROMPTED = data.get("migration_prompted", False)
+                APP_VERSION_LAST = data.get("app_version_last", "")
                 
                 if "presets" in data and isinstance(data["presets"], dict):
                     loaded_presets = data["presets"]
@@ -310,7 +313,7 @@ def load_settings():
         AI_API_KEY = OCR_API_KEY
 
 def save_settings(presets=None, active_name=None, is_simple_mode=None):
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST
     
     if presets is not None:
         API_PRESETS = presets
@@ -342,7 +345,8 @@ def save_settings(presets=None, active_name=None, is_simple_mode=None):
         "main_window_pos": MAIN_WINDOW_POS,
         "main_window_size": MAIN_WINDOW_SIZE,
         "tab_order": TAB_ORDER,
-        "migration_prompted": MIGRATION_PROMPTED
+        "migration_prompted": MIGRATION_PROMPTED,
+        "app_version_last": APP_VERSION_LAST
     }
     try:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:

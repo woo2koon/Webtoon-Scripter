@@ -48,7 +48,7 @@ restore_template()
 
 
 
-from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, PreferencesDialog, FloatingIdiomViewer, UpdateDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog, ShortcutHelpDialog, CustomMessageBox, SearchWidget, OnboardingMigrationDialog
+from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, PreferencesDialog, FloatingIdiomViewer, UpdateDialog, WhatNewDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog, ShortcutHelpDialog, CustomMessageBox, SearchWidget, OnboardingMigrationDialog
 from update_worker import UpdateCheckWorker, UpdateDownloadWorker
 
 class GlobalScrollShortcutFilter(QObject):
@@ -602,6 +602,9 @@ class WebtoonManager(QMainWindow):
 
         # [신설] 첫 실행 시 이전 버전 데이터 마이그레이션 안내창
         QTimer.singleShot(1500, self.prompt_first_run_migration)
+        
+        # [신설] 업데이트 후 첫 실행 시 변경 내역(What's New) 창 표시
+        QTimer.singleShot(1800, self.show_whats_new_if_updated)
 
     def update_button_pos(self):
         """사이드바의 현재 너비에 맞춰 버튼 위치를 실시간으로 이동시킵니다."""
@@ -5045,6 +5048,36 @@ class WebtoonManager(QMainWindow):
                 dlg.set_downloading_mode(False)
         except Exception as e:
             dlg.show_error(str(e))
+
+    def show_whats_new_if_updated(self):
+        # 마지막으로 기록된 버전과 현재 버전을 비교하여 업데이트 직후 첫 기동인지 확인
+        last_version = config.APP_VERSION_LAST
+        current_version = config.APP_VERSION
+        
+        if last_version and last_version != current_version:
+            # GitHub Releases API를 호출하여 최신 릴리스 정보(변경 내역)를 실시간으로 받아옵니다.
+            # 백그라운드 스레드에서 가져오는 대신, 시작 시의 일회성 동작이므로 로딩감이 없도록 간단히 처리합니다.
+            import urllib.request
+            import json
+            changelog = ""
+            try:
+                url = "https://api.github.com/repos/woo2koon/Webtoon-Scripter/releases/latest"
+                req = urllib.request.Request(url, headers={"User-Agent": "Webtoon-Scripter-Client"})
+                with urllib.request.urlopen(req, timeout=3) as response:
+                    if response.status == 200:
+                        data = json.loads(response.read().decode('utf-8'))
+                        changelog = data.get("body", "")
+            except Exception as e:
+                print(f"Failed to fetch latest changelog on startup: {e}")
+            
+            # changelog가 정상 수집되었을 경우 다이얼로그 표시
+            dlg = WhatNewDialog(self, version_tag=current_version, release_notes=changelog)
+            dlg.exec()
+            
+        # 기동 후 현재 버전을 마지막 기동 버전으로 기록
+        if last_version != current_version:
+            config.APP_VERSION_LAST = current_version
+            config.save_settings()
 
     def prompt_first_run_migration(self):
         if not config.MIGRATION_PROMPTED:
