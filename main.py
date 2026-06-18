@@ -3550,38 +3550,64 @@ class WebtoonManager(QMainWindow):
         self.selection_overlay._connected = True
         self.selection_overlay.show()
         self.selection_overlay.raise_()
+        self.selection_overlay.setFocus()
+        self.selection_overlay.grabKeyboard()  # 드래그 전에 ESC 키만으로 즉시 닫힐 수 있도록 키보드 우선 가로채기 활성화
 
     def on_partial_area_selected(self, rect):
-        if not self.active_reanalysis_path or not self.active_reanalysis_label:
-            return
-
-        # 1. 뷰어 크기 대비 원본 이미지 크기 비율 구하기
-        label_rect = self.active_reanalysis_label.rect()
-        pixmap = self.active_reanalysis_label.pixmap()
-        if not pixmap or pixmap.isNull() or label_rect.width() <= 0 or label_rect.height() <= 0:
-            return
-
-        # 뷰포트 절대 좌표를 이 라벨 기준 상대 좌표로 매핑
-        viewport_offset = self.active_reanalysis_label.mapFrom(self.scroll_area.viewport(), rect.topLeft())
+        # 1. 드래그 영역(rect)은 뷰포트(self.scroll_area.viewport()) 기준 좌표입니다.
+        # 드래그 영역과 Y축 영역이 교차하는 모든 이미지 조각(ResponsiveLabel)을 찾습니다.
+        crop_tasks = []
         
-        # 라벨 영역 안으로 자르기 사각형 한정
-        crop_rect = QRect(viewport_offset, rect.size()).intersected(label_rect)
-        if crop_rect.width() <= 5 or crop_rect.height() <= 5:
+        # 이미지 레이아웃에 들어있는 모든 자식 위젯 순회
+        for i in range(self.image_layout.count()):
+            widget = self.image_layout.itemAt(i).widget()
+            if not isinstance(widget, ResponsiveLabel):
+                continue
+                
+            # 라벨 위젯의 뷰포트 대비 위치/크기 구하기
+            # mapTo(viewport)를 사용해 뷰포트 좌표계에서의 상대 QRect를 구함
+            widget_top_left = widget.mapTo(self.scroll_area.viewport(), QPoint(0, 0))
+            widget_viewport_rect = QRect(widget_top_left, widget.size())
+            
+            # 드래그 사각형과 교차하는 영역이 있는지 확인
+            intersected_rect = rect.intersected(widget_viewport_rect)
+            if intersected_rect.width() > 5 and intersected_rect.height() > 5:
+                # 뷰포트 교차 영역을 이 라벨의 자체 상대 좌표계로 역산
+                label_local_rect = QRect(
+                    widget.mapFrom(self.scroll_area.viewport(), intersected_rect.topLeft()),
+                    intersected_rect.size()
+                )
+                
+                # 라벨 안의 원본 pixmap 비율 적용
+                pixmap = widget.pixmap()
+                if not pixmap or pixmap.isNull():
+                    continue
+                    
+                scale_x = pixmap.width() / widget.width()
+                scale_y = pixmap.height() / widget.height()
+                
+                # 원본 픽셀 단위로 환산
+                x1 = int(label_local_rect.left() * scale_x)
+                y1 = int(label_local_rect.top() * scale_y)
+                w = int(label_local_rect.width() * scale_x)
+                h = int(label_local_rect.height() * scale_y)
+                
+                crop_tasks.append({
+                    'path': widget.pixmap_path,
+                    'x': x1,
+                    'y': y1,
+                    'w': w,
+                    'h': h
+                })
+                
+        if not crop_tasks:
+            self.toast.show_message("✨ 선택한 영역에 이미지가 없습니다.")
             return
-
-        # 2. 비율 환산 (화면 표시 크기 -> 원본 이미지 실제 픽셀 크기)
-        scale_x = pixmap.width() / label_rect.width()
-        scale_y = pixmap.height() / label_rect.height()
-
-        x1 = int(crop_rect.left() * scale_x)
-        y1 = int(crop_rect.top() * scale_y)
-        w = int(crop_rect.width() * scale_x)
-        h = int(crop_rect.height() * scale_y)
 
         # 3. 비동기 백그라운드 재분석 시작
-        self.run_partial_ocr(self.active_reanalysis_path, x1, y1, w, h)
+        self.run_partial_ocr_tasks(crop_tasks)
 
-    def run_partial_ocr(self, img_path, x, y, w, h):
+    def run_partial_ocr_tasks(self, crop_tasks):
         if not config.OCR_API_KEY or not config.OCR_API_KEY.strip():
             self.toast.show_message("⚠️ API 키 설정을 먼저 확인해 주세요.")
             return
@@ -3589,7 +3615,7 @@ class WebtoonManager(QMainWindow):
         self.toast.show_message("⏳ 선택한 영역 분석(OCR) 진행 중...")
 
         from partial_ocr_worker import PartialOCRWorker
-        self.partial_worker = PartialOCRWorker(img_path, x, y, w, h)
+        self.partial_worker = PartialOCRWorker(crop_tasks)
         self.partial_worker.finished.connect(self.on_partial_ocr_finished)
         self.partial_worker.start()
 

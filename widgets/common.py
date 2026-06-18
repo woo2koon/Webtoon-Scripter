@@ -470,13 +470,6 @@ class SelectionOverlay(QWidget):
             painter.setPen(border_pen)
             painter.setBrush(Qt.NoBrush)
             painter.drawRect(rect)
-
-            # 안내 가이드 텍스트
-            painter.setPen(QColor("white"))
-            font = QFont("Pretendard", 10, QFont.Bold)
-            painter.setFont(font)
-            text = f"{rect.width()} x {rect.height()}"
-            painter.drawText(rect.adjusted(5, -25, 0, 0), Qt.AlignLeft | Qt.AlignBottom, text)
         else:
             # 드래그 전에는 전체를 어둡게 표시
             dim_color = QColor(0, 0, 0, 100)
@@ -487,6 +480,7 @@ class SelectionOverlay(QWidget):
             self.start_pos = event.pos()
             self.end_pos = event.pos()
             self.is_dragging = True
+            self.setFocus()  # ESC 키 입력을 바로 잡아채도록 포커스 획득
             self.update()
 
     def mouseMoveEvent(self, event):
@@ -505,6 +499,7 @@ class SelectionOverlay(QWidget):
             
             self.start_pos = None
             self.end_pos = None
+            self.releaseKeyboard()
             self.hide()
 
     def keyPressEvent(self, event):
@@ -512,6 +507,7 @@ class SelectionOverlay(QWidget):
             self.start_pos = None
             self.end_pos = None
             self.is_dragging = False
+            self.releaseKeyboard()
             self.hide()
             event.accept()
         else:
