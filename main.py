@@ -4917,12 +4917,12 @@ class WebtoonManager(QMainWindow):
         if current_os == "Darwin":
             for asset in assets:
                 name = asset.get("name", "").lower()
-                if name.endswith(".zip") and ("mac" in name or "darwin" in name or "apple" in name):
+                if name.endswith(".dmg") and ("mac" in name or "darwin" in name or "apple" in name):
                     download_url = asset.get("browser_download_url")
                     break
             if not download_url:
                 for asset in assets:
-                    if asset.get("name", "").lower().endswith(".zip"):
+                    if asset.get("name", "").lower().endswith(".dmg"):
                         download_url = asset.get("browser_download_url")
                         break
         else:
