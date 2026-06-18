@@ -3643,9 +3643,18 @@ class WebtoonManager(QMainWindow):
         self.increment_api_counter()
         print(f"[부분 OCR] API 사용 횟수 증가 처리 완료 (현재 회차 API 카운트: {self.api_call_count})")
 
-        # 0. 어떤 분기로 가든 관계없이 무조건 결과값을 클립보드에 동시 복사해 둡니다 (사용성 유지)
-        QApplication.clipboard().setText(combined_text)
-        print(f"[부분 OCR] 결과 텍스트가 클립보드에 복사되었습니다.")
+        # route_mode = 0: 자동입력 + 클립보드, 1: 클립보드만, 2: 자동입력만
+        route_mode = getattr(config, 'PARTIAL_OCR_ROUTE_MODE', 0)
+
+        # 1. 클립보드 복사 처리 (mode 0, 1)
+        if route_mode in (0, 1):
+            QApplication.clipboard().setText(combined_text)
+            print(f"[부분 OCR] 결과 텍스트가 클립보드에 복사되었습니다.")
+
+        # 2. 클립보드 복사 전용 모드(mode 1)인 경우 자동입력 스킵 후 토스트 띄우고 종료
+        if route_mode == 1:
+            self.toast.show_message(f"📋 결과가 클립보드에 복사되었습니다: \"{combined_text[:15]}...\"")
+            return
 
         # 오버레이 시작 시 저장해 둔 마지막 포커스 위젯을 타겟으로 사용
         focus_widget = getattr(self, 'last_active_focus_widget', None)
@@ -3658,7 +3667,8 @@ class WebtoonManager(QMainWindow):
         if hasattr(header, 'text'):
             current_tab_title = header.text
 
-        # 1. 사용자가 'Step 1' 탭을 활성화해 둔 경우 무조건 텍스트 에디터로 입력 처리
+        # 3. 자동 입력 처리 (mode 0, 2)
+        # 3.1. 사용자가 'Step 1' 탭을 활성화해 둔 경우 무조건 텍스트 에디터로 입력 처리
         if "Step 1" in current_tab_title:
             cursor = self.text_editor.textCursor()
             cursor.beginEditBlock()
@@ -3672,9 +3682,12 @@ class WebtoonManager(QMainWindow):
             self.text_editor.setFocus()
             text_inserted = True
             print(f"[부분 OCR] 현재 활성 탭이 Step 1이므로 텍스트가 '스마트 텍스트 에디터' 커서 위치에 강제 삽입되었습니다.")
-            self.toast.show_message(f"📋 클립보드 복사 및 에디터에 삽입됨: \"{combined_text[:15]}...\"")
+            if route_mode == 0:
+                self.toast.show_message(f"📋 클립보드 복사 및 에디터에 삽입됨: \"{combined_text[:15]}...\"")
+            else:
+                self.toast.show_message(f"✍️ 에디터에 삽입됨: \"{combined_text[:15]}...\"")
         
-        # 2. 그 외 탭이거나 포커스가 명확히 에디터에 있었던 경우
+        # 3.2. 그 외 탭이거나 포커스가 명확히 에디터에 있었던 경우
         elif focus_widget and (focus_widget == self.text_editor or focus_widget.parent() == self.text_editor):
             # 텍스트 에디터에 직접 삽입
             cursor = self.text_editor.textCursor()
@@ -3689,7 +3702,10 @@ class WebtoonManager(QMainWindow):
             self.text_editor.setFocus()
             text_inserted = True
             print(f"[부분 OCR] 텍스트가 '스마트 텍스트 에디터' 커서 위치에 삽입되었습니다.")
-            self.toast.show_message(f"📋 클립보드 복사 및 에디터에 삽입됨: \"{combined_text[:15]}...\"")
+            if route_mode == 0:
+                self.toast.show_message(f"📋 클립보드 복사 및 에디터에 삽입됨: \"{combined_text[:15]}...\"")
+            else:
+                self.toast.show_message(f"✍️ 에디터에 삽입됨: \"{combined_text[:15]}...\"")
             
         elif "Step 3" in current_tab_title and hasattr(self, 'table_script'):
             curr_row = self.table_script.currentRow()
@@ -3707,9 +3723,12 @@ class WebtoonManager(QMainWindow):
                 self.save_script_data()
                 text_inserted = True
                 print(f"[부분 OCR] 텍스트가 '대본 표(행 번호: {curr_row + 1})' 셀에 자동 삽입되었습니다.")
-                self.toast.show_message(f"📋 클립보드 복사 및 대본 셀에 삽입됨: \"{combined_text[:15]}...\"")
+                if route_mode == 0:
+                    self.toast.show_message(f"📋 클립보드 복사 및 대본 셀에 삽입됨: \"{combined_text[:15]}...\"")
+                else:
+                    self.toast.show_message(f"✍️ 대본 셀에 삽입됨: \"{combined_text[:15]}...\"")
 
-        # 둘 다 아닐 경우 안전장치로 에디터에만 복사 (클립보드는 위에서 이미 복사됨)
+        # 둘 다 아닐 경우 안전장치로 에디터에만 복사
         if not text_inserted:
             # 텍스트 에디터 맨 뒤에 임시 추가
             cursor = self.text_editor.textCursor()
@@ -3720,8 +3739,11 @@ class WebtoonManager(QMainWindow):
             cursor.insertText(combined_text)
             cursor.endEditBlock()
             
-            print(f"[부분 OCR] 포커스 타겟이 없어 결과 텍스트가 '에디터'에 자동 추가되고 클립보드에 복사되었습니다.")
-            self.toast.show_message(f"📋 클립보드 복사 및 에디터에 추가됨: \"{combined_text[:15]}...\"")
+            print(f"[부분 OCR] 포커스 타겟이 없어 결과 텍스트가 '에디터'에 자동 추가되었습니다.")
+            if route_mode == 0:
+                self.toast.show_message(f"📋 클립보드 복사 및 에디터에 추가됨: \"{combined_text[:15]}...\"")
+            else:
+                self.toast.show_message(f"✍️ 에디터에 추가됨: \"{combined_text[:15]}...\"")
 
     def toggle_api_display_mode(self):
         """API 표시 모드를 토글하고 화면을 갱신합니다."""

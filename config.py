@@ -202,20 +202,13 @@ CHARACTER_VIEWER_SIZE = None
 MAIN_WINDOW_POS = None
 MAIN_WINDOW_SIZE = None
 
-# [신규 추가] 탭 레이아웃 순서 기억
-TAB_ORDER = ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"]
-
-MODERN_STYLE = f"""
-    QWidget {{
-        font-family: {FONT_FAMILY};
-        font-size: 14px;
-        color: #1F2937;
-    }}
-"""
+# [신규 추가] 부분 영역 재분석 결과 처리 모드 (0: 자동삽입+클립보드, 1: 클립보드만, 2: 자동삽입만)
+PARTIAL_OCR_ROUTE_MODE = 0
 
 def load_settings():
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST, PARTIAL_OCR_ROUTE_MODE
     IS_SIMPLE_MODE = False
+    PARTIAL_OCR_ROUTE_MODE = 0
     
     # 1. 일단 하드코딩된 키로 초기화
     API_PRESETS = {
@@ -231,6 +224,7 @@ def load_settings():
                 data = json.load(f)
                 MIGRATION_PROMPTED = data.get("migration_prompted", False)
                 APP_VERSION_LAST = data.get("app_version_last", "")
+                PARTIAL_OCR_ROUTE_MODE = data.get("partial_ocr_route_mode", 0)
                 
                 if "presets" in data and isinstance(data["presets"], dict):
                     loaded_presets = data["presets"]
@@ -313,7 +307,7 @@ def load_settings():
         AI_API_KEY = OCR_API_KEY
 
 def save_settings(presets=None, active_name=None, is_simple_mode=None):
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST, PARTIAL_OCR_ROUTE_MODE
     
     if presets is not None:
         API_PRESETS = presets
@@ -346,7 +340,8 @@ def save_settings(presets=None, active_name=None, is_simple_mode=None):
         "main_window_size": MAIN_WINDOW_SIZE,
         "tab_order": TAB_ORDER,
         "migration_prompted": MIGRATION_PROMPTED,
-        "app_version_last": APP_VERSION_LAST
+        "app_version_last": APP_VERSION_LAST,
+        "partial_ocr_route_mode": PARTIAL_OCR_ROUTE_MODE
     }
     try:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:

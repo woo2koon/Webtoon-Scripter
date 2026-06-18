@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (
     QComboBox, QFrame, QListWidget, QListWidgetItem, QWidget, QListView,
     QInputDialog, QAbstractItemView, QApplication, QStackedWidget,
     QFileDialog, QCheckBox, QMenu, QScrollArea, QGraphicsOpacityEffect, QTextEdit,
-    QProgressBar, QGraphicsDropShadowEffect, QTableWidget, QTableWidgetItem, QHeaderView, QGridLayout
+    QProgressBar, QGraphicsDropShadowEffect, QTableWidget, QTableWidgetItem, QHeaderView, QGridLayout,
+    QRadioButton
 )
 from PySide6.QtCore import Qt, Signal, QPoint, QSize, QMimeData, QByteArray, QTimer, QEvent, QPropertyAnimation, QEasingCurve, QRect
 from PySide6.QtGui import (
@@ -190,13 +191,22 @@ class PreferencesDialog(QDialog):
         self.btn_nav_usage.setFocusPolicy(Qt.NoFocus)
         self.btn_nav_usage.setStyleSheet(sidebar_btn_style)
         
+        # [신규 추가] 상세 편의 기능 설정 (부분 OCR 등)
+        self.btn_nav_advanced = QPushButton(" OCR 편의 설정")
+        self.btn_nav_advanced.setIcon(self.get_sidebar_icon(config.ICON_SETTINGS_COG))
+        self.btn_nav_advanced.setIconSize(QSize(18, 18))
+        self.btn_nav_advanced.setCursor(Qt.PointingHandCursor)
+        self.btn_nav_advanced.setFocusPolicy(Qt.NoFocus)
+        self.btn_nav_advanced.setStyleSheet(sidebar_btn_style)
+        
         sidebar_layout.addWidget(self.btn_nav_api)
         sidebar_layout.addWidget(self.btn_nav_storage)
         sidebar_layout.addWidget(self.btn_nav_idiom)
+        sidebar_layout.addWidget(self.btn_nav_advanced)
         sidebar_layout.addWidget(self.btn_nav_usage)
         sidebar_layout.addStretch()
         
-        self.sidebar_buttons = [self.btn_nav_api, self.btn_nav_storage, self.btn_nav_idiom, self.btn_nav_usage]
+        self.sidebar_buttons = [self.btn_nav_api, self.btn_nav_storage, self.btn_nav_idiom, self.btn_nav_advanced, self.btn_nav_usage]
         
         # 2. 우측 스택 위젯
         self.pages = QStackedWidget()
@@ -519,6 +529,95 @@ class PreferencesDialog(QDialog):
         self.refresh_list()
         self.pages.addWidget(self.page_idiom)
         
+        # --- [페이지 4] OCR 편의 설정 (부분 OCR 설정 등) ---
+        self.page_advanced = QWidget()
+        advanced_layout = QVBoxLayout(self.page_advanced)
+        advanced_layout.setContentsMargins(30, 25, 30, 25)
+        advanced_layout.setSpacing(15)
+        
+        lbl_adv_title = QLabel("OCR 편의 설정")
+        lbl_adv_title.setStyleSheet(f"font-size: 16px; font-weight: bold; color: #111827; font-family: '{app_ff}';")
+        advanced_layout.addWidget(lbl_adv_title)
+        
+        lbl_adv_desc = QLabel("만화 뷰어에서 우클릭을 통해 수행하는 '부분 영역 재분석' 결과의 전달 방식을 선택합니다.")
+        lbl_adv_desc.setStyleSheet(f"color: #6B7280; font-size: 12px; font-family: '{app_ff}';")
+        advanced_layout.addWidget(lbl_adv_desc)
+        
+        route_box = QFrame()
+        route_box.setStyleSheet("QFrame { background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; }")
+        route_layout = QVBoxLayout(route_box)
+        route_layout.setContentsMargins(20, 20, 20, 20)
+        route_layout.setSpacing(15)
+        
+        lbl_route_title = QLabel("부분 영역 재분석 결과 처리 방식")
+        lbl_route_title.setStyleSheet(f"font-weight: bold; color: #374151; font-size: 14px; border: none; background: transparent; font-family: '{app_ff}';")
+        route_layout.addWidget(lbl_route_title)
+        
+        self.radio_route_all = QRadioButton("자동 입력 + 클립보드 복사 (기본값)")
+        self.radio_route_clip = QRadioButton("클립보드 복사만 수행")
+        self.radio_route_insert = QRadioButton("각 탭 에디터/대본 셀에 자동 입력만 수행")
+        
+        # 라디오 버튼 디자인 적용
+        radio_style = f"""
+            QRadioButton {{
+                font-size: 13px;
+                color: #374151;
+                font-family: '{app_ff}';
+                border: none;
+                background: transparent;
+                spacing: 8px;
+            }}
+            QRadioButton::indicator {{
+                width: 16px;
+                height: 16px;
+                border: 2px solid #888888; /* 회색 테두리를 더 어둡고 선명하게 주어 시인성 확보 */
+                border-radius: 10px;
+                background-color: white;
+            }}
+            QRadioButton::indicator:hover {{
+                border-color: #333333;
+            }}
+            QRadioButton::indicator:checked {{
+                border: 2px solid #333333;
+                border-radius: 10px;
+                /* radial gradient를 사용하여 검은색 테두리 + 흰색 영역 + 내부 작은 검은색 점을 왜곡 없이 완벽한 원형으로 묘사 */
+                background-color: qradialgradient(
+                    cx: 0.5, cy: 0.5, radius: 0.4,
+                    fx: 0.5, fy: 0.5,
+                    stop: 0 #333333,
+                    stop: 0.7 #333333,
+                    stop: 0.75 white,
+                    stop: 1 white
+                );
+            }}
+        """
+        for radio in [self.radio_route_all, self.radio_route_clip, self.radio_route_insert]:
+            radio.setStyleSheet(radio_style)
+            route_layout.addWidget(radio)
+            
+        # 초기 라디오 상태 세팅
+        route_mode = getattr(config, 'PARTIAL_OCR_ROUTE_MODE', 0)
+        if route_mode == 1:
+            self.radio_route_clip.setChecked(True)
+        elif route_mode == 2:
+            self.radio_route_insert.setChecked(True)
+        else:
+            self.radio_route_all.setChecked(True)
+            
+        # 이벤트 연결
+        def save_route_mode(checked, mode_val):
+            if checked:
+                config.PARTIAL_OCR_ROUTE_MODE = mode_val
+                config.save_settings()
+            
+        self.radio_route_all.toggled.connect(lambda checked: save_route_mode(checked, 0))
+        self.radio_route_clip.toggled.connect(lambda checked: save_route_mode(checked, 1))
+        self.radio_route_insert.toggled.connect(lambda checked: save_route_mode(checked, 2))
+        
+        advanced_layout.addWidget(route_box)
+        advanced_layout.addStretch()
+        self.pages.addWidget(self.page_advanced)
+        
         # --- [페이지 4] 사용량 조회 ---
         self.page_usage = QWidget()
         usage_layout = QVBoxLayout(self.page_usage)
@@ -761,7 +860,8 @@ class PreferencesDialog(QDialog):
         self.btn_nav_api.clicked.connect(lambda: self.set_active_page(0))
         self.btn_nav_storage.clicked.connect(lambda: self.set_active_page(1))
         self.btn_nav_idiom.clicked.connect(lambda: self.set_active_page(2))
-        self.btn_nav_usage.clicked.connect(lambda: self.set_active_page(3))
+        self.btn_nav_advanced.clicked.connect(lambda: self.set_active_page(3))
+        self.btn_nav_usage.clicked.connect(lambda: self.set_active_page(4))
         
         if self.only_idioms:
             self.sidebar_container.setVisible(False)
@@ -778,7 +878,7 @@ class PreferencesDialog(QDialog):
             btn.style().unpolish(btn)
             btn.style().polish(btn)
             btn.update()
-        if index == 3:
+        if index == 4:
             self.load_usage_data()
 
     def load_usage_data(self):
