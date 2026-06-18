@@ -501,7 +501,7 @@ class WebtoonManager(QMainWindow):
         self.api_display_mode = 0  # 0: 현재 회차, 1: 오늘 총 횟수
         self.zoom_step = getattr(config, 'TEXT_ZOOM_STEP', 0)
         self.overlay = DropOverlay(self)
-        self.selection_overlay = SelectionOverlay(self)
+        self.selection_overlay = None
         self.active_reanalysis_label = None
         self.active_reanalysis_path = ""
         
@@ -1497,6 +1497,8 @@ class WebtoonManager(QMainWindow):
         self.image_layout.setSpacing(0)
         self.image_layout.setContentsMargins(0, 0, 0, 0)
         self.scroll_area.setWidget(scroll_content)
+        
+        self.selection_overlay = SelectionOverlay(self.scroll_area.viewport())
 
         # ---------------------------------------------------------
         # 스택에 두 페이지를 추가합니다. (순서 중요!)
