@@ -1,7 +1,7 @@
 # widgets/__init__.py
 from .common import (
     ResponsiveLabel, ClickableComboBox, WebtoonScrollArea, PopupItemDelegate,
-    HoverIconButton, FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage,
+    HoverIconButton, FileDropListWidget, DropOverlay, SelectionOverlay, SmartTextEdit, ToastMessage,
     get_round_rect_pixmap, ModernProgressDialog
 )
 from .character import (

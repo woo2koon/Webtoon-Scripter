@@ -48,7 +48,7 @@ restore_template()
 
 
 
-from widgets import FileDropListWidget, DropOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, PreferencesDialog, FloatingIdiomViewer, UpdateDialog, WhatNewDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog, ShortcutHelpDialog, CustomMessageBox, SearchWidget, OnboardingMigrationDialog
+from widgets import FileDropListWidget, DropOverlay, SelectionOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, PreferencesDialog, FloatingIdiomViewer, UpdateDialog, WhatNewDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog, ShortcutHelpDialog, CustomMessageBox, SearchWidget, OnboardingMigrationDialog
 from update_worker import UpdateCheckWorker, UpdateDownloadWorker
 
 class GlobalScrollShortcutFilter(QObject):
@@ -501,6 +501,9 @@ class WebtoonManager(QMainWindow):
         self.api_display_mode = 0  # 0: 현재 회차, 1: 오늘 총 횟수
         self.zoom_step = getattr(config, 'TEXT_ZOOM_STEP', 0)
         self.overlay = DropOverlay(self)
+        self.selection_overlay = SelectionOverlay(self)
+        self.active_reanalysis_label = None
+        self.active_reanalysis_path = ""
         
         self.idiom_viewer = None
         self.character_viewer = None
@@ -710,6 +713,10 @@ class WebtoonManager(QMainWindow):
         if hasattr(self, 'overlay'):
             self.overlay.setGeometry(self.rect()) 
             self.overlay.raise_()
+        if hasattr(self, 'selection_overlay') and self.selection_overlay.isVisible():
+            # 스크롤 영역에 맞게 오버레이 위치와 크기를 맞춥니다.
+            self.selection_overlay.setGeometry(self.scroll_area.viewport().rect())
+            self.selection_overlay.raise_()
         if hasattr(self, 'update_banner') and self.update_banner and self.update_banner.isVisible():
             self.update_banner.update_position()
 
@@ -3367,6 +3374,7 @@ class WebtoonManager(QMainWindow):
             for i, f in enumerate(files):
                 # (A) 중앙 뷰어에 이미지 추가
                 lbl_img = ResponsiveLabel(os.path.join(i_path, f))
+                lbl_img.request_reanalysis.connect(self.start_partial_reanalysis)
                 self.image_layout.addWidget(lbl_img)
 
                 # (B) 사이드바 리스트에도 추가
@@ -3523,6 +3531,132 @@ class WebtoonManager(QMainWindow):
             self.lbl_api_type.setText("오늘 총 API 사용 횟수")
             cost = self.daily_api_count * 2
             self.lbl_api_count.setText(f"<span style='color: #FF4B4B;'>{self.daily_api_count}회</span> <span style='font-size: 15px; color: #6B7280; font-weight: 500;'> (약 {cost:,}원)</span>")
+
+    def start_partial_reanalysis(self, image_path, label_widget):
+        self.active_reanalysis_path = image_path
+        self.active_reanalysis_label = label_widget
+
+        # 오버레이 활성화 및 영역 연결
+        self.selection_overlay.setGeometry(self.scroll_area.viewport().rect())
+        self.selection_overlay.area_selected.disconnect() if hasattr(self.selection_overlay, '_connected') else None
+        self.selection_overlay.area_selected.connect(self.on_partial_area_selected)
+        self.selection_overlay._connected = True
+        self.selection_overlay.show()
+        self.selection_overlay.raise_()
+
+    def on_partial_area_selected(self, rect):
+        if not self.active_reanalysis_path or not self.active_reanalysis_label:
+            return
+
+        # 1. 뷰어 크기 대비 원본 이미지 크기 비율 구하기
+        label_rect = self.active_reanalysis_label.rect()
+        pixmap = self.active_reanalysis_label.pixmap()
+        if not pixmap or pixmap.isNull() or label_rect.width() <= 0 or label_rect.height() <= 0:
+            return
+
+        # 뷰포트 절대 좌표를 이 라벨 기준 상대 좌표로 매핑
+        viewport_offset = self.active_reanalysis_label.mapFrom(self.scroll_area.viewport(), rect.topLeft())
+        
+        # 라벨 영역 안으로 자르기 사각형 한정
+        crop_rect = QRect(viewport_offset, rect.size()).intersected(label_rect)
+        if crop_rect.width() <= 5 or crop_rect.height() <= 5:
+            return
+
+        # 2. 비율 환산 (화면 표시 크기 -> 원본 이미지 실제 픽셀 크기)
+        scale_x = pixmap.width() / label_rect.width()
+        scale_y = pixmap.height() / label_rect.height()
+
+        x1 = int(crop_rect.left() * scale_x)
+        y1 = int(crop_rect.top() * scale_y)
+        w = int(crop_rect.width() * scale_x)
+        h = int(crop_rect.height() * scale_y)
+
+        # 3. 비동기 백그라운드 재분석 시작
+        self.run_partial_ocr(self.active_reanalysis_path, x1, y1, w, h)
+
+    def run_partial_ocr(self, img_path, x, y, w, h):
+        if not config.OCR_API_KEY or not config.OCR_API_KEY.strip():
+            self.toast.show_message("⚠️ API 키 설정을 먼저 확인해 주세요.")
+            return
+
+        self.toast.show_message("⏳ 선택한 영역 분석(OCR) 진행 중...")
+
+        def thread_task():
+            try:
+                from PIL import Image
+                import io
+                from ocr_worker import preprocess_image_for_ocr, call_google_api_raw
+
+                # 이미지 크롭 및 전처리
+                with Image.open(img_path) as img:
+                    # 안전장치 바운딩
+                    img_w, img_h = img.size
+                    x_clamped = max(0, min(x, img_w))
+                    y_clamped = max(0, min(y, img_h))
+                    w_clamped = max(1, min(w, img_w - x_clamped))
+                    h_clamped = max(1, min(h, img_h - y_clamped))
+
+                    cropped = img.crop((x_clamped, y_clamped, x_clamped + w_clamped, y_clamped + h_clamped))
+                
+                preprocessed = preprocess_image_for_ocr(cropped)
+                buf = io.BytesIO()
+                preprocessed.save(buf, format="PNG")
+                png_bytes = buf.getvalue()
+
+                # API 호출
+                from config import OCR_API_KEY
+                # OCR 호출 결과 가져오기
+                results = call_google_api_raw(png_bytes)
+                return results, True
+            except Exception as e:
+                print(f"Partial OCR thread error: {e}")
+                return [], False
+
+        def on_task_finished(future):
+            results, success = future.result()
+            if not success:
+                self.toast.show_message("❌ 영역 분석 중 오류가 발생했습니다.")
+                return
+
+            if not results:
+                self.toast.show_message("✨ 감지된 텍스트가 없습니다.")
+                return
+
+            # 분석된 텍스트 합치기
+            # y값 순서대로 정렬
+            sorted_results = sorted(results, key=lambda b: b.get('y', 0))
+            combined_text = " ".join([b['text'] for b in sorted_results])
+
+            # API 호출 수 증가
+            self.increment_api_counter()
+
+            # 현재 대본(SpreadsheetTable)의 포커스된 셀에 적용
+            if hasattr(self, 'table_script'):
+                curr_row = self.table_script.currentRow()
+                curr_col = self.table_script.currentColumn()
+                # 텍스트 열(보통 1열) 타겟팅
+                if curr_row >= 0:
+                    self.table_script.save_state_for_undo()
+                    item = self.table_script.item(curr_row, 1)
+                    if item:
+                        old_text = item.text().strip()
+                        new_text = f"{old_text} {combined_text}".strip() if old_text else combined_text
+                        item.setText(new_text)
+                    else:
+                        self.table_script.setItem(curr_row, 1, QTableWidgetItem(combined_text))
+                    
+                    self.save_script_data()
+                    self.toast.show_message("✅ 분석 텍스트가 대본 셀에 자동 삽입되었습니다.")
+                else:
+                    # 선택된 행이 없는 경우 클립보드로 복사
+                    QApplication.clipboard().setText(combined_text)
+                    self.toast.show_message("📋 대본에 포커스된 셀이 없어 텍스트가 클립보드로 복사되었습니다.")
+
+        # 병렬 스레드풀로 구동
+        import concurrent.futures
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(thread_task)
+        future.add_done_callback(lambda f: QTimer.singleShot(0, lambda: on_task_finished(f)))
 
     def toggle_api_display_mode(self):
         """API 표시 모드를 토글하고 화면을 갱신합니다."""

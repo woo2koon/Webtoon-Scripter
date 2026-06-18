@@ -30,12 +30,17 @@ from utils import get_icon, get_colored_icon, open_path, get_colored_pixmap
 # 이미지 비율 유지 라벨
 # =================================================================
 class ResponsiveLabel(QLabel):
+    request_reanalysis = Signal(str, QWidget)  # Emits (image_path, label_widget)
+
     def __init__(self, pixmap_path, parent=None):
         super().__init__(parent)
+        self.pixmap_path = pixmap_path
         self.original_pixmap = QPixmap(pixmap_path)
         self.setPixmap(self.original_pixmap)
         self.setScaledContents(True)
         self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_context_menu)
         
     def resizeEvent(self, event):
         if not self.original_pixmap.isNull() and self.width() > 0:
@@ -44,6 +49,16 @@ class ResponsiveLabel(QLabel):
             if self.height() != target_height:
                 self.setFixedHeight(target_height)
         super().resizeEvent(event)
+
+    def show_context_menu(self, pos):
+        menu = QMenu(self)
+        menu.setFont(QApplication.font())
+        menu.setStyleSheet(config.MODERN_MENU_STYLE)
+        
+        action_reanalyze = QAction("부분 영역 재분석", self)
+        action_reanalyze.triggered.connect(lambda: self.request_reanalysis.emit(self.pixmap_path, self))
+        menu.addAction(action_reanalyze)
+        menu.exec(self.mapToGlobal(pos))
 
 # =================================================================
 class ClickableComboBox(QComboBox):
@@ -408,6 +423,87 @@ class HoverIconButton(QPushButton):
     def leaveEvent(self, event):
         self.setIcon(self.normal_icon)
         super().leaveEvent(event)
+
+# =================================================================
+# 부분 영역 지정을 위한 반투명 드래그 오버레이 (SelectionOverlay)
+# =================================================================
+class SelectionOverlay(QWidget):
+    area_selected = Signal(QRect)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMouseTracking(True)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.start_pos = None
+        self.end_pos = None
+        self.is_dragging = False
+        self.setCursor(Qt.CrossCursor)
+        self.hide()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # 전체 화면 어둡게 처리 (딤 효과)
+        dim_color = QColor(0, 0, 0, 100)
+        painter.fillRect(self.rect(), dim_color)
+
+        if self.start_pos and self.end_pos:
+            # 선택 영역 계산
+            rect = QRect(self.start_pos, self.end_pos).normalized()
+
+            # 선택 영역 뚫기
+            painter.setCompositionMode(QPainter.CompositionMode_Clear)
+            painter.fillRect(rect, Qt.transparent)
+            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+
+            # 테두리 그리기 (오렌지 점선)
+            border_pen = QPen(QColor("#FF5722"), 2, Qt.DashLine)
+            painter.setPen(border_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(rect)
+
+            # 안내 가이드 텍스트
+            painter.setPen(QColor("white"))
+            font = QFont("Pretendard", 10, QFont.Bold)
+            painter.setFont(font)
+            text = f"{rect.width()} x {rect.height()}"
+            painter.drawText(rect.adjusted(5, -25, 0, 0), Qt.AlignLeft | Qt.AlignBottom, text)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.start_pos = event.pos()
+            self.end_pos = event.pos()
+            self.is_dragging = True
+            self.update()
+
+    def mouseMoveEvent(self, event):
+        if self.is_dragging:
+            self.end_pos = event.pos()
+            self.update()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self.is_dragging:
+            self.end_pos = event.pos()
+            self.is_dragging = False
+            
+            rect = QRect(self.start_pos, self.end_pos).normalized()
+            if rect.width() > 5 and rect.height() > 5:
+                self.area_selected.emit(rect)
+            
+            self.start_pos = None
+            self.end_pos = None
+            self.hide()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.start_pos = None
+            self.end_pos = None
+            self.is_dragging = False
+            self.hide()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
 # =================================================================
 # 드롭 오버레이 (메인용/드래그용)
