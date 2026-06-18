@@ -3692,8 +3692,8 @@ class WebtoonManager(QMainWindow):
             cursor.endEditBlock()
             
             QApplication.clipboard().setText(combined_text)
-            print(f"[부분 OCR] 포커스 타겟이 없어 결과 텍스트가 '에디터 끝'에 자동 추가되고 클립보드에 복사되었습니다.")
-            self.toast.show_message(f"📋 클립보드 복사 및 에디터 끝에 추가됨: \"{combined_text[:15]}...\"")
+            print(f"[부분 OCR] 포커스 타겟이 없어 결과 텍스트가 '에디터'에 자동 추가되고 클립보드에 복사되었습니다.")
+            self.toast.show_message(f"📋 클립보드 복사 및 에디터에 추가됨: \"{combined_text[:15]}...\"")
 
     def toggle_api_display_mode(self):
         """API 표시 모드를 토글하고 화면을 갱신합니다."""
