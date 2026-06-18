@@ -501,9 +501,11 @@ class WebtoonManager(QMainWindow):
         self.api_display_mode = 0  # 0: 현재 회차, 1: 오늘 총 횟수
         self.zoom_step = getattr(config, 'TEXT_ZOOM_STEP', 0)
         self.overlay = DropOverlay(self)
-        self.selection_overlay = None
         self.active_reanalysis_label = None
         self.active_reanalysis_path = ""
+        # 부분 OCR용 스레드풀을 강한 참조로 클래스 멤버 변수로 들고 있어 가비지 컬렉션(GC)을 방지합니다.
+        import concurrent.futures
+        self.partial_ocr_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         
         self.idiom_viewer = None
         self.character_viewer = None
@@ -3537,6 +3539,9 @@ class WebtoonManager(QMainWindow):
     def start_partial_reanalysis(self, image_path, label_widget):
         self.active_reanalysis_path = image_path
         self.active_reanalysis_label = label_widget
+        
+        # 포커스를 잃기 전에 현재 활성화된 입력 위젯을 백업해 둠
+        self.last_active_focus_widget = QApplication.focusWidget()
 
         # 오버레이 활성화 및 영역 연결
         self.selection_overlay.setGeometry(self.scroll_area.viewport().rect())
@@ -3583,82 +3588,86 @@ class WebtoonManager(QMainWindow):
 
         self.toast.show_message("⏳ 선택한 영역 분석(OCR) 진행 중...")
 
-        def thread_task():
-            try:
-                from PIL import Image
-                import io
-                from ocr_worker import preprocess_image_for_ocr, call_google_api_raw
+        from partial_ocr_worker import PartialOCRWorker
+        self.partial_worker = PartialOCRWorker(img_path, x, y, w, h)
+        self.partial_worker.finished.connect(self.on_partial_ocr_finished)
+        self.partial_worker.start()
 
-                # 이미지 크롭 및 전처리
-                with Image.open(img_path) as img:
-                    # 안전장치 바운딩
-                    img_w, img_h = img.size
-                    x_clamped = max(0, min(x, img_w))
-                    y_clamped = max(0, min(y, img_h))
-                    w_clamped = max(1, min(w, img_w - x_clamped))
-                    h_clamped = max(1, min(h, img_h - y_clamped))
+    def on_partial_ocr_finished(self, results, success):
+        # 작업이 끝난 워커 스레드는 안전하게 삭제 유도
+        if hasattr(self, 'partial_worker'):
+            self.partial_worker.deleteLater()
 
-                    cropped = img.crop((x_clamped, y_clamped, x_clamped + w_clamped, y_clamped + h_clamped))
-                
-                preprocessed = preprocess_image_for_ocr(cropped)
-                buf = io.BytesIO()
-                preprocessed.save(buf, format="PNG")
-                png_bytes = buf.getvalue()
+        if not success:
+            self.toast.show_message("❌ 영역 분석 중 오류가 발생했습니다. 터미널 로그를 확인해 주세요.")
+            return
 
-                # API 호출
-                from config import OCR_API_KEY
-                # OCR 호출 결과 가져오기
-                results = call_google_api_raw(png_bytes)
-                return results, True
-            except Exception as e:
-                print(f"Partial OCR thread error: {e}")
-                return [], False
+        if not results:
+            print("[부분 OCR] 결과: 감지된 텍스트가 없음 (빈 응답)")
+            self.toast.show_message("✨ 감지된 텍스트가 없습니다. 지정한 영역을 다시 확인해 주세요.")
+            return
 
-        def on_task_finished(future):
-            results, success = future.result()
-            if not success:
-                self.toast.show_message("❌ 영역 분석 중 오류가 발생했습니다.")
-                return
+        # 분석된 텍스트 합치기
+        # y값 순서대로 정렬
+        sorted_results = sorted(results, key=lambda b: b.get('y', 0))
+        combined_text = " ".join([b['text'] for b in sorted_results])
+        print(f"[부분 OCR] 최종 분석 텍스트 합계: \"{combined_text}\"")
 
-            if not results:
-                self.toast.show_message("✨ 감지된 텍스트가 없습니다.")
-                return
+        # API 호출 수 증가
+        self.increment_api_counter()
+        print(f"[부분 OCR] API 사용 횟수 증가 처리 완료 (현재 회차 API 카운트: {self.api_call_count})")
 
-            # 분석된 텍스트 합치기
-            # y값 순서대로 정렬
-            sorted_results = sorted(results, key=lambda b: b.get('y', 0))
-            combined_text = " ".join([b['text'] for b in sorted_results])
+        # 오버레이 시작 시 저장해 둔 마지막 포커스 위젯을 타겟으로 사용
+        focus_widget = getattr(self, 'last_active_focus_widget', None)
+        text_inserted = False
 
-            # API 호출 수 증가
-            self.increment_api_counter()
-
-            # 현재 대본(SpreadsheetTable)의 포커스된 셀에 적용
-            if hasattr(self, 'table_script'):
-                curr_row = self.table_script.currentRow()
-                curr_col = self.table_script.currentColumn()
-                # 텍스트 열(보통 1열) 타겟팅
-                if curr_row >= 0:
-                    self.table_script.save_state_for_undo()
-                    item = self.table_script.item(curr_row, 1)
-                    if item:
-                        old_text = item.text().strip()
-                        new_text = f"{old_text} {combined_text}".strip() if old_text else combined_text
-                        item.setText(new_text)
-                    else:
-                        self.table_script.setItem(curr_row, 1, QTableWidgetItem(combined_text))
-                    
-                    self.save_script_data()
-                    self.toast.show_message("✅ 분석 텍스트가 대본 셀에 자동 삽입되었습니다.")
+        if focus_widget and (focus_widget == self.text_editor or focus_widget.parent() == self.text_editor):
+            # 텍스트 에디터에 직접 삽입
+            cursor = self.text_editor.textCursor()
+            cursor.beginEditBlock()
+            # 띄어쓰기 가이드 추가
+            if cursor.position() > 0:
+                text_before = self.text_editor.toPlainText()[:cursor.position()]
+                if text_before and not text_before[-1].isspace():
+                    cursor.insertText(" ")
+            cursor.insertText(combined_text)
+            cursor.endEditBlock()
+            self.text_editor.setFocus()
+            text_inserted = True
+            print(f"[부분 OCR] 텍스트가 '스마트 텍스트 에디터' 커서 위치에 삽입되었습니다.")
+            self.toast.show_message(f"✅ 에디터 커서 위치에 삽입됨: \"{combined_text[:15]}...\"")
+        elif hasattr(self, 'table_script'):
+            curr_row = self.table_script.currentRow()
+            # 3단계 대본 탭이 활성화되어 있고 표의 특정 셀이 선택되어 있는 경우
+            if curr_row >= 0:
+                self.table_script.save_state_for_undo()
+                item = self.table_script.item(curr_row, 1)
+                if item:
+                    old_text = item.text().strip()
+                    new_text = f"{old_text} {combined_text}".strip() if old_text else combined_text
+                    item.setText(new_text)
                 else:
-                    # 선택된 행이 없는 경우 클립보드로 복사
-                    QApplication.clipboard().setText(combined_text)
-                    self.toast.show_message("📋 대본에 포커스된 셀이 없어 텍스트가 클립보드로 복사되었습니다.")
+                    self.table_script.setItem(curr_row, 1, QTableWidgetItem(combined_text))
+                
+                self.save_script_data()
+                text_inserted = True
+                print(f"[부분 OCR] 텍스트가 '대본 표(행 번호: {curr_row + 1})' 셀에 자동 삽입되었습니다.")
+                self.toast.show_message(f"✅ 대본 시트 셀에 자동 삽입됨: \"{combined_text[:15]}...\"")
 
-        # 병렬 스레드풀로 구동
-        import concurrent.futures
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(thread_task)
-        future.add_done_callback(lambda f: QTimer.singleShot(0, lambda: on_task_finished(f)))
+        # 둘 다 아닐 경우 안전장치로 에디터와 클립보드에 동시 복사
+        if not text_inserted:
+            # 텍스트 에디터 맨 뒤에 임시 추가 및 클립보드 복사
+            cursor = self.text_editor.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            cursor.beginEditBlock()
+            if self.text_editor.toPlainText().strip():
+                cursor.insertText("\n")
+            cursor.insertText(combined_text)
+            cursor.endEditBlock()
+            
+            QApplication.clipboard().setText(combined_text)
+            print(f"[부분 OCR] 포커스 타겟이 없어 결과 텍스트가 '에디터 끝'에 자동 추가되고 클립보드에 복사되었습니다.")
+            self.toast.show_message(f"📋 클립보드 복사 및 에디터 끝에 추가됨: \"{combined_text[:15]}...\"")
 
     def toggle_api_display_mode(self):
         """API 표시 모드를 토글하고 화면을 갱신합니다."""
