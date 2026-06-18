@@ -62,8 +62,8 @@ if sys.platform == 'darwin':
             'CFBundleName': 'Webtoon Scripter',
             'CFBundleDisplayName': 'Webtoon Scripter',
             'CFBundleExecutable': 'Webtoon_Scripter',
-            'CFBundleShortVersionString': '3.0.1',
-            'CFBundleVersion': '3.0.1',
+            'CFBundleShortVersionString': '3.1.0',
+            'CFBundleVersion': '3.1.0',
             'CFBundleIdentifier': 'com.woo2koon.webtoonscripter',
             # macOS가 About 메뉴에 표시하는 저작권 문자열
             # NSHumanReadableCopyright가 있어야 macOS가 앱을 완전한 네이티브 앱으로 인식함

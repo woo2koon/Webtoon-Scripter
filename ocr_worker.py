@@ -136,62 +136,103 @@ class OCRWorker(QThread):
 
     def run(self):
         full_results = []
-        total_files = len(self.image_paths)
         global_counter = 1
-        cumulative_height_offset = 0 
         
-        for idx, img_path in enumerate(self.image_paths):
-            if not self.is_running: break
-            filename = os.path.basename(img_path)
-            
+        # 1. 램 부하 및 안전을 위해 이미지 높이 임계치(25,000px) 기준으로 청크 생성
+        MAX_CHUNK_HEIGHT = 25000
+        chunks = []
+        current_chunk = []
+        current_chunk_height = 0
+        
+        for img_path in self.image_paths:
             try:
                 with Image.open(img_path) as img:
                     w, h = img.size
-                    current_y = 0
-                    slice_idx = 0
-                    tasks = []
-
-                    while current_y < h:
-                        if self.mode == "smart":
-                            self.progress_text.emit(f"🔍 [{filename}] 컷 경계 분석 중...")
-                            cut_y = self.find_panel_gap(img, current_y, self.MAX_SLICE_HEIGHT)
-                        else:
-                            cut_y = min(current_y + self.MAX_SLICE_HEIGHT, h)
-                        
-                        cropped = img.crop((0, current_y, w, cut_y))
-                        preprocessed = preprocess_image_for_ocr(cropped)
-                        buf = io.BytesIO()
-                        preprocessed.save(buf, format="PNG")
-                        png_bytes = buf.getvalue()
-                        
-                        tasks.append({
-                            "bytes": png_bytes,
-                            "offset": cumulative_height_offset + current_y,
-                            "key": f"{hashlib.md5(png_bytes).hexdigest()}_slice_{slice_idx}"
-                        })
-                        current_y = cut_y
-                        slice_idx += 1
-
-                    self.progress_text.emit(f"🚀 [{filename}] {self.mode.upper()} 병렬 분석 중...")
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                        future_to_task = {executor.submit(get_ocr_data_smart, t["key"], t["bytes"], self.force_mode): t for t in tasks}
-                        for future in concurrent.futures.as_completed(future_to_task):
-                            task = future_to_task[future]
-                            blocks, is_api_called = future.result()
-                            if is_api_called: self.api_used.emit()
-                            for b in blocks:
-                                b_copy = b.copy()
-                                b_copy['y'] += task["offset"]
-                                b_copy['bottom'] += task["offset"]
-                                full_results.append(b_copy)
-                    
-                    cumulative_height_offset += h + 50
-            except Exception as e:
-                print(f"OCR Error: {e}")
                 
-            self.progress_val.emit(int((idx + 1) / total_files * 90))
-
-        # [수정] 무조건적인 Y축 정렬 제거 및 그룹화 로직으로 바로 전달
+                # 단독 혹은 누적으로 임계치를 초과할 경우 청크 분할
+                if current_chunk and (current_chunk_height + h > MAX_CHUNK_HEIGHT):
+                    chunks.append(current_chunk)
+                    current_chunk = []
+                    current_chunk_height = 0
+                
+                current_chunk.append((img_path, w, h))
+                current_chunk_height += h
+            except Exception as e:
+                print(f"이미지 정보 로드 실패: {img_path} ({e})")
+        
+        if current_chunk:
+            chunks.append(current_chunk)
+            
+        total_chunks = len(chunks)
+        cumulative_height_offset = 0
+        
+        # 2. 각 청크별 처리 실행
+        for chunk_idx, chunk in enumerate(chunks):
+            if not self.is_running: break
+            self.progress_text.emit(f"🔄 [그룹 {chunk_idx + 1}/{total_chunks}] 분석용 이미지 조립 중...")
+            
+            # 가로 최대 폭 및 총 높이 계산
+            w_max = max(item[1] for item in chunk)
+            chunk_total_h = sum(item[2] for item in chunk)
+            
+            # 메모리 병합 캔버스 생성 (흰색 배경)
+            try:
+                stitched_img = Image.new("RGB", (w_max, chunk_total_h), (255, 255, 255))
+                current_y = 0
+                for img_path, w, h in chunk:
+                    with Image.open(img_path) as img:
+                        # 이미지를 가로축 정중앙에 배치
+                        x_offset = (w_max - w) // 2
+                        stitched_img.paste(img, (x_offset, current_y))
+                        current_y += h
+            except Exception as e:
+                print(f"이미지 병합 실패: {e}")
+                continue
+                
+            # 3. 병합된 청크 캔버스 내에서 재분할 수행
+            current_y = 0
+            slice_idx = 0
+            tasks = []
+            
+            while current_y < chunk_total_h:
+                if self.mode == "smart":
+                    self.progress_text.emit(f"🔍 [그룹 {chunk_idx + 1}/{total_chunks}] 안전 절단 경계 탐색 중...")
+                    cut_y = self.find_panel_gap(stitched_img, current_y, self.MAX_SLICE_HEIGHT)
+                else:
+                    cut_y = min(current_y + self.MAX_SLICE_HEIGHT, chunk_total_h)
+                
+                cropped = stitched_img.crop((0, current_y, w_max, cut_y))
+                preprocessed = preprocess_image_for_ocr(cropped)
+                buf = io.BytesIO()
+                preprocessed.save(buf, format="PNG")
+                png_bytes = buf.getvalue()
+                
+                tasks.append({
+                    "bytes": png_bytes,
+                    "offset": cumulative_height_offset + current_y,
+                    "key": f"{hashlib.md5(png_bytes).hexdigest()}_slice_{chunk_idx}_{slice_idx}"
+                })
+                current_y = cut_y
+                slice_idx += 1
+                
+            self.progress_text.emit(f"🚀 [그룹 {chunk_idx + 1}/{total_chunks}] 병렬 문자 추출 중...")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                future_to_task = {executor.submit(get_ocr_data_smart, t["key"], t["bytes"], self.force_mode): t for t in tasks}
+                for future in concurrent.futures.as_completed(future_to_task):
+                    task = future_to_task[future]
+                    blocks, is_api_called = future.result()
+                    if is_api_called: self.api_used.emit()
+                    for b in blocks:
+                        b_copy = b.copy()
+                        b_copy['y'] += task["offset"]
+                        b_copy['bottom'] += task["offset"]
+                        full_results.append(b_copy)
+                        
+            # 다음 청크 사이의 안전 여백 추가 (50px)
+            cumulative_height_offset += chunk_total_h + 50
+            self.progress_val.emit(int((chunk_idx + 1) / total_chunks * 90))
+            
+        # 4. 말풍선 그룹화 및 대사 복원
         self.progress_text.emit("📝 말풍선 그룹화 및 대사 복원 중...")
         merged_lines = self.merge_close_blocks(full_results)
         final_lines = [f"[{global_counter + i}] {line}" for i, line in enumerate(merged_lines)]
