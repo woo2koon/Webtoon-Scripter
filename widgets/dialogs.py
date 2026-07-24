@@ -193,7 +193,7 @@ class PreferencesDialog(QDialog):
         
         # [신규 추가] 상세 편의 기능 설정 (부분 OCR 등)
         self.btn_nav_advanced = QPushButton(" OCR 편의 설정")
-        self.btn_nav_advanced.setIcon(self.get_sidebar_icon(config.ICON_SETTINGS_COG))
+        self.btn_nav_advanced.setIcon(self.get_sidebar_icon(config.ICON_MESSAGE_CIRCLE))
         self.btn_nav_advanced.setIconSize(QSize(18, 18))
         self.btn_nav_advanced.setCursor(Qt.PointingHandCursor)
         self.btn_nav_advanced.setFocusPolicy(Qt.NoFocus)
@@ -704,10 +704,11 @@ class PreferencesDialog(QDialog):
         self.table_usage.setHorizontalHeaderLabels(["날짜", "사용 횟수", "예상 비용"])
         
         # 3단계 시트와 동일하게 강제 안티앨리어싱 및 폰트 렌더링 옵션 지정
-        table_font = QFont(app_ff, 11)
-        table_font.setStyleStrategy(QFont.PreferAntialias)
-        table_font.setHintingPreference(QFont.PreferNoHinting)
-        self.table_usage.setFont(table_font)
+        font_size = 13 if sys.platform == "darwin" else 11
+        self.table_font = QFont(app_ff, font_size)
+        self.table_font.setStyleStrategy(QFont.PreferAntialias)
+        self.table_font.setHintingPreference(QFont.PreferNoHinting)
+        self.table_usage.setFont(self.table_font)
         
         self.table_usage.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table_usage.setSelectionMode(QAbstractItemView.NoSelection)
@@ -749,7 +750,8 @@ class PreferencesDialog(QDialog):
         """
         
         # 선명하고 굵은 Pretendard 폰트를 위해 QFont 기반으로 직접 설정
-        header_font = QFont(app_ff, 11)
+        header_font_size = 13 if sys.platform == "darwin" else 11
+        header_font = QFont(app_ff, header_font_size)
         header_font.setBold(True)
         header_font.setStyleStrategy(QFont.PreferAntialias)
         header_font.setHintingPreference(QFont.PreferNoHinting)
@@ -950,16 +952,22 @@ class PreferencesDialog(QDialog):
             # 날짜 셀
             item_date = QTableWidgetItem(date_str)
             item_date.setTextAlignment(Qt.AlignCenter)
+            if hasattr(self, 'table_font'):
+                item_date.setFont(self.table_font)
             self.table_usage.setItem(row_idx, 0, item_date)
             
             # 사용 횟수 셀
             item_count = QTableWidgetItem(f"{count}회")
             item_count.setTextAlignment(Qt.AlignCenter)
+            if hasattr(self, 'table_font'):
+                item_count.setFont(self.table_font)
             self.table_usage.setItem(row_idx, 1, item_count)
             
             # 예상 비용 셀
             item_cost = QTableWidgetItem(f"약 {count*2:,}원")
             item_cost.setTextAlignment(Qt.AlignCenter)
+            if hasattr(self, 'table_font'):
+                item_cost.setFont(self.table_font)
             self.table_usage.setItem(row_idx, 2, item_cost)
 
     # --- API 키 설정 로직 ---

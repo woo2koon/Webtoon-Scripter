@@ -1655,35 +1655,26 @@ class FloatingCharacterViewer(QDialog):
         self.update_zoom_buttons_state()
 
     def on_avatar_size_changed(self, value):
+        print(f"🔍 [DEBUG CHARACTER_VIEWER] on_avatar_size_changed: new_value={value}, tab_idx={self.tabs.currentIndex()}")
         self.set_current_tab_avatar_size(value)
         self.lbl_size_display.setText(f"{value}px")
         
         if self.tabs.currentIndex() == 0:
-            for i in range(self.list_widget.count()):
-                item = self.list_widget.item(i)
-                widget = self.list_widget.itemWidget(item)
-                if isinstance(widget, CharacterListItemWidget):
-                    widget.update_avatar(value)
-                    item.setSizeHint(QSize(0, value + 16))
-            self.list_widget.doItemsLayout()
+            self.load_data()
         else:
-            for i in range(self.list_widget_current.count()):
-                item = self.list_widget_current.item(i)
-                widget = self.list_widget_current.itemWidget(item)
-                if isinstance(widget, CharacterListItemWidget):
-                    widget.update_avatar(value)
-                    item.setSizeHint(QSize(0, value + 16))
-            self.list_widget_current.doItemsLayout()
+            self.load_current_episode_characters()
                 
         self.update_zoom_buttons_state()
 
     def zoom_in(self):
+        print("🔍 [DEBUG CHARACTER_VIEWER] zoom_in (+) button clicked!")
         current_size = self.get_current_tab_avatar_size()
         new_size = min(80, current_size + 5)
         if new_size != current_size:
             self.on_avatar_size_changed(new_size)
 
     def zoom_out(self):
+        print("🔍 [DEBUG CHARACTER_VIEWER] zoom_out (-) button clicked!")
         current_size = self.get_current_tab_avatar_size()
         new_size = max(30, current_size - 5)
         if new_size != current_size:

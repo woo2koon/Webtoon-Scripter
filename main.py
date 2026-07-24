@@ -48,7 +48,7 @@ restore_template()
 
 
 
-from widgets import FileDropListWidget, DropOverlay, SelectionOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, PreferencesDialog, FloatingIdiomViewer, UpdateDialog, WhatNewDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog, ShortcutHelpDialog, CustomMessageBox, SearchWidget, OnboardingMigrationDialog
+from widgets import FileDropListWidget, DropOverlay, SelectionOverlay, SmartTextEdit, ToastMessage, SettingsDialog, IdiomSettingsDialog, PreferencesDialog, FloatingIdiomViewer, UpdateDialog, WhatNewDialog, UpdateNotificationBanner, AboutDialog, CustomInputDialog, ShortcutHelpDialog, CustomMessageBox, SearchWidget, OnboardingMigrationDialog, ReanalysisGuideBubble
 from update_worker import UpdateCheckWorker, UpdateDownloadWorker
 
 class GlobalScrollShortcutFilter(QObject):
@@ -1501,6 +1501,8 @@ class WebtoonManager(QMainWindow):
         self.scroll_area.setWidget(scroll_content)
         
         self.selection_overlay = SelectionOverlay(self.scroll_area.viewport())
+        self.reanalysis_guide_bubble = ReanalysisGuideBubble(self)
+        self.selection_overlay.closed.connect(self.reanalysis_guide_bubble.hide)
 
         # ---------------------------------------------------------
         # 스택에 두 페이지를 추가합니다. (순서 중요!)
@@ -3550,6 +3552,16 @@ class WebtoonManager(QMainWindow):
         self.selection_overlay._connected = True
         self.selection_overlay.show()
         self.selection_overlay.raise_()
+        
+        # 가이드 말풍선 위치 조정 및 노출
+        self.reanalysis_guide_bubble.adjustSize()
+        scroll_pos = self.scroll_area.mapToGlobal(QPoint(0, 0))
+        bubble_x = scroll_pos.x() + self.scroll_area.width() + 5
+        bubble_y = scroll_pos.y() + (self.scroll_area.height() - self.reanalysis_guide_bubble.height()) // 2
+        self.reanalysis_guide_bubble.move(bubble_x, bubble_y)
+        self.reanalysis_guide_bubble.show()
+        self.reanalysis_guide_bubble.raise_()
+        
         self.selection_overlay.setFocus()
         self.selection_overlay.grabKeyboard()  # 드래그 전에 ESC 키만으로 즉시 닫힐 수 있도록 키보드 우선 가로채기 활성화
 

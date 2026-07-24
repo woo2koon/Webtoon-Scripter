@@ -23,7 +23,7 @@ MY_DEFAULT_AI_KEY = ""   # <-- 여기에 직접 입력하지 마세요!
 
 # 1. 앱 이름 (이 이름으로 사용자의 컴퓨터에 폴더가 생깁니다)
 APP_NAME = "Webtoon Scripter"
-APP_VERSION = "3.2.0"
+APP_VERSION = "3.2.1"
 
 if getattr(sys, 'frozen', False):
     # [읽기전용] EXE 내부에 압축된 아이콘 등 (임시 폴더)
@@ -88,6 +88,11 @@ if os.path.exists(SETTINGS_FILE):
 
 PROJECTS_DIR = os.path.join(PROJECT_STORAGE_DIR, "projects")
 
+print(f"🔍 [DEBUG CONFIG] sys.frozen = {getattr(sys, 'frozen', False)}")
+print(f"🔍 [DEBUG CONFIG] STORAGE_DIR = {STORAGE_DIR}")
+print(f"🔍 [DEBUG CONFIG] SETTINGS_FILE = {SETTINGS_FILE}")
+print(f"🔍 [DEBUG CONFIG] PROJECTS_DIR = {PROJECTS_DIR}")
+
 # 폴더 생성 안전장치
 if not os.path.exists(PROJECTS_DIR):
     try:
@@ -150,6 +155,7 @@ ICON_REDO = os.path.join(ASSETS_DIR, "redo.svg")
 ICON_IDIOM = ICON_LIBRARY # 관용구 아이콘 별칭 추가
 ICON_USER = os.path.join(ASSETS_DIR, "user.svg") # 사람 모양 캐릭터 아이콘 추가
 ICON_SETTINGS_COG = os.path.join(ASSETS_DIR, "settings.svg") # 톱니바퀴 설정 아이콘 추가
+ICON_MESSAGE_CIRCLE = os.path.join(ASSETS_DIR, "message-circle.svg") # 선택영역재분석/OCR편의설정 아이콘
 ICON_AVATAR_UPLOAD = os.path.join(ASSETS_DIR, "avatar-upload.svg") # 아바타 전용 업로드 아이콘
 ICON_SPLIT = os.path.join(ASSETS_DIR, "separator-horizontal.svg") # 셀 나누기 아이콘 추가
 ICON_MOVE_VERTICAL = os.path.join(ASSETS_DIR, "move-vertical.svg") # 스크롤/이동 아이콘 추가
@@ -201,6 +207,7 @@ CHARACTER_VIEWER_SIZE = None
 # [메인 창 위치 및 크기 기억]
 MAIN_WINDOW_POS = None
 MAIN_WINDOW_SIZE = None
+TAB_ORDER = ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"]
 
 # [신규 추가] 부분 영역 재분석 결과 처리 모드 (0: 자동삽입+클립보드, 1: 클립보드만, 2: 자동삽입만)
 PARTIAL_OCR_ROUTE_MODE = 0
@@ -209,6 +216,7 @@ def load_settings():
     global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST, PARTIAL_OCR_ROUTE_MODE
     IS_SIMPLE_MODE = False
     PARTIAL_OCR_ROUTE_MODE = 0
+    TAB_ORDER = ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"]
     
     # 1. 일단 하드코딩된 키로 초기화
     API_PRESETS = {
@@ -344,10 +352,12 @@ def save_settings(presets=None, active_name=None, is_simple_mode=None):
         "partial_ocr_route_mode": PARTIAL_OCR_ROUTE_MODE
     }
     try:
+        print(f"🔍 [DEBUG CONFIG] Saving settings to: {SETTINGS_FILE}")
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
+        print("✅ [DEBUG CONFIG] Save settings successful.")
     except Exception as e:
-        print(f"설정 저장 실패: {e}")
+        print(f"❌ [DEBUG CONFIG] 설정 저장 실패: {e}")
 
 def get_initial_dir(fallback_path=""):
     """마지막 저장 경로가 있으면 반환, 없으면 기본값 반환"""

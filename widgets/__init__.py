@@ -2,7 +2,7 @@
 from .common import (
     ResponsiveLabel, ClickableComboBox, WebtoonScrollArea, PopupItemDelegate,
     HoverIconButton, FileDropListWidget, DropOverlay, SelectionOverlay, SmartTextEdit, ToastMessage,
-    get_round_rect_pixmap, ModernProgressDialog
+    get_round_rect_pixmap, ModernProgressDialog, ReanalysisGuideBubble
 )
 from .character import (
     CharacterRow, CharacterListContainer, FloatingCharacterViewer, GlobalCharacterSettingsDialog,

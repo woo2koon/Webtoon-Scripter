@@ -13,12 +13,12 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import (
     Qt, QEvent, Signal, QTimer, QSize, QEasingCurve, QPropertyAnimation,
-    QRect, QRectF, QMimeData, QModelIndex, QByteArray
+    QRect, QRectF, QMimeData, QModelIndex, QByteArray, QPointF
 )
 from PySide6.QtGui import (
     QPixmap, QDrag, QPainter, QColor, QPen, QFont, QAction, QIcon,
     QRegion, QBrush, QLinearGradient, QTextCharFormat, QTextFormat,
-    QTextCursor, QKeySequence
+    QTextCursor, QKeySequence, QPainterPath, QPolygonF
 )
 from PySide6.QtSvg import QSvgRenderer
 
@@ -55,7 +55,7 @@ class ResponsiveLabel(QLabel):
         menu.setFont(QApplication.font())
         menu.setStyleSheet(config.MODERN_MENU_STYLE)
         
-        action_reanalyze = QAction("부분 영역 재분석", self)
+        action_reanalyze = QAction(get_icon(config.ICON_MESSAGE_CIRCLE), "부분 영역 재분석", self)
         action_reanalyze.triggered.connect(lambda: self.request_reanalysis.emit(self.pixmap_path, self))
         menu.addAction(action_reanalyze)
         menu.exec(self.mapToGlobal(pos))
@@ -429,6 +429,7 @@ class HoverIconButton(QPushButton):
 # =================================================================
 class SelectionOverlay(QWidget):
     area_selected = Signal(QRect)
+    closed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -439,6 +440,10 @@ class SelectionOverlay(QWidget):
         self.is_dragging = False
         self.setCursor(Qt.CrossCursor)
         self.hide()
+
+    def hide(self):
+        super().hide()
+        self.closed.emit()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -512,6 +517,58 @@ class SelectionOverlay(QWidget):
             event.accept()
         else:
             super().keyPressEvent(event)
+
+# =================================================================
+# 부분 영역 재분석 가이드 말풍선 메시지
+# =================================================================
+class ReanalysisGuideBubble(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.ToolTip | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 10, 12, 10)  # 화살표 공간 확보를 위해 왼쪽 마진을 크게 줌
+        
+        self.lbl_text = QLabel("텍스트가 있는 부분을 드래그해서 분석합니다.\n(취소: ESC)")
+        self.lbl_text.setAlignment(Qt.AlignCenter)
+        self.lbl_text.setStyleSheet("""
+            QLabel {
+                color: white;
+                font-size: 13px;
+                font-weight: bold;
+                font-family: 'Pretendard';
+                background: transparent;
+                border: none;
+            }
+        """)
+        layout.addWidget(self.lbl_text)
+        self.adjustSize()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        w = self.width()
+        h = self.height()
+        
+        arrow_width = 8
+        arrow_height = 12
+        
+        path = QPainterPath()
+        rect = QRectF(arrow_width, 0, w - arrow_width, h)
+        path.addRoundedRect(rect, 8, 8)
+        
+        # 왼쪽을 가리키는 삼각형
+        triangle = QPolygonF([
+            QPointF(0, h / 2),
+            QPointF(arrow_width, h / 2 - arrow_height / 2),
+            QPointF(arrow_width, h / 2 + arrow_height / 2)
+        ])
+        path.addPolygon(triangle)
+        
+        # 선명한 오렌지 색상 브랜드 컬러
+        painter.fillPath(path, QBrush(QColor("#FF5722")))
 
 # =================================================================
 # 드롭 오버레이 (메인용/드래그용)
