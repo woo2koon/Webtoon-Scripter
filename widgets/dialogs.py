@@ -1044,11 +1044,11 @@ class PreferencesDialog(QDialog):
             app_ff = QApplication.font().family() or "Pretendard"
             tooltip_html = [
                 f"<div style='margin: 4px; font-family: {app_ff}, Pretendard, -apple-system, sans-serif;'>",
-                "  <table style='border-collapse: collapse; margin-top: 0px; min-width: 300px; font-size: 13px; border: none; line-height: 1.4;'>",
+                "  <table style='border-collapse: collapse; margin-top: 0px; min-width: 340px; font-size: 15px; border: none; line-height: 1.4;'>",
                 "    <tr style='background-color: #F8FAFC; border-bottom: 1.5px solid #CBD5E1;'>",
-                "      <th style='padding: 7px 12px; text-align: left; color: #475569; border: none; font-weight: normal;'>모델 / 엔진</th>",
-                "      <th style='padding: 7px 12px; text-align: center; color: #475569; border: none; font-weight: normal;'>사용 횟수</th>",
-                "      <th style='padding: 7px 12px; text-align: right; color: #475569; border: none; font-weight: normal;'>예상 비용</th>",
+                "      <th style='padding: 8px 14px; text-align: left; color: #475569; border: none; font-weight: normal;'>모델 / 엔진</th>",
+                "      <th style='padding: 8px 14px; text-align: center; color: #475569; border: none; font-weight: normal;'>사용 횟수</th>",
+                "      <th style='padding: 8px 14px; text-align: right; color: #475569; border: none; font-weight: normal;'>예상 비용</th>",
                 "    </tr>"
             ]
             
@@ -1058,9 +1058,9 @@ class PreferencesDialog(QDialog):
                     cost_val = int(get_model_cost(k, v))
                     tooltip_html.append(
                         f"    <tr style='border-bottom: 1px solid #F1F5F9;'>"
-                        f"      <td style='padding: 7px 12px; color: #334155; border: none;'>{name}</td>"
-                        f"      <td style='padding: 7px 12px; text-align: center; color: #0F172A; border: none;'>{v}회</td>"
-                        f"      <td style='padding: 7px 12px; text-align: right; color: #FF5722; border: none;'>약 {cost_val:,}원</td>"
+                        f"      <td style='padding: 8px 14px; color: #334155; border: none;'>{name}</td>"
+                        f"      <td style='padding: 8px 14px; text-align: center; color: #0F172A; border: none;'>{v}회</td>"
+                        f"      <td style='padding: 8px 14px; text-align: right; color: #FF5722; border: none;'>약 {cost_val:,}원</td>"
                         f"    </tr>"
                     )
             else:
@@ -1068,9 +1068,9 @@ class PreferencesDialog(QDialog):
                 cost_val = int(get_model_cost("vision", count_val))
                 tooltip_html.append(
                     f"    <tr style='border-bottom: 1px solid #F1F5F9;'>"
-                    f"      <td style='padding: 7px 12px; color: #334155; border: none;'>{name}</td>"
-                    f"      <td style='padding: 7px 12px; text-align: center; color: #0F172A; border: none;'>{count_val}회</td>"
-                    f"      <td style='padding: 7px 12px; text-align: right; color: #FF5722; border: none;'>약 {cost_val:,}원</td>"
+                    f"      <td style='padding: 8px 14px; color: #334155; border: none;'>{name}</td>"
+                    f"      <td style='padding: 8px 14px; text-align: center; color: #0F172A; border: none;'>{count_val}회</td>"
+                    f"      <td style='padding: 8px 14px; text-align: right; color: #FF5722; border: none;'>약 {cost_val:,}원</td>"
                     f"    </tr>"
                 )
                 
