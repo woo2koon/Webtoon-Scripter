@@ -111,11 +111,13 @@ class OCRWorker(QThread):
     finished_ocr = Signal(list)
     api_used = Signal()
 
-    def __init__(self, image_paths, mode="fast", force_mode=False):
+    def __init__(self, image_paths, mode="fast", force_mode=False, engine="vision", project_dir=None):
         super().__init__()
         self.image_paths = image_paths
         self.mode = mode # "fast" 또는 "smart"
         self.force_mode = force_mode
+        self.engine = engine # "vision" 또는 "gemini"
+        self.project_dir = project_dir
         self.is_running = True
         self.MERGE_THRESHOLD = 80 
         self.MAX_SLICE_HEIGHT = 2450 
@@ -135,6 +137,10 @@ class OCRWorker(QThread):
         return target_y
 
     def run(self):
+        if self.engine == "gemini":
+            self.run_gemini_ocr()
+            return
+
         full_results = []
         global_counter = 1
         
@@ -334,6 +340,206 @@ class OCRWorker(QThread):
             final_merged.append(merged_text)
 
         return final_merged
+
+    def run_gemini_ocr(self):
+        # 1. 제미나이 API 키 확인
+        active_key = config.AI_API_KEY
+        if not active_key:
+            self.progress_text.emit("❌ AI API 키가 설정되지 않았습니다. [설정]에서 확인하세요.")
+            self.finished_ocr.emit([])
+            return
+
+        self.progress_text.emit("⏳ 제미나이 멀티모달 OCR 분석 준비 중...")
+        self.progress_val.emit(5)
+
+        # 2. 프로젝트 캐릭터 및 프로필 이미지 수집
+        char_parts = []
+        if self.project_dir and os.path.exists(self.project_dir):
+            try:
+                char_json_path = os.path.join(self.project_dir, "characters.json")
+                if os.path.exists(char_json_path):
+                    with open(char_json_path, "r", encoding="utf-8") as f:
+                        chars_data = json.load(f)
+                    
+                    # 프로필 이미지가 존재하는 캐릭터 필터링
+                    valid_chars = []
+                    for c in chars_data:
+                        img_rel = c.get("image_path")
+                        if img_rel:
+                            img_abs = os.path.join(self.project_dir, img_rel)
+                            if os.path.exists(img_abs):
+                                valid_chars.append(c)
+                    
+                    # 역할 우선순위로 정렬 (주연 -> 조연 -> 단역 -> 미상)
+                    role_priority = {"주연": 0, "조연": 1, "단역": 2, "미상": 3}
+                    valid_chars.sort(key=lambda x: role_priority.get(x.get("role", "미상"), 99))
+                    
+                    # 최대 15명 선별
+                    target_chars = valid_chars[:15]
+                    
+                    if target_chars:
+                        self.progress_text.emit(f"👥 등장인물 프로필 데이터 인코딩 중 ({len(target_chars)}명)...")
+                        for tc in target_chars:
+                            name = tc["name"]
+                            img_path = os.path.join(self.project_dir, tc["image_path"])
+                            
+                            # mimeType 감지
+                            ext = os.path.splitext(img_path)[1].lower()
+                            mime_type = "image/png" if ext == ".png" else "image/jpeg"
+                            
+                            try:
+                                with open(img_path, "rb") as img_file:
+                                    b64_data = base64.b64encode(img_file.read()).decode('utf-8')
+                                
+                                char_parts.append({"text": f"이름: {name}"})
+                                char_parts.append({
+                                    "inlineData": {
+                                        "mimeType": mime_type,
+                                        "data": b64_data
+                                    }
+                                })
+                            except Exception as char_err:
+                                print(f"캐릭터 프로필 인코딩 오류 ({name}): {char_err}")
+            except Exception as e:
+                print(f"등장인물 수집 실패: {e}")
+
+        # 3. 프롬프트 메시지 조립
+        system_prompt = """너는 웹툰/만화 컷 이미지 분석 및 대사 추출 전문가야.
+제시된 만화 컷 이미지에서 텍스트를 정확하게 추출하고 분석해줘.
+
+[작업 규칙]
+1. 웹툰 컷의 자연스러운 독서 흐름(위에서 아래, 말풍선 흐름)에 맞춰 순서대로 텍스트를 검출해라.
+2. 모든 대사(말풍선), 내레이션(설명 박스), 효과음(의성어/의태어 등)을 누락 없이 추출해라.
+3. 화자(말하는 캐릭터)를 매핑할 때, 함께 전달된 캐릭터 프로필 사진들의 얼굴 및 특징을 컷 이미지 내의 인물 얼굴과 직접 시각적으로 비교 대조(Image-to-Image Matching)하여 가장 잘 매치하는 캐릭터 이름을 찾아라.
+4. 만약 제공된 캐릭터 프로필 중에 매치되는 캐릭터가 없거나 말풍선에 화자가 명확하지 않은 배경음, 나레이션인 경우에는 "배경음", "나레이션", "알 수 없음" 등으로 적절히 기재해라.
+5. 결과는 반드시 한국어로 구성하고 아래 JSON 스키마 구조를 100% 만족시켜라.
+6. 응답에는 마크다운 기호(예: ```json)나 기타 부가 텍스트 없이 오직 순수한 JSON 문자열만 반환해라.
+
+[JSON Schema]
+{
+  "results": [
+    {
+      "index": 1,
+      "type": "speech or narration or sfx or etc",
+      "speaker": "매칭된 캐릭터 이름 (예: 최강고, 오가민, 또는 배경음, 알 수 없음 등)",
+      "text": "추출한 대사 텍스트 그대로 기재 (줄바꿈이 있는 경우 한 줄로 공백 구분하여 연결)"
+    }
+  ]
+}
+"""
+
+        # 4. 각 웹툰 이미지에 대해 순차적 분석 진행
+        total_images = len(self.image_paths)
+        accumulated_results = []
+        
+        for idx, img_path in enumerate(self.image_paths):
+            if not self.is_running:
+                break
+                
+            self.progress_text.emit(f"🔄 [컷 {idx+1}/{total_images}] 제미나이 AI가 이미지 분석 중...")
+            
+            ext = os.path.splitext(img_path)[1].lower()
+            mime_type = "image/png" if ext == ".png" else "image/jpeg"
+            
+            try:
+                with open(img_path, "rb") as img_file:
+                    webtoon_b64 = base64.b64encode(img_file.read()).decode('utf-8')
+            except Exception as read_err:
+                print(f"이미지 읽기 에러 ({img_path}): {read_err}")
+                continue
+
+            # API 요청 Payload 조립
+            parts = []
+            parts.append({"text": system_prompt})
+            
+            if char_parts:
+                parts.append({"text": "=== [등장인물 공식 프로필 리스트] ==="})
+                parts.extend(char_parts)
+                parts.append({"text": "====================================="})
+                
+            parts.append({"text": "분석할 만화 컷 이미지:"})
+            parts.append({
+                "inlineData": {
+                    "mimeType": mime_type,
+                    "data": webtoon_b64
+                }
+            })
+
+            payload = {
+                "contents": [
+                    {
+                        "parts": parts
+                    }
+                ],
+                "generationConfig": {
+                    "responseMimeType": "application/json",
+                    "temperature": 0.1
+                }
+            }
+
+            model = "gemini-3.5-flash"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={active_key}"
+            headers = {"Content-Type": "application/json"}
+
+            try:
+                res = requests.post(url, headers=headers, json=payload, timeout=60)
+                self.api_used.emit()
+                
+                if res.status_code == 200:
+                    res_data = res.json()
+                    try:
+                        content_text = res_data['candidates'][0]['content']['parts'][0]['text']
+                        parsed_json = json.loads(content_text.strip())
+                        results = parsed_json.get("results", [])
+                        accumulated_results.extend(results)
+                    except Exception as parse_err:
+                        print(f"Gemini 응답 파싱 실패 ({img_path}): {parse_err}")
+                        print(res.text[:1000])
+                else:
+                    # gemini-3.5-flash 에러 시 fallback 시도 (gemini-3.1-flash-lite)
+                    print(f"Gemini API 에러 (HTTP {res.status_code}): {res.text}. Fallback 시도...")
+                    fallback_model = "gemini-3.1-flash-lite"
+                    fb_url = f"https://generativelanguage.googleapis.com/v1beta/models/{fallback_model}:generateContent?key={active_key}"
+                    res_fb = requests.post(fb_url, headers=headers, json=payload, timeout=60)
+                    
+                    if res_fb.status_code == 200:
+                        res_data = res_fb.json()
+                        try:
+                            content_text = res_data['candidates'][0]['content']['parts'][0]['text']
+                            parsed_json = json.loads(content_text.strip())
+                            results = parsed_json.get("results", [])
+                            accumulated_results.extend(results)
+                        except Exception as parse_err:
+                            print(f"Fallback Gemini 응답 파싱 실패: {parse_err}")
+                    else:
+                        print(f"Fallback Gemini API 에러 (HTTP {res_fb.status_code}): {res_fb.text}")
+            except Exception as req_err:
+                print(f"Gemini API 요청 중 에러 발생: {req_err}")
+            
+            # 진행 상태 전송
+            self.progress_val.emit(int((idx + 1) / total_images * 100))
+
+        # 5. 수집된 결과를 화자 : 대사 포맷의 텍스트 라인으로 최종 조립
+        final_lines = []
+        global_counter = 1
+        for item in accumulated_results:
+            speaker = item.get("speaker", "").strip()
+            text = item.get("text", "").strip()
+            if not text:
+                continue
+            
+            # 화자가 유의미하게 존재하는 경우 포맷 적용
+            if speaker and speaker.lower() not in ["none", "배경음", "나레이션", "알 수 없음", "unknown"]:
+                line = f"{speaker} : {text}"
+            else:
+                line = text
+            
+            final_lines.append(f"[{global_counter}] {line}")
+            global_counter += 1
+
+        self.progress_val.emit(100)
+        self.progress_text.emit("분석 완료!")
+        self.finished_ocr.emit(final_lines)
 
     def stop(self):
         self.is_running = False

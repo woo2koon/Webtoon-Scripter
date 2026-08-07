@@ -88,10 +88,10 @@ if os.path.exists(SETTINGS_FILE):
 
 PROJECTS_DIR = os.path.join(PROJECT_STORAGE_DIR, "projects")
 
-print(f"🔍 [DEBUG CONFIG] sys.frozen = {getattr(sys, 'frozen', False)}")
-print(f"🔍 [DEBUG CONFIG] STORAGE_DIR = {STORAGE_DIR}")
-print(f"🔍 [DEBUG CONFIG] SETTINGS_FILE = {SETTINGS_FILE}")
-print(f"🔍 [DEBUG CONFIG] PROJECTS_DIR = {PROJECTS_DIR}")
+print(f"[DEBUG CONFIG] sys.frozen = {getattr(sys, 'frozen', False)}")
+print(f"[DEBUG CONFIG] STORAGE_DIR = {STORAGE_DIR}")
+print(f"[DEBUG CONFIG] SETTINGS_FILE = {SETTINGS_FILE}")
+print(f"[DEBUG CONFIG] PROJECTS_DIR = {PROJECTS_DIR}")
 
 # 폴더 생성 안전장치
 if not os.path.exists(PROJECTS_DIR):
@@ -211,11 +211,13 @@ TAB_ORDER = ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"]
 
 # [신규 추가] 부분 영역 재분석 결과 처리 모드 (0: 자동삽입+클립보드, 1: 클립보드만, 2: 자동삽입만)
 PARTIAL_OCR_ROUTE_MODE = 0
+OCR_ENGINE = "vision" # [신규 추가] OCR 분석 엔진 ("vision" 또는 "gemini")
 
 def load_settings():
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST, PARTIAL_OCR_ROUTE_MODE
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST, PARTIAL_OCR_ROUTE_MODE, OCR_ENGINE
     IS_SIMPLE_MODE = False
     PARTIAL_OCR_ROUTE_MODE = 0
+    OCR_ENGINE = "vision"
     TAB_ORDER = ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"]
     
     # 1. 일단 하드코딩된 키로 초기화
@@ -233,6 +235,7 @@ def load_settings():
                 MIGRATION_PROMPTED = data.get("migration_prompted", False)
                 APP_VERSION_LAST = data.get("app_version_last", "")
                 PARTIAL_OCR_ROUTE_MODE = data.get("partial_ocr_route_mode", 0)
+                OCR_ENGINE = data.get("ocr_engine", "vision")
                 
                 if "presets" in data and isinstance(data["presets"], dict):
                     loaded_presets = data["presets"]
@@ -315,7 +318,7 @@ def load_settings():
         AI_API_KEY = OCR_API_KEY
 
 def save_settings(presets=None, active_name=None, is_simple_mode=None):
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST, PARTIAL_OCR_ROUTE_MODE
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST, PARTIAL_OCR_ROUTE_MODE, OCR_ENGINE
     
     if presets is not None:
         API_PRESETS = presets
@@ -349,15 +352,16 @@ def save_settings(presets=None, active_name=None, is_simple_mode=None):
         "tab_order": TAB_ORDER,
         "migration_prompted": MIGRATION_PROMPTED,
         "app_version_last": APP_VERSION_LAST,
-        "partial_ocr_route_mode": PARTIAL_OCR_ROUTE_MODE
+        "partial_ocr_route_mode": PARTIAL_OCR_ROUTE_MODE,
+        "ocr_engine": OCR_ENGINE
     }
     try:
-        print(f"🔍 [DEBUG CONFIG] Saving settings to: {SETTINGS_FILE}")
+        print(f"[DEBUG CONFIG] Saving settings to: {SETTINGS_FILE}")
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
-        print("✅ [DEBUG CONFIG] Save settings successful.")
+        print("[DEBUG CONFIG] Save settings successful.")
     except Exception as e:
-        print(f"❌ [DEBUG CONFIG] 설정 저장 실패: {e}")
+        print(f"[DEBUG CONFIG] 설정 저장 실패: {e}")
 
 def get_initial_dir(fallback_path=""):
     """마지막 저장 경로가 있으면 반환, 없으면 기본값 반환"""

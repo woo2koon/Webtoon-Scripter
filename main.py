@@ -1184,6 +1184,14 @@ class WebtoonManager(QMainWindow):
         line_m = QFrame()
         line_m.setFrameShape(QFrame.HLine)
         line_m.setStyleSheet("color: #D1D5DB; margin: 4px 0;")
+        
+        # [신규 추가] 분석 엔진 선택 UI
+        lbl_engine = QLabel("분석 엔진")
+        lbl_engine.setStyleSheet("font-size: 11px; font-weight: bold; color: #4B5563; margin-top: 4px; margin-left: 2px;")
+        
+        self.radio_engine_vision = QRadioButton("구글 비전 OCR")
+        self.radio_engine_gemini = QRadioButton("제미나이 AI 분석")
+        
         self.check_reanalyze = QCheckBox("새로 분석하기")
         self.check_reanalyze.setToolTip("기존 결과를 무시하고 새로 분석합니다. API가 소모됩니다.")
         
@@ -1192,12 +1200,31 @@ class WebtoonManager(QMainWindow):
         """
         self.radio_fast.setStyleSheet(option_style)
         self.radio_smart.setStyleSheet(option_style)
+        self.radio_engine_vision.setStyleSheet(option_style)
+        self.radio_engine_gemini.setStyleSheet(option_style)
         self.check_reanalyze.setStyleSheet(option_style)
         self.radio_fast.setChecked(True)
+        
+        # Config에서 기존 엔진 로드
+        if config.OCR_ENGINE == "gemini":
+            self.radio_engine_gemini.setChecked(True)
+        else:
+            self.radio_engine_vision.setChecked(True)
+            
+        self.radio_engine_vision.toggled.connect(self._save_engine_settings)
+        self.radio_engine_gemini.toggled.connect(self._save_engine_settings)
 
         menu_layout.addWidget(self.radio_fast)
         menu_layout.addWidget(self.radio_smart)
         menu_layout.addWidget(line_m)
+        menu_layout.addWidget(lbl_engine)
+        menu_layout.addWidget(self.radio_engine_vision)
+        menu_layout.addWidget(self.radio_engine_gemini)
+        
+        line_m2 = QFrame()
+        line_m2.setFrameShape(QFrame.HLine)
+        line_m2.setStyleSheet("color: #D1D5DB; margin: 4px 0;")
+        menu_layout.addWidget(line_m2)
         menu_layout.addWidget(self.check_reanalyze)
 
         menu_action = QWidgetAction(self.analysis_menu)
@@ -3470,8 +3497,19 @@ class WebtoonManager(QMainWindow):
         # 분석 모드(빠른/스마트) 결정
         analysis_mode = "smart" if self.radio_smart.isChecked() else "fast"
         
+        # [신규 추가] 분석 엔진 선택 및 프로젝트 폴더 전달
+        selected_engine = "gemini" if self.radio_engine_gemini.isChecked() else "vision"
+        e_path, _, _ = self.get_paths()
+        project_dir = os.path.dirname(e_path) if e_path else None
+        
         # 워커 생성 및 실행
-        self.worker = OCRWorker(files, mode=analysis_mode, force_mode=force_mode)
+        self.worker = OCRWorker(
+            files, 
+            mode=analysis_mode, 
+            force_mode=force_mode, 
+            engine=selected_engine, 
+            project_dir=project_dir
+        )
         
         # ModernProgressDialog 생성 및 연결
         from widgets import ModernProgressDialog
@@ -3488,6 +3526,10 @@ class WebtoonManager(QMainWindow):
         
         self.ocr_progress.show()
         self.worker.start()
+
+    def _save_engine_settings(self):
+        config.OCR_ENGINE = "gemini" if self.radio_engine_gemini.isChecked() else "vision"
+        config.save_settings()
 
     def adjust_menu_position(self):
         """Qt의 자동 배치 로직이 끝난 직후, 메뉴를 강제로 위로 가둡니다."""
@@ -4654,11 +4696,48 @@ class WebtoonManager(QMainWindow):
         self.table_script.save_state_for_undo() # [추가] 상태 백업
         self.insert_script_row_at(self.table_script.rowCount())
 
+    def find_matching_character(self, speaker_name, char_list):
+        if not speaker_name or not char_list:
+            return ""
+        speaker_name_clean = speaker_name.strip()
+        
+        # 1. 정확히 일치하는 캐릭터 검색
+        if speaker_name_clean in char_list:
+            return speaker_name_clean
+            
+        # 2. 포함 관계 검색 (예: "다빈 (포니테일 여학생)" -> "다빈")
+        for char in char_list:
+            if char and (char in speaker_name_clean or speaker_name_clean in char):
+                return char
+                
+        return ""
+
     def load_script_to_table(self):
         text = self.text_editor.toPlainText()
         lines = [line.strip() for line in text.split('\n') if line.strip()]
         clean_lines = [re.sub(r'^(\[\d+\]|\d+\.)\s*', '', line).strip() for line in lines]
 
+        # 화자 : 대사 형태를 분석하여 화자를 식별합니다.
+        parsed_lines = []
+        char_list = self.get_character_list()
+        for line in clean_lines:
+            if " : " in line:
+                parts = line.split(" : ", 1)
+                speaker = parts[0].strip()
+                dialogue = parts[1].strip()
+                matched_char = self.find_matching_character(speaker, char_list)
+                parsed_lines.append((matched_char, dialogue))
+            elif ":" in line and not line.startswith("http") and not line.startswith("file"):
+                parts = line.split(":", 1)
+                speaker = parts[0].strip()
+                dialogue = parts[1].strip()
+                matched_char = self.find_matching_character(speaker, char_list)
+                parsed_lines.append((matched_char, dialogue))
+            else:
+                parsed_lines.append(("", line))
+
+        # 대조 병합창에는 화자 구분 기호가 빠진 순수 대사만 전달합니다.
+        pure_dialogue_lines = [item[1] for item in parsed_lines]
         rows_to_load = []
         
         if self.table_script.rowCount() > 0:
@@ -4672,21 +4751,31 @@ class WebtoonManager(QMainWindow):
                 current_script.append({"char": char_name, "line": line_text})
                 
             # 2. 스마트 병합 다이얼로그 호출
-            dlg = ScriptMergeDialog(current_script, clean_lines, self)
+            dlg = ScriptMergeDialog(current_script, pure_dialogue_lines, self)
             if dlg.exec() == QDialog.Accepted:
                 action = dlg.merge_action
                 if action == "merge":
                     for item in dlg.aligned_data:
                         if item["status"] != "delete":
-                            rows_to_load.append((item["curr_char"] if item["keep_char"] else "", item["new_line"]))
+                            new_line = item["new_line"]
+                            assigned_char = item["curr_char"] if item["keep_char"] else ""
+                            
+                            # 기존 배정 화자가 없고, 새로 들어온 라인에 매칭 화자가 검출되었을 경우 배정
+                            if not assigned_char:
+                                for p_char, p_line in parsed_lines:
+                                    if p_line == new_line:
+                                        assigned_char = p_char
+                                        break
+                                        
+                            rows_to_load.append((assigned_char, new_line))
                 elif action == "overwrite":
-                    rows_to_load = [("", line) for line in clean_lines]
+                    rows_to_load = parsed_lines
                 else:
                     return
             else:
                 return
         else:
-            rows_to_load = [("", line) for line in clean_lines]
+            rows_to_load = parsed_lines
 
         # 가져오기 작업 이전 상태를 실행 취소(Undo) 스택에 저장합니다.
         if hasattr(self.table_script, 'save_state_for_undo'):
