@@ -75,7 +75,7 @@ class UsageDetailPopup(QWidget):
                 outline: none;
             }
             QTableWidget::item {
-                border: none;
+                border-bottom: 1px solid #E2E8F0;
                 padding: 4px 10px;
             }
         """)
