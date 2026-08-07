@@ -1021,7 +1021,7 @@ class PreferencesDialog(QDialog):
         # 테이블 채우기
         self.table_usage.setRowCount(len(monthly_data))
         for row_idx, (date_str, day_total, count_val) in enumerate(monthly_data):
-            # 툴팁 텍스트 빌드
+            # 툴팁 텍스트 빌드 (HTML 테이블 포맷)
             model_names_ko = {
                 "vision": "구글 비전 OCR",
                 "gemini-3.6-flash": "Gemini 3.6 Flash",
@@ -1029,14 +1029,55 @@ class PreferencesDialog(QDialog):
                 "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite",
                 "gemini-3.1-flash-lite": "Gemini 3.1 Flash-Lite"
             }
-            tooltip_lines = ["<b>[일별 세부 사용 내역]</b>"]
+            
+            def get_model_cost(model_name, cnt):
+                if model_name == "vision":
+                    return cnt * 2.0
+                elif model_name == "gemini-3.5-flash-lite":
+                    return cnt * 1.8
+                elif model_name == "gemini-3.1-flash-lite":
+                    return cnt * 1.2
+                else:
+                    return cnt * 7.0
+            
+            tooltip_html = [
+                "<div style='margin: 3px;'>",
+                "  <b style='color: #111827; font-size: 13px;'>[일별 세부 사용 내역]</b><br>",
+                "  <table style='border-collapse: collapse; margin-top: 6px; min-width: 280px; font-size: 12px; border: 1px solid #D1D5DB;'>",
+                "    <tr style='background-color: #F3F4F6;'>",
+                "      <th style='padding: 6px 10px; border: 1px solid #D1D5DB; text-align: left; color: #374151; font-weight: bold;'>모델 / 엔진</th>",
+                "      <th style='padding: 6px 10px; border: 1px solid #D1D5DB; text-align: center; color: #374151; font-weight: bold;'>사용 횟수</th>",
+                "      <th style='padding: 6px 10px; border: 1px solid #D1D5DB; text-align: right; color: #374151; font-weight: bold;'>예상 비용</th>",
+                "    </tr>"
+            ]
+            
             if isinstance(count_val, dict):
                 for k, v in count_val.items():
                     name = model_names_ko.get(k, k)
-                    tooltip_lines.append(f"• {name}: {v}회")
+                    cost_val = int(get_model_cost(k, v))
+                    tooltip_html.append(
+                        f"    <tr>"
+                        f"      <td style='padding: 5px 10px; border: 1px solid #D1D5DB; color: #4B5563;'>{name}</td>"
+                        f"      <td style='padding: 5px 10px; border: 1px solid #D1D5DB; text-align: center; color: #4B5563;'>{v}회</td>"
+                        f"      <td style='padding: 5px 10px; border: 1px solid #D1D5DB; text-align: right; color: #FF5722; font-weight: bold;'>약 {cost_val:,}원</td>"
+                        f"    </tr>"
+                    )
             else:
-                tooltip_lines.append(f"• 구글 비전 OCR: {count_val}회")
-            tooltip_text = "<br>".join(tooltip_lines)
+                name = model_names_ko.get("vision")
+                cost_val = int(get_model_cost("vision", count_val))
+                tooltip_html.append(
+                    f"    <tr>"
+                    f"      <td style='padding: 5px 10px; border: 1px solid #D1D5DB; color: #4B5563;'>{name}</td>"
+                    f"      <td style='padding: 5px 10px; border: 1px solid #D1D5DB; text-align: center; color: #4B5563;'>{count_val}회</td>"
+                    f"      <td style='padding: 5px 10px; border: 1px solid #D1D5DB; text-align: right; color: #FF5722; font-weight: bold;'>약 {cost_val:,}원</td>"
+                    f"    </tr>"
+                )
+                
+            tooltip_html.extend([
+                "  </table>",
+                "</div>"
+            ])
+            tooltip_text = "\n".join(tooltip_html)
 
             # 날짜 셀
             item_date = QTableWidgetItem(date_str)
