@@ -352,83 +352,29 @@ class OCRWorker(QThread):
         self.progress_text.emit("⏳ 제미나이 멀티모달 OCR 분석 준비 중...")
         self.progress_val.emit(5)
 
-        # 2. 프로젝트 캐릭터 및 프로필 이미지 수집
-        char_parts = []
-        if self.project_dir and os.path.exists(self.project_dir):
-            try:
-                char_json_path = os.path.join(self.project_dir, "characters.json")
-                if os.path.exists(char_json_path):
-                    with open(char_json_path, "r", encoding="utf-8") as f:
-                        chars_data = json.load(f)
-                    
-                    # 프로필 이미지가 존재하는 캐릭터 필터링
-                    valid_chars = []
-                    for c in chars_data:
-                        img_rel = c.get("image_path")
-                        if img_rel:
-                            img_abs = os.path.join(self.project_dir, img_rel)
-                            if os.path.exists(img_abs):
-                                valid_chars.append(c)
-                    
-                    # 역할 우선순위로 정렬 (주연 -> 조연 -> 단역 -> 미상)
-                    role_priority = {"주연": 0, "조연": 1, "단역": 2, "미상": 3}
-                    valid_chars.sort(key=lambda x: role_priority.get(x.get("role", "미상"), 99))
-                    
-                    # 최대 15명 선별
-                    target_chars = valid_chars[:15]
-                    
-                    if target_chars:
-                        self.progress_text.emit(f"👥 등장인물 프로필 데이터 인코딩 중 ({len(target_chars)}명)...")
-                        for tc in target_chars:
-                            name = tc["name"]
-                            img_path = os.path.join(self.project_dir, tc["image_path"])
-                            
-                            # mimeType 감지
-                            ext = os.path.splitext(img_path)[1].lower()
-                            mime_type = "image/png" if ext == ".png" else "image/jpeg"
-                            
-                            try:
-                                with open(img_path, "rb") as img_file:
-                                    b64_data = base64.b64encode(img_file.read()).decode('utf-8')
-                                
-                                char_parts.append({"text": f"이름: {name}"})
-                                char_parts.append({
-                                    "inlineData": {
-                                        "mimeType": mime_type,
-                                        "data": b64_data
-                                    }
-                                })
-                            except Exception as char_err:
-                                print(f"캐릭터 프로필 인코딩 오류 ({name}): {char_err}")
-            except Exception as e:
-                print(f"등장인물 수집 실패: {e}")
-
-        # 3. 프롬프트 메시지 조립
+        # 2. 프롬프트 메시지 조립 (오직 텍스트만 자연스러운 순서로 추출)
         system_prompt = """너는 웹툰/만화 컷 이미지 분석 및 대사 추출 전문가야.
-제시된 만화 컷 이미지에서 텍스트를 정확하게 추출하고 분석해줘.
+제시된 만화 컷 이미지에서 모든 대사 텍스트를 정확하게 추출해줘.
 
 [작업 규칙]
 1. 웹툰 컷의 자연스러운 독서 흐름(위에서 아래, 말풍선 흐름)에 맞춰 순서대로 텍스트를 검출해라.
-2. 모든 대사(말풍선), 내레이션(설명 박스), 효과음(의성어/의태어 등)을 누락 없이 추출해라.
-3. 화자(말하는 캐릭터)를 매핑할 때, 함께 전달된 캐릭터 프로필 사진들의 얼굴 및 특징을 컷 이미지 내의 인물 얼굴과 직접 시각적으로 비교 대조(Image-to-Image Matching)하여 가장 잘 매치하는 캐릭터 이름을 찾아라.
-4. 만약 제공된 캐릭터 프로필 중에 매치되는 캐릭터가 없거나 말풍선에 화자가 명확하지 않은 배경음, 나레이션인 경우에는 "배경음", "나레이션", "알 수 없음" 등으로 적절히 기재해라.
-5. 결과는 반드시 한국어로 구성하고 아래 JSON 스키마 구조를 100% 만족시켜라.
-6. 응답에는 마크다운 기호(예: ```json)나 기타 부가 텍스트 없이 오직 순수한 JSON 문자열만 반환해라.
+2. 모든 대사(말풍선), 내레이션(설명 박스), 효과음(의성어/의태어 등 배경 글자)을 누락 없이 글자 그대로 추출해라.
+3. 절대 임의로 대사를 수정하거나 보정하지 말고, 이미지에 보이는 텍스트를 오타, 사투리, 특수문자를 포함하여 글자 그대로 필사해라.
+4. 결과는 아래 JSON 스키마 구조를 100% 만족시켜라.
+5. 응답에는 마크다운 기호(예: ```json)나 기타 부가 텍스트 없이 오직 순수한 JSON 문자열만 반환해라.
 
 [JSON Schema]
 {
   "results": [
     {
       "index": 1,
-      "type": "speech or narration or sfx or etc",
-      "speaker": "매칭된 캐릭터 이름 (예: 최강고, 오가민, 또는 배경음, 알 수 없음 등)",
       "text": "추출한 대사 텍스트 그대로 기재 (줄바꿈이 있는 경우 한 줄로 공백 구분하여 연결)"
     }
   ]
 }
 """
 
-        # 4. 각 웹툰 이미지에 대해 순차적 분석 진행
+        # 3. 각 웹툰 이미지에 대해 순차적 분석 진행
         total_images = len(self.image_paths)
         accumulated_results = []
         
@@ -449,21 +395,16 @@ class OCRWorker(QThread):
                 continue
 
             # API 요청 Payload 조립
-            parts = []
-            parts.append({"text": system_prompt})
-            
-            if char_parts:
-                parts.append({"text": "=== [등장인물 공식 프로필 리스트] ==="})
-                parts.extend(char_parts)
-                parts.append({"text": "====================================="})
-                
-            parts.append({"text": "분석할 만화 컷 이미지:"})
-            parts.append({
-                "inlineData": {
-                    "mimeType": mime_type,
-                    "data": webtoon_b64
+            parts = [
+                {"text": system_prompt},
+                {"text": "분석할 만화 컷 이미지:"},
+                {
+                    "inlineData": {
+                        "mimeType": mime_type,
+                        "data": webtoon_b64
+                    }
                 }
-            })
+            ]
 
             payload = {
                 "contents": [
@@ -519,22 +460,15 @@ class OCRWorker(QThread):
             # 진행 상태 전송
             self.progress_val.emit(int((idx + 1) / total_images * 100))
 
-        # 5. 수집된 결과를 화자 : 대사 포맷의 텍스트 라인으로 최종 조립
+        # 4. 수집된 결과를 순수 대사 텍스트 라인으로 최종 조립 (화자 표시 제거)
         final_lines = []
         global_counter = 1
         for item in accumulated_results:
-            speaker = item.get("speaker", "").strip()
             text = item.get("text", "").strip()
             if not text:
                 continue
             
-            # 화자가 유의미하게 존재하는 경우 포맷 적용
-            if speaker and speaker.lower() not in ["none", "배경음", "나레이션", "알 수 없음", "unknown"]:
-                line = f"{speaker} : {text}"
-            else:
-                line = text
-            
-            final_lines.append(f"[{global_counter}] {line}")
+            final_lines.append(f"[{global_counter}] {text}")
             global_counter += 1
 
         self.progress_val.emit(100)
