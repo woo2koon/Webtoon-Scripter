@@ -105,6 +105,17 @@ def get_ocr_data_smart(cache_key, png_bytes, force=False):
     with open(cache_path, "r", encoding="utf-8") as f:
         return json.load(f), False
 
+def clean_and_parse_json(text):
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        # ```json 이나 ``` 로 시작하는 마크다운 블록 제거
+        first_newline = cleaned.find("\n")
+        if first_newline != -1:
+            cleaned = cleaned[first_newline:].strip()
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3].strip()
+    return json.loads(cleaned)
+
 def call_gemini_api_raw(png_bytes):
     active_key = config.AI_API_KEY
     if not active_key:
@@ -118,17 +129,6 @@ def call_gemini_api_raw(png_bytes):
 2. 모든 대사(말풍선), 내레이션(설명 박스), 효과음(의성어/의태어 등 배경 글자)을 누락 없이 글자 그대로 추출해라.
 3. 절대 임의로 대사를 수정하거나 보정하지 말고, 이미지에 보이는 텍스트를 오타, 사투리, 특수문자를 포함하여 글자 그대로 필사해라.
 4. 결과는 아래 JSON 스키마 구조를 100% 만족시켜라.
-5. 응답에는 마크다운 기호(예: ```json)나 기타 부가 텍스트 없이 오직 순수한 JSON 문자열만 반환해라.
-
-[JSON Schema]
-{
-  "results": [
-    {
-      "index": 1,
-      "text": "추출한 대사 텍스트 그대로 기재 (줄바꿈이 있는 경우 한 줄로 공백 구분하여 연결)"
-    }
-  ]
-}
 """
 
     b64_data = base64.b64encode(png_bytes).decode('utf-8')
@@ -143,10 +143,30 @@ def call_gemini_api_raw(png_bytes):
         }
     ]
 
+    # responseSchema를 강제하여 JSON 문법 및 특수문자 이스케이프 강제 규격화
+    schema = {
+        "type": "OBJECT",
+        "properties": {
+            "results": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "index": {"type": "INTEGER"},
+                        "text": {"type": "STRING"}
+                    },
+                    "required": ["index", "text"]
+                }
+            }
+        },
+        "required": ["results"]
+    }
+
     payload = {
         "contents": [{"parts": parts}],
         "generationConfig": {
             "responseMimeType": "application/json",
+            "responseSchema": schema,
             "temperature": 0.1,
             "maxOutputTokens": 8192
         }
@@ -161,7 +181,7 @@ def call_gemini_api_raw(png_bytes):
         if res.status_code == 200:
             res_data = res.json()
             content_text = res_data['candidates'][0]['content']['parts'][0]['text']
-            parsed_json = json.loads(content_text.strip())
+            parsed_json = clean_and_parse_json(content_text)
             results = parsed_json.get("results", [])
             return [item.get("text", "").strip() for item in results if item.get("text", "").strip()]
         else:
@@ -172,7 +192,7 @@ def call_gemini_api_raw(png_bytes):
             if res_fb.status_code == 200:
                 res_data = res_fb.json()
                 content_text = res_data['candidates'][0]['content']['parts'][0]['text']
-                parsed_json = json.loads(content_text.strip())
+                parsed_json = clean_and_parse_json(content_text)
                 results = parsed_json.get("results", [])
                 return [item.get("text", "").strip() for item in results if item.get("text", "").strip()]
     except Exception as e:
