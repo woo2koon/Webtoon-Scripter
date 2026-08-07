@@ -3601,7 +3601,27 @@ class WebtoonManager(QMainWindow):
             self.lbl_api_count.setText(f"<span style='color: #111827;'>{self.api_call_count}회</span> <span style='font-size: 15px; color: #6B7280; font-weight: 500;'> (약 {cost:,}원)</span>")
         else: # 오늘 총 API 사용 횟수
             self.lbl_api_type.setText("오늘 총 API 사용 횟수")
-            cost = int(self.daily_api_count * cost_per_call)
+            
+            # 오늘 누적 비용 정밀 계산 (세부 모델 기록 기반)
+            from datetime import datetime
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            today_val = self.daily_api_history.get(today_str, 0) if hasattr(self, 'daily_api_history') else 0
+            
+            if isinstance(today_val, dict):
+                cost = 0.0
+                for model_name, cnt in today_val.items():
+                    if model_name == "vision":
+                        cost += cnt * 2.0
+                    elif model_name == "gemini-3.5-flash-lite":
+                        cost += cnt * 1.8
+                    elif model_name == "gemini-3.1-flash-lite":
+                        cost += cnt * 1.2
+                    else:
+                        cost += cnt * 7.0
+                cost = int(cost)
+            else:
+                cost = int(self.daily_api_count * cost_per_call)
+                
             self.lbl_api_count.setText(f"<span style='color: #FF4B4B;'>{self.daily_api_count}회</span> <span style='font-size: 15px; color: #6B7280; font-weight: 500;'> (약 {cost:,}원)</span>")
 
     def start_partial_reanalysis(self, image_path, label_widget):
