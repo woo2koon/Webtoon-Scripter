@@ -3491,9 +3491,17 @@ class WebtoonManager(QMainWindow):
                 return
         
         # 5. [실행] 이제 모든 준비가 끝났습니다! 분석 로직으로 전달합니다.
-        print(f">>> [{mode}] 모드로 분석을 시작합니다. (새로고침: {force_mode})")
-        # 여기서 실제 분석 로직 함수를 호출하세요.
-        # self.start_extraction(files, mode, force_mode)
+        selected_engine = "gemini" if self.radio_engine_gemini.isChecked() else "vision"
+        engine_display = f"Google Gemini AI (모델: {getattr(config, 'GEMINI_MODEL', 'gemini-3.5-flash')})" if selected_engine == "gemini" else "Google Vision OCR"
+        mode_display = "스마트 분석 (SMART)" if mode == "SMART" else "빠른 분석 (FAST)"
+        analysis_type = "새로 분석하기 (기존 데이터 무시)" if force_mode else "기존 결과 불러오기 (캐시 데이터 사용)"
+        
+        print("\n" + "="*60)
+        print("  [분석 실행 정보]")
+        print(f"  - 분석 모드: {mode_display}")
+        print(f"  - 분석 엔진: {engine_display}")
+        print(f"  - 분석 유형: {analysis_type}")
+        print("="*60 + "\n")
 
         # -----------------------------------------------------------
         
