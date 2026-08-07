@@ -1040,8 +1040,10 @@ class PreferencesDialog(QDialog):
                 else:
                     return cnt * 7.0
             
+            # 시스템 등록 폰트명 반영
+            app_ff = QApplication.font().family() or "Pretendard"
             tooltip_html = [
-                "<div style='margin: 4px; font-family: Pretendard, -apple-system, sans-serif;'>",
+                f"<div style='margin: 4px; font-family: {app_ff}, Pretendard, -apple-system, sans-serif;'>",
                 "  <div style='font-size: 15px; color: #1E293B; border-bottom: 2px solid #FF5722; padding-bottom: 4px; display: inline-block;'>",
                 "    📊 일별 세부 분석 내역",
                 "  </div>",
