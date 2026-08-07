@@ -533,7 +533,7 @@ class PreferencesDialog(QDialog):
         self.page_advanced = QWidget()
         advanced_layout = QVBoxLayout(self.page_advanced)
         advanced_layout.setContentsMargins(30, 25, 30, 25)
-        advanced_layout.setSpacing(15)
+        advanced_layout.setSpacing(10)
         
         lbl_adv_title = QLabel("OCR 편의 설정")
         lbl_adv_title.setStyleSheet(f"font-size: 16px; font-weight: bold; color: #111827; font-family: '{app_ff}';")
@@ -546,8 +546,8 @@ class PreferencesDialog(QDialog):
         route_box = QFrame()
         route_box.setStyleSheet("QFrame { background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; }")
         route_layout = QVBoxLayout(route_box)
-        route_layout.setContentsMargins(20, 20, 20, 20)
-        route_layout.setSpacing(15)
+        route_layout.setContentsMargins(20, 15, 20, 15)
+        route_layout.setSpacing(10)
         
         lbl_route_title = QLabel("부분 영역 재분석 결과 처리 방식")
         lbl_route_title.setStyleSheet(f"font-weight: bold; color: #374151; font-size: 14px; border: none; background: transparent; font-family: '{app_ff}';")
@@ -622,8 +622,8 @@ class PreferencesDialog(QDialog):
         gemini_box = QFrame()
         gemini_box.setStyleSheet("QFrame { background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; }")
         gemini_layout = QVBoxLayout(gemini_box)
-        gemini_layout.setContentsMargins(20, 20, 20, 20)
-        gemini_layout.setSpacing(15)
+        gemini_layout.setContentsMargins(20, 15, 20, 15)
+        gemini_layout.setSpacing(10)
         
         lbl_gemini_title = QLabel("제미나이 AI 분석 모델 선택")
         lbl_gemini_title.setStyleSheet(f"font-weight: bold; color: #374151; font-size: 14px; border: none; background: transparent; font-family: '{app_ff}';")
