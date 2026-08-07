@@ -172,7 +172,7 @@ def call_gemini_api_raw(png_bytes):
         }
     }
 
-    model = "gemini-3.5-flash"
+    model = getattr(config, 'GEMINI_MODEL', 'gemini-3.5-flash')
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={active_key}"
     headers = {"Content-Type": "application/json"}
 

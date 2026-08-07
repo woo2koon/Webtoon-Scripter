@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QInputDialog, QAbstractItemView, QApplication, QStackedWidget,
     QFileDialog, QCheckBox, QMenu, QScrollArea, QGraphicsOpacityEffect, QTextEdit,
     QProgressBar, QGraphicsDropShadowEffect, QTableWidget, QTableWidgetItem, QHeaderView, QGridLayout,
-    QRadioButton
+    QRadioButton, QButtonGroup
 )
 from PySide6.QtCore import Qt, Signal, QPoint, QSize, QMimeData, QByteArray, QTimer, QEvent, QPropertyAnimation, QEasingCurve, QRect
 from PySide6.QtGui import (
@@ -591,8 +591,10 @@ class PreferencesDialog(QDialog):
                 );
             }}
         """
+        self.route_group = QButtonGroup(self)
         for radio in [self.radio_route_all, self.radio_route_clip, self.radio_route_insert]:
             radio.setStyleSheet(radio_style)
+            self.route_group.addButton(radio)
             route_layout.addWidget(radio)
             
         # 초기 라디오 상태 세팅
@@ -615,6 +617,47 @@ class PreferencesDialog(QDialog):
         self.radio_route_insert.toggled.connect(lambda checked: save_route_mode(checked, 2))
         
         advanced_layout.addWidget(route_box)
+
+        # [신규 추가] 제미나이 AI 모델 선택 영역
+        gemini_box = QFrame()
+        gemini_box.setStyleSheet("QFrame { background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; }")
+        gemini_layout = QVBoxLayout(gemini_box)
+        gemini_layout.setContentsMargins(20, 20, 20, 20)
+        gemini_layout.setSpacing(15)
+        
+        lbl_gemini_title = QLabel("제미나이 AI 분석 모델 선택")
+        lbl_gemini_title.setStyleSheet(f"font-weight: bold; color: #374151; font-size: 14px; border: none; background: transparent; font-family: '{app_ff}';")
+        gemini_layout.addWidget(lbl_gemini_title)
+        
+        self.radio_model_flash = QRadioButton("Gemini 3.5 Flash (최첨단 분석 속도/지능, 표준 요금)")
+        self.radio_model_lite = QRadioButton("Gemini 3.5 Flash-Lite (초경량 및 빠른 응답, 5배 요금 절감)")
+        self.radio_model_legacy = QRadioButton("Gemini 1.5 Flash (이전 세대 표준 모델, 20배 요금 절감)")
+        
+        self.gemini_model_group = QButtonGroup(self)
+        for radio in [self.radio_model_flash, self.radio_model_lite, self.radio_model_legacy]:
+            radio.setStyleSheet(radio_style)
+            self.gemini_model_group.addButton(radio)
+            gemini_layout.addWidget(radio)
+            
+        # 초기 값 동기화
+        current_gemini_model = getattr(config, 'GEMINI_MODEL', 'gemini-3.5-flash')
+        if current_gemini_model == 'gemini-3.5-flash-lite':
+            self.radio_model_lite.setChecked(True)
+        elif current_gemini_model == 'gemini-1.5-flash':
+            self.radio_model_legacy.setChecked(True)
+        else:
+            self.radio_model_flash.setChecked(True)
+            
+        def save_gemini_model(checked, model_name):
+            if checked:
+                config.GEMINI_MODEL = model_name
+                config.save_settings()
+                
+        self.radio_model_flash.toggled.connect(lambda checked: save_gemini_model(checked, 'gemini-3.5-flash'))
+        self.radio_model_lite.toggled.connect(lambda checked: save_gemini_model(checked, 'gemini-3.5-flash-lite'))
+        self.radio_model_legacy.toggled.connect(lambda checked: save_gemini_model(checked, 'gemini-1.5-flash'))
+        
+        advanced_layout.addWidget(gemini_box)
         advanced_layout.addStretch()
         self.pages.addWidget(self.page_advanced)
         
