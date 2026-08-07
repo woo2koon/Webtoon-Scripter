@@ -758,13 +758,13 @@ class PreferencesDialog(QDialog):
         lbl_gemini_title.setStyleSheet(f"font-weight: bold; color: #374151; font-size: 14px; border: none; background: transparent; font-family: '{app_ff}';")
         gemini_layout.addWidget(lbl_gemini_title)
         
-        self.radio_model_latest = QRadioButton("Gemini 3.6 Flash (최신 고지능 모델 / 1회당 약 7.0원)")
-        self.radio_model_flash = QRadioButton("Gemini 3.5 Flash (표준 속도/지능 모델 / 1회당 약 7.0원)")
-        self.radio_model_lite = QRadioButton("Gemini 3.5 Flash-Lite (경량 및 빠른 속도 / 1회당 약 1.8원)")
         self.radio_model_super_lite = QRadioButton("Gemini 3.1 Flash-Lite (초경량 최저가 모델 / 1회당 약 1.2원)")
+        self.radio_model_lite = QRadioButton("Gemini 3.5 Flash-Lite (경량 및 빠른 속도 / 1회당 약 1.8원)")
+        self.radio_model_flash = QRadioButton("Gemini 3.5 Flash (표준 속도/지능 모델 / 1회당 약 7.0원)")
+        self.radio_model_latest = QRadioButton("Gemini 3.6 Flash (최신 고지능 모델 / 1회당 약 7.0원)")
         
         self.gemini_model_group = QButtonGroup(self)
-        for radio in [self.radio_model_latest, self.radio_model_flash, self.radio_model_lite, self.radio_model_super_lite]:
+        for radio in [self.radio_model_super_lite, self.radio_model_lite, self.radio_model_flash, self.radio_model_latest]:
             radio.setStyleSheet(radio_style)
             self.gemini_model_group.addButton(radio)
             gemini_layout.addWidget(radio)
