@@ -5739,6 +5739,10 @@ if __name__ == "__main__":
         
     app.setFont(font)
     
+    # 툴팁(QToolTip)에도 안티앨리어싱 및 힌팅 방지 설정이 반영된 동일한 폰트를 강제 주입
+    from PySide6.QtWidgets import QToolTip
+    QToolTip.setFont(font)
+    
     # 스타일시트가 시스템 기본 폰트로 롤백되지 않도록 Pretendard 단독 강제 바인딩
     global MODERN_STYLE
     MODERN_STYLE = MODERN_STYLE.replace(config.FONT_FAMILY, font_family)
