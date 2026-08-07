@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QPoint, QSize, QMimeData, QByteArray, QTimer, QEvent, QPropertyAnimation, QEasingCurve, QRect
 from PySide6.QtGui import (
-    QPixmap, QIcon, QDrag, QPainter, QColor, QPen, QFont, QAction, QKeySequence,
+    QPixmap, QIcon, QDrag, QPainter, QColor, QPen, QFont, QFontMetrics, QAction, QKeySequence,
     QTextCharFormat, QTextFormat, QTextCursor
 )
 
@@ -66,8 +66,8 @@ class UsageDetailPopup(QWidget):
         self._table.setShowGrid(False)
         self._table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self._table.horizontalHeader().setStretchLastSection(True)
+        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.Fixed)
+        self._table.horizontalHeader().setStretchLastSection(False)
         self._table.setStyleSheet("""
             QTableWidget {
                 background-color: transparent;
@@ -91,10 +91,7 @@ class UsageDetailPopup(QWidget):
         self._table.setRowCount(total_rows)
         
         header_font = QFont(app_font)
-        header_font.setPointSize(app_font.pointSize())
-        
         data_font = QFont(app_font)
-        data_font.setPointSize(app_font.pointSize())
         
         header_color = QColor("#475569")
         name_color = QColor("#334155")
@@ -138,18 +135,19 @@ class UsageDetailPopup(QWidget):
         for r in range(total_rows):
             self._table.setRowHeight(r, 30)
         
-        # 테이블 크기 자동 맞춤
-        self._table.resizeColumnsToContents()
+        # QFontMetrics 기반 결정론적 열 너비 계산 (반복 호버 시 너비 무한 증폭 방지)
+        fm = QFontMetrics(app_font)
+        col0_w = max(fm.horizontalAdvance("모델 / 엔진"), max((fm.horizontalAdvance(r[0]) for r in rows), default=0)) + 32
+        col1_w = max(fm.horizontalAdvance("사용 횟수"), max((fm.horizontalAdvance(r[1]) for r in rows), default=0)) + 32
+        col2_w = max(fm.horizontalAdvance("예상 비용"), max((fm.horizontalAdvance(r[2]) for r in rows), default=0)) + 32
         
-        # 각 열의 컨텐츠 너비에 여분 패딩 추가
-        total_w = 0
-        for col in range(3):
-            w = self._table.columnWidth(col) + 24
-            self._table.setColumnWidth(col, w)
-            total_w += w
+        self._table.setColumnWidth(0, col0_w)
+        self._table.setColumnWidth(1, col1_w)
+        self._table.setColumnWidth(2, col2_w)
         
+        total_w = col0_w + col1_w + col2_w
         table_h = total_rows * 30 + 2
-        self._table.setFixedSize(total_w + 2, table_h)
+        self._table.setFixedSize(total_w, table_h)
         self.setFixedSize(total_w + 10, table_h + 14)
     
     def show_at(self, global_pos):
@@ -1225,12 +1223,16 @@ class PreferencesDialog(QDialog):
                 if item:
                     popup_rows = item.data(Qt.UserRole)
                     if popup_rows:
-                        self._usage_popup.set_data(popup_rows)
+                        if getattr(self, '_last_hover_item', None) != item:
+                            self._last_hover_item = item
+                            self._usage_popup.set_data(popup_rows)
                         global_pos = self.table_usage.viewport().mapToGlobal(pos)
                         self._usage_popup.show_at(global_pos)
                         return False
+                self._last_hover_item = None
                 self._usage_popup.hide()
             elif event.type() == QEvent.Leave:
+                self._last_hover_item = None
                 self._usage_popup.hide()
         return super().eventFilter(obj, event)
 
