@@ -3831,8 +3831,30 @@ class WebtoonManager(QMainWindow):
     def increment_api_counter(self):
         """API 호출 시 회차별 카운트와 오늘 누적 카운트를 동시에 올립니다."""
         self.api_call_count += 1
-        self.daily_api_count += 1
         self.session_api_count += 1
+        
+        from datetime import datetime
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        
+        if not hasattr(self, 'daily_api_history') or self.daily_api_history is None:
+            self.daily_api_history = {}
+            
+        today_val = self.daily_api_history.get(today_str, 0)
+        if not isinstance(today_val, dict):
+            # 기존 정수 값이 있으면 구글 비전 OCR 기본값으로 변환
+            today_val = {"vision": int(today_val)}
+            
+        # 현재 활성화된 엔진/모델 판별
+        engine = getattr(config, 'OCR_ENGINE', 'vision')
+        if engine == "gemini":
+            key_name = getattr(config, 'GEMINI_MODEL', 'gemini-3.5-flash')
+        else:
+            key_name = "vision"
+            
+        today_val[key_name] = today_val.get(key_name, 0) + 1
+        self.daily_api_history[today_str] = today_val
+        self.daily_api_count = sum(today_val.values())
+        
         self.update_api_display()
         self.save_api_count()
 
@@ -3866,12 +3888,17 @@ class WebtoonManager(QMainWindow):
                 with open(daily_path, "r", encoding='utf-8') as f:
                     data = json.load(f)
                     last_date = data.get("last_date", "")
-                    if last_date == today_str:
-                        self.daily_api_count = data.get("daily_total", 0)
-                    else:
-                        # 날짜가 다르면 0으로 리셋 (데이터는 save_api_count에서 오늘 날짜로 갱신됨)
-                        self.daily_api_count = 0
                     self.daily_api_history = data.get("history", {})
+                    
+                    if last_date == today_str:
+                        today_val = self.daily_api_history.get(today_str, 0)
+                        if isinstance(today_val, dict):
+                            self.daily_api_count = sum(today_val.values())
+                        else:
+                            self.daily_api_count = int(today_val)
+                    else:
+                        # 날짜가 다르면 0으로 리셋
+                        self.daily_api_count = 0
         except Exception as e:
             print(f"Error loading Daily API count: {e}")
         
@@ -3899,19 +3926,24 @@ class WebtoonManager(QMainWindow):
             if not hasattr(self, 'daily_api_history') or self.daily_api_history is None:
                 self.daily_api_history = {}
             
-            self.daily_api_history[today_str] = self.daily_api_count
+            if today_str not in self.daily_api_history:
+                engine = getattr(config, 'OCR_ENGINE', 'vision')
+                if engine == "gemini":
+                    key_name = getattr(config, 'GEMINI_MODEL', 'gemini-3.5-flash')
+                else:
+                    key_name = "vision"
+                self.daily_api_history[today_str] = {key_name: self.daily_api_count}
             
             # 365일이 지난 데이터 자동 정리
             cleaned_history = {}
             cutoff_date = datetime.now() - timedelta(days=365)
-            for date_key, count in self.daily_api_history.items():
+            for date_key, val in self.daily_api_history.items():
                 try:
                     dt = datetime.strptime(date_key, "%Y-%m-%d")
                     if dt >= cutoff_date:
-                        cleaned_history[date_key] = count
+                        cleaned_history[date_key] = val
                 except Exception:
-                    # 날짜 형식이 아니면 유지
-                    cleaned_history[date_key] = count
+                    cleaned_history[date_key] = val
             self.daily_api_history = cleaned_history
 
             # 3. 오늘 누적 및 히스토리 저장

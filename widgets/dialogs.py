@@ -973,37 +973,42 @@ class PreferencesDialog(QDialog):
         if not selected_ym:
             return
             
+        def get_exact_day_cost(c_val):
+            if not isinstance(c_val, dict):
+                return int(c_val) * 2.0
+            day_cost = 0.0
+            for model_name, cnt in c_val.items():
+                if model_name == "vision":
+                    day_cost += cnt * 2.0
+                elif model_name == "gemini-3.5-flash-lite":
+                    day_cost += cnt * 1.8
+                elif model_name == "gemini-3.1-flash-lite":
+                    day_cost += cnt * 1.2
+                elif model_name == "gemini-3.6-flash":
+                    day_cost += cnt * 7.0
+                else:
+                    day_cost += cnt * 7.0
+            return day_cost
+
         # 선택된 월의 데이터 필터링
         monthly_data = []
         total_count = 0
+        total_monthly_cost = 0.0
         for date_str, count in self.usage_history.items():
             if date_str.startswith(selected_ym):
-                monthly_data.append((date_str, count))
-                total_count += count
+                if isinstance(count, dict):
+                    day_total = sum(count.values())
+                else:
+                    day_total = int(count)
+                monthly_data.append((date_str, day_total, count))
+                total_count += day_total
+                total_monthly_cost += get_exact_day_cost(count)
                 
         # 날짜 기준 내림차순 정렬
         monthly_data.sort(key=lambda x: x[0], reverse=True)
         
-        # 엔진 및 모델별 단가 동적 계산
-        engine = getattr(config, 'OCR_ENGINE', 'vision')
-        cost_per_call = 2.0
-        
-        if engine == "gemini":
-            model = getattr(config, 'GEMINI_MODEL', 'gemini-3.5-flash')
-            if model == 'gemini-3.5-flash-lite':
-                cost_per_call = 1.8
-            elif model == 'gemini-3.1-flash-lite':
-                cost_per_call = 1.2
-            elif model == 'gemini-3.6-flash':
-                cost_per_call = 7.0
-            else:
-                cost_per_call = 7.0  # gemini-3.5-flash
-            
-            if hasattr(self, 'lbl_usage_info'):
-                self.lbl_usage_info.setText(f"💡 현재 설정된 제미나이 모델({model})의 평균 API 단가 기준 예상 금액입니다.")
-        else:
-            if hasattr(self, 'lbl_usage_info'):
-                self.lbl_usage_info.setText("💡 Google Cloud API 단가 1회당 약 2원(0.0015 USD) 기준으로 계산한 예상 금액입니다.")
+        if hasattr(self, 'lbl_usage_info'):
+            self.lbl_usage_info.setText("💡 일별 사용 기록에 등록된 실제 분석 엔진 및 모델 단가를 기준으로 정밀 계산된 예상 금액입니다.")
         
         # 요약 수치 갱신
         formatted_ym = selected_ym.replace('-', '.')
@@ -1011,29 +1016,49 @@ class PreferencesDialog(QDialog):
         self.lbl_usage_cost_title.setText(f"{formatted_ym} 예상 비용")
         
         self.lbl_usage_total.setText(f"{total_count}회")
-        cost = int(total_count * cost_per_call)
-        self.lbl_usage_cost.setText(f"약 {cost:,}원")
+        self.lbl_usage_cost.setText(f"약 {int(total_monthly_cost):,}원")
         
         # 테이블 채우기
         self.table_usage.setRowCount(len(monthly_data))
-        for row_idx, (date_str, count) in enumerate(monthly_data):
+        for row_idx, (date_str, day_total, count_val) in enumerate(monthly_data):
+            # 툴팁 텍스트 빌드
+            model_names_ko = {
+                "vision": "구글 비전 OCR",
+                "gemini-3.6-flash": "Gemini 3.6 Flash",
+                "gemini-3.5-flash": "Gemini 3.5 Flash",
+                "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite",
+                "gemini-3.1-flash-lite": "Gemini 3.1 Flash-Lite"
+            }
+            tooltip_lines = ["<b>[일별 세부 사용 내역]</b>"]
+            if isinstance(count_val, dict):
+                for k, v in count_val.items():
+                    name = model_names_ko.get(k, k)
+                    tooltip_lines.append(f"• {name}: {v}회")
+            else:
+                tooltip_lines.append(f"• 구글 비전 OCR: {count_val}회")
+            tooltip_text = "<br>".join(tooltip_lines)
+
             # 날짜 셀
             item_date = QTableWidgetItem(date_str)
             item_date.setTextAlignment(Qt.AlignCenter)
+            item_date.setToolTip(tooltip_text)
             if hasattr(self, 'table_font'):
                 item_date.setFont(self.table_font)
             self.table_usage.setItem(row_idx, 0, item_date)
             
             # 사용 횟수 셀
-            item_count = QTableWidgetItem(f"{count}회")
+            item_count = QTableWidgetItem(f"{day_total}회")
             item_count.setTextAlignment(Qt.AlignCenter)
+            item_count.setToolTip(tooltip_text)
             if hasattr(self, 'table_font'):
                 item_count.setFont(self.table_font)
             self.table_usage.setItem(row_idx, 1, item_count)
             
             # 예상 비용 셀
-            item_cost = QTableWidgetItem(f"약 {int(count * cost_per_call):,}원")
+            day_cost = get_exact_day_cost(count_val)
+            item_cost = QTableWidgetItem(f"약 {int(day_cost):,}원")
             item_cost.setTextAlignment(Qt.AlignCenter)
+            item_cost.setToolTip(tooltip_text)
             if hasattr(self, 'table_font'):
                 item_cost.setFont(self.table_font)
             self.table_usage.setItem(row_idx, 2, item_cost)
