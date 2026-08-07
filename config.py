@@ -212,7 +212,7 @@ TAB_ORDER = ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"]
 # [신규 추가] 부분 영역 재분석 결과 처리 모드 (0: 자동삽입+클립보드, 1: 클립보드만, 2: 자동삽입만)
 PARTIAL_OCR_ROUTE_MODE = 0
 OCR_ENGINE = "vision" # [신규 추가] OCR 분석 엔진 ("vision" 또는 "gemini")
-GEMINI_MODEL = "gemini-3.5-flash" # [신규 추가] 제미나이 분석 모델 선택 ("gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-1.5-flash")
+GEMINI_MODEL = "gemini-3.5-flash" # [신규 추가] 제미나이 분석 모델 선택 ("gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite")
 
 def load_settings():
     global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST, PARTIAL_OCR_ROUTE_MODE, OCR_ENGINE, GEMINI_MODEL

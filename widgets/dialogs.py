@@ -629,12 +629,12 @@ class PreferencesDialog(QDialog):
         lbl_gemini_title.setStyleSheet(f"font-weight: bold; color: #374151; font-size: 14px; border: none; background: transparent; font-family: '{app_ff}';")
         gemini_layout.addWidget(lbl_gemini_title)
         
-        self.radio_model_flash = QRadioButton("Gemini 3.5 Flash (최첨단 분석 속도/지능, 표준 요금)")
+        self.radio_model_latest = QRadioButton("Gemini 3.6 Flash (최신 세대 모델, 출력 요금 일부 절감)")
+        self.radio_model_flash = QRadioButton("Gemini 3.5 Flash (표준 분석 속도/지능 모델)")
         self.radio_model_lite = QRadioButton("Gemini 3.5 Flash-Lite (초경량 및 빠른 응답, 5배 요금 절감)")
-        self.radio_model_legacy = QRadioButton("Gemini 1.5 Flash (이전 세대 표준 모델, 20배 요금 절감)")
         
         self.gemini_model_group = QButtonGroup(self)
-        for radio in [self.radio_model_flash, self.radio_model_lite, self.radio_model_legacy]:
+        for radio in [self.radio_model_latest, self.radio_model_flash, self.radio_model_lite]:
             radio.setStyleSheet(radio_style)
             self.gemini_model_group.addButton(radio)
             gemini_layout.addWidget(radio)
@@ -643,8 +643,8 @@ class PreferencesDialog(QDialog):
         current_gemini_model = getattr(config, 'GEMINI_MODEL', 'gemini-3.5-flash')
         if current_gemini_model == 'gemini-3.5-flash-lite':
             self.radio_model_lite.setChecked(True)
-        elif current_gemini_model == 'gemini-1.5-flash':
-            self.radio_model_legacy.setChecked(True)
+        elif current_gemini_model == 'gemini-3.6-flash':
+            self.radio_model_latest.setChecked(True)
         else:
             self.radio_model_flash.setChecked(True)
             
@@ -653,9 +653,9 @@ class PreferencesDialog(QDialog):
                 config.GEMINI_MODEL = model_name
                 config.save_settings()
                 
+        self.radio_model_latest.toggled.connect(lambda checked: save_gemini_model(checked, 'gemini-3.6-flash'))
         self.radio_model_flash.toggled.connect(lambda checked: save_gemini_model(checked, 'gemini-3.5-flash'))
         self.radio_model_lite.toggled.connect(lambda checked: save_gemini_model(checked, 'gemini-3.5-flash-lite'))
-        self.radio_model_legacy.toggled.connect(lambda checked: save_gemini_model(checked, 'gemini-1.5-flash'))
         
         advanced_layout.addWidget(gemini_box)
         advanced_layout.addStretch()
