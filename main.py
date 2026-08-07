@@ -1,5 +1,4 @@
 # main.py
-import pandas as pd
 import sys
 import os
 import re
@@ -9,8 +8,6 @@ import platform
 import unicodedata
 from utils import get_icon, get_colored_icon
 from copy import copy
-from openpyxl import load_workbook
-from openpyxl.worksheet.datavalidation import DataValidation
 from ai_worker import SpellCheckWorker
 from widgets import SpellCheckDialog, ScriptMergeDialog
 from widgets import ProjectManagementDialog, HoverIconButton

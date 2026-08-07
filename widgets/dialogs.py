@@ -6,7 +6,6 @@ import difflib
 import time
 import platform
 import unicodedata
-import excel_handler
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QComboBox, QFrame, QListWidget, QListWidgetItem, QWidget, QListView,
@@ -3758,6 +3757,7 @@ class ProjectManagementDialog(QDialog):
                         elif clicked == CustomMessageBox.Cancel:
                             break
                 
+                import excel_handler
                 if excel_handler.save_episode_to_excel_final(self, epi_dir, title, epi_name, dest_path):
                     success_count += 1
 
