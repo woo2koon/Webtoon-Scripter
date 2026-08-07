@@ -873,9 +873,9 @@ class PreferencesDialog(QDialog):
         usage_layout.addLayout(table_container_layout, 1)
         
         # 하단 안내 문구
-        lbl_info = QLabel("💡 Google Cloud API 단가 1회당 약 2원(0.0015 USD) 기준으로 계산한 예상 금액입니다.")
-        lbl_info.setStyleSheet(f"color: #9CA3AF; font-size: 11px; font-family: '{app_ff}';")
-        usage_layout.addWidget(lbl_info)
+        self.lbl_usage_info = QLabel("💡 Google Cloud API 단가 1회당 약 2원(0.0015 USD) 기준으로 계산한 예상 금액입니다.")
+        self.lbl_usage_info.setStyleSheet(f"color: #9CA3AF; font-size: 11px; font-family: '{app_ff}';")
+        usage_layout.addWidget(self.lbl_usage_info)
         
         self.pages.addWidget(self.page_usage)
         
@@ -984,13 +984,34 @@ class PreferencesDialog(QDialog):
         # 날짜 기준 내림차순 정렬
         monthly_data.sort(key=lambda x: x[0], reverse=True)
         
+        # 엔진 및 모델별 단가 동적 계산
+        engine = getattr(config, 'OCR_ENGINE', 'vision')
+        cost_per_call = 2.0
+        
+        if engine == "gemini":
+            model = getattr(config, 'GEMINI_MODEL', 'gemini-3.5-flash')
+            if model == 'gemini-3.5-flash-lite':
+                cost_per_call = 1.8
+            elif model == 'gemini-3.1-flash-lite':
+                cost_per_call = 1.2
+            elif model == 'gemini-3.6-flash':
+                cost_per_call = 7.0
+            else:
+                cost_per_call = 7.0  # gemini-3.5-flash
+            
+            if hasattr(self, 'lbl_usage_info'):
+                self.lbl_usage_info.setText(f"💡 현재 설정된 제미나이 모델({model})의 평균 API 단가 기준 예상 금액입니다.")
+        else:
+            if hasattr(self, 'lbl_usage_info'):
+                self.lbl_usage_info.setText("💡 Google Cloud API 단가 1회당 약 2원(0.0015 USD) 기준으로 계산한 예상 금액입니다.")
+        
         # 요약 수치 갱신
         formatted_ym = selected_ym.replace('-', '.')
         self.lbl_usage_total_title.setText(f"{formatted_ym} 총 사용 횟수")
         self.lbl_usage_cost_title.setText(f"{formatted_ym} 예상 비용")
         
         self.lbl_usage_total.setText(f"{total_count}회")
-        cost = total_count * 2
+        cost = int(total_count * cost_per_call)
         self.lbl_usage_cost.setText(f"약 {cost:,}원")
         
         # 테이블 채우기
@@ -1011,7 +1032,7 @@ class PreferencesDialog(QDialog):
             self.table_usage.setItem(row_idx, 1, item_count)
             
             # 예상 비용 셀
-            item_cost = QTableWidgetItem(f"약 {count*2:,}원")
+            item_cost = QTableWidgetItem(f"약 {int(count * cost_per_call):,}원")
             item_cost.setTextAlignment(Qt.AlignCenter)
             if hasattr(self, 'table_font'):
                 item_cost.setFont(self.table_font)

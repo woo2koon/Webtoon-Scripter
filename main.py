@@ -3580,13 +3580,28 @@ class WebtoonManager(QMainWindow):
         if not hasattr(self, 'lbl_api_count') or not hasattr(self, 'lbl_api_type'):
             return
             
+        # 엔진 및 모델별 단가 계산
+        engine = getattr(config, 'OCR_ENGINE', 'vision')
+        cost_per_call = 2.0  # Google Vision API 기본값
+        
+        if engine == "gemini":
+            model = getattr(config, 'GEMINI_MODEL', 'gemini-3.5-flash')
+            if model == 'gemini-3.5-flash-lite':
+                cost_per_call = 1.8
+            elif model == 'gemini-3.1-flash-lite':
+                cost_per_call = 1.2
+            elif model == 'gemini-3.6-flash':
+                cost_per_call = 7.0
+            else:
+                cost_per_call = 7.0  # gemini-3.5-flash
+                
         if self.api_display_mode == 0: # 현재 회차
             self.lbl_api_type.setText("현재 회차 API 사용 횟수")
-            cost = self.api_call_count * 2
+            cost = int(self.api_call_count * cost_per_call)
             self.lbl_api_count.setText(f"<span style='color: #111827;'>{self.api_call_count}회</span> <span style='font-size: 15px; color: #6B7280; font-weight: 500;'> (약 {cost:,}원)</span>")
         else: # 오늘 총 API 사용 횟수
             self.lbl_api_type.setText("오늘 총 API 사용 횟수")
-            cost = self.daily_api_count * 2
+            cost = int(self.daily_api_count * cost_per_call)
             self.lbl_api_count.setText(f"<span style='color: #FF4B4B;'>{self.daily_api_count}회</span> <span style='font-size: 15px; color: #6B7280; font-weight: 500;'> (약 {cost:,}원)</span>")
 
     def start_partial_reanalysis(self, image_path, label_widget):
