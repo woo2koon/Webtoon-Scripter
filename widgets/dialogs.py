@@ -29,6 +29,137 @@ from .character import GlobalCharacterSettingsDialog
 from .message_box import CustomMessageBox
 
 # =================================================================
+# 커스텀 호버 팝업 (QToolTip 대신 QWidget 기반으로 폰트 렌더링 동일화)
+# =================================================================
+class UsageDetailPopup(QWidget):
+    """마우스 호버 시 모델별 사용량 상세를 표시하는 커스텀 팝업 위젯"""
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.ToolTip | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, False)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setFont(QApplication.font())
+        
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+        
+        self._container = QFrame(self)
+        self._container.setStyleSheet("""
+            QFrame {
+                background-color: #ffffff;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+            }
+        """)
+        self._container_layout = QVBoxLayout(self._container)
+        self._container_layout.setContentsMargins(4, 6, 4, 6)
+        self._container_layout.setSpacing(0)
+        self._layout.addWidget(self._container)
+        
+        self._table = QTableWidget(self._container)
+        self._table.setColumnCount(3)
+        self._table.horizontalHeader().setVisible(False)
+        self._table.verticalHeader().setVisible(False)
+        self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._table.setSelectionMode(QAbstractItemView.NoSelection)
+        self._table.setFocusPolicy(Qt.NoFocus)
+        self._table.setShowGrid(False)
+        self._table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self._table.horizontalHeader().setStretchLastSection(True)
+        self._table.setStyleSheet("""
+            QTableWidget {
+                background-color: transparent;
+                border: none;
+                outline: none;
+            }
+            QTableWidget::item {
+                border: none;
+                padding: 4px 10px;
+            }
+        """)
+        self._container_layout.addWidget(self._table)
+        self.hide()
+    
+    def set_data(self, rows):
+        """rows: [(모델명, 횟수문자열, 비용문자열), ...]"""
+        app_font = QApplication.font()
+        
+        # 헤더 행 + 데이터 행
+        total_rows = 1 + len(rows)
+        self._table.setRowCount(total_rows)
+        
+        header_font = QFont(app_font)
+        header_font.setPointSize(app_font.pointSize())
+        
+        data_font = QFont(app_font)
+        data_font.setPointSize(app_font.pointSize())
+        
+        header_color = QColor("#475569")
+        name_color = QColor("#334155")
+        count_color = QColor("#0F172A")
+        cost_color = QColor("#FF5722")
+        header_bg = QColor("#F8FAFC")
+        
+        # 헤더 행
+        headers = [("모델 / 엔진", Qt.AlignLeft), ("사용 횟수", Qt.AlignCenter), ("예상 비용", Qt.AlignRight)]
+        for col, (text, align) in enumerate(headers):
+            item = QTableWidgetItem(text)
+            item.setTextAlignment(align | Qt.AlignVCenter)
+            item.setForeground(header_color)
+            item.setBackground(header_bg)
+            item.setFont(header_font)
+            self._table.setItem(0, col, item)
+        
+        # 데이터 행
+        for r_idx, (model_name, count_str, cost_str) in enumerate(rows):
+            row = r_idx + 1
+            
+            item_name = QTableWidgetItem(model_name)
+            item_name.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            item_name.setForeground(name_color)
+            item_name.setFont(data_font)
+            self._table.setItem(row, 0, item_name)
+            
+            item_count = QTableWidgetItem(count_str)
+            item_count.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            item_count.setForeground(count_color)
+            item_count.setFont(data_font)
+            self._table.setItem(row, 1, item_count)
+            
+            item_cost = QTableWidgetItem(cost_str)
+            item_cost.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            item_cost.setForeground(cost_color)
+            item_cost.setFont(data_font)
+            self._table.setItem(row, 2, item_cost)
+        
+        # 행 높이 설정
+        for r in range(total_rows):
+            self._table.setRowHeight(r, 30)
+        
+        # 테이블 크기 자동 맞춤
+        self._table.resizeColumnsToContents()
+        
+        # 각 열의 컨텐츠 너비에 여분 패딩 추가
+        total_w = 0
+        for col in range(3):
+            w = self._table.columnWidth(col) + 24
+            self._table.setColumnWidth(col, w)
+            total_w += w
+        
+        table_h = total_rows * 30 + 2
+        self._table.setFixedSize(total_w + 2, table_h)
+        self.setFixedSize(total_w + 10, table_h + 14)
+    
+    def show_at(self, global_pos):
+        """지정된 글로벌 좌표에 팝업 표시"""
+        self.move(global_pos.x() + 12, global_pos.y() + 12)
+        self.show()
+        self.raise_()
+
+
+# =================================================================
 # 환경 설정 통합 다이얼로그 (PreferencesDialog)
 # =================================================================
 class PreferencesDialog(QDialog):
@@ -1040,50 +1171,22 @@ class PreferencesDialog(QDialog):
                 else:
                     return cnt * 7.0
             
-            # 시스템 등록 폰트명 반영
-            app_ff = QApplication.font().family() or "Pretendard"
-            tooltip_html = [
-                f"<div style='margin: 4px; font-family: \"{app_ff}\";'>",
-                f"  <table style='border-collapse: collapse; margin-top: 0px; font-family: \"{app_ff}\"; font-size: 15px; font-weight: 500; border: none; line-height: 1.4;'>",
-                "    <tr style='background-color: #F8FAFC; border-bottom: 1.5px solid #CBD5E1;'>",
-                "      <th style='padding: 8px 14px; text-align: left; color: #475569; border: none; font-weight: 500; white-space: nowrap;'>모델 / 엔진</th>",
-                "      <th style='padding: 8px 14px; text-align: center; color: #475569; border: none; font-weight: 500; white-space: nowrap;'>사용 횟수</th>",
-                "      <th style='padding: 8px 14px; text-align: right; color: #475569; border: none; font-weight: 500; white-space: nowrap;'>예상 비용</th>",
-                "    </tr>"
-            ]
-            
+            # 팝업에 표시할 모델별 상세 데이터 준비
+            popup_rows = []
             if isinstance(count_val, dict):
                 for k, v in count_val.items():
                     name = model_names_ko.get(k, k)
                     cost_val = int(get_model_cost(k, v))
-                    tooltip_html.append(
-                        f"    <tr style='border-bottom: 1px solid #F1F5F9;'>"
-                        f"      <td style='padding: 8px 14px; color: #334155; border: none; font-weight: 500; white-space: nowrap;'>{name}</td>"
-                        f"      <td style='padding: 8px 14px; text-align: center; color: #0F172A; border: none; font-weight: 500; white-space: nowrap;'>{v}회</td>"
-                        f"      <td style='padding: 8px 14px; text-align: right; color: #FF5722; border: none; font-weight: 500; white-space: nowrap;'>약 {cost_val:,}원</td>"
-                        f"    </tr>"
-                    )
+                    popup_rows.append((name, f"{v}회", f"약 {cost_val:,}원"))
             else:
                 name = model_names_ko.get("vision")
                 cost_val = int(get_model_cost("vision", count_val))
-                tooltip_html.append(
-                    f"    <tr style='border-bottom: 1px solid #F1F5F9;'>"
-                    f"      <td style='padding: 8px 14px; color: #334155; border: none; font-weight: 500; white-space: nowrap;'>{name}</td>"
-                    f"      <td style='padding: 8px 14px; text-align: center; color: #0F172A; border: none; font-weight: 500; white-space: nowrap;'>{count_val}회</td>"
-                    f"      <td style='padding: 8px 14px; text-align: right; color: #FF5722; border: none; font-weight: 500; white-space: nowrap;'>약 {cost_val:,}원</td>"
-                    f"    </tr>"
-                )
-                
-            tooltip_html.extend([
-                "  </table>",
-                "</div>"
-            ])
-            tooltip_text = "\n".join(tooltip_html)
+                popup_rows.append((name, f"{count_val}회", f"약 {cost_val:,}원"))
 
             # 날짜 셀
             item_date = QTableWidgetItem(date_str)
             item_date.setTextAlignment(Qt.AlignCenter)
-            item_date.setToolTip(tooltip_text)
+            item_date.setData(Qt.UserRole, popup_rows)
             if hasattr(self, 'table_font'):
                 item_date.setFont(self.table_font)
             self.table_usage.setItem(row_idx, 0, item_date)
@@ -1091,7 +1194,7 @@ class PreferencesDialog(QDialog):
             # 사용 횟수 셀
             item_count = QTableWidgetItem(f"{day_total}회")
             item_count.setTextAlignment(Qt.AlignCenter)
-            item_count.setToolTip(tooltip_text)
+            item_count.setData(Qt.UserRole, popup_rows)
             if hasattr(self, 'table_font'):
                 item_count.setFont(self.table_font)
             self.table_usage.setItem(row_idx, 1, item_count)
@@ -1100,10 +1203,36 @@ class PreferencesDialog(QDialog):
             day_cost = get_exact_day_cost(count_val)
             item_cost = QTableWidgetItem(f"약 {int(day_cost):,}원")
             item_cost.setTextAlignment(Qt.AlignCenter)
-            item_cost.setToolTip(tooltip_text)
+            item_cost.setData(Qt.UserRole, popup_rows)
             if hasattr(self, 'table_font'):
                 item_cost.setFont(self.table_font)
             self.table_usage.setItem(row_idx, 2, item_cost)
+        
+        # 커스텀 팝업 초기화 및 이벤트 필터 설치 (최초 1회)
+        if not hasattr(self, '_usage_popup'):
+            self._usage_popup = UsageDetailPopup()
+            self.table_usage.setMouseTracking(True)
+            self.table_usage.viewport().setMouseTracking(True)
+            self.table_usage.viewport().installEventFilter(self)
+            self.table_usage.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        """사용량 테이블 위의 마우스 호버 → 커스텀 팝업 표시/숨기기"""
+        if hasattr(self, '_usage_popup') and obj is self.table_usage.viewport():
+            if event.type() == QEvent.MouseMove:
+                pos = event.pos()
+                item = self.table_usage.itemAt(pos)
+                if item:
+                    popup_rows = item.data(Qt.UserRole)
+                    if popup_rows:
+                        self._usage_popup.set_data(popup_rows)
+                        global_pos = self.table_usage.viewport().mapToGlobal(pos)
+                        self._usage_popup.show_at(global_pos)
+                        return False
+                self._usage_popup.hide()
+            elif event.type() == QEvent.Leave:
+                self._usage_popup.hide()
+        return super().eventFilter(obj, event)
 
     # --- API 키 설정 로직 ---
     def on_preset_changed(self, text):
