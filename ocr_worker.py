@@ -105,6 +105,91 @@ def get_ocr_data_smart(cache_key, png_bytes, force=False):
     with open(cache_path, "r", encoding="utf-8") as f:
         return json.load(f), False
 
+def call_gemini_api_raw(png_bytes):
+    active_key = config.AI_API_KEY
+    if not active_key:
+        return []
+
+    system_prompt = """너는 웹툰/만화 컷 이미지 분석 및 대사 추출 전문가야.
+제시된 만화 컷 이미지에서 모든 대사 텍스트를 정확하게 추출해줘.
+
+[작업 규칙]
+1. 웹툰 컷의 자연스러운 독서 흐름(위에서 아래, 말풍선 흐름)에 맞춰 순서대로 텍스트를 검출해라.
+2. 모든 대사(말풍선), 내레이션(설명 박스), 효과음(의성어/의태어 등 배경 글자)을 누락 없이 글자 그대로 추출해라.
+3. 절대 임의로 대사를 수정하거나 보정하지 말고, 이미지에 보이는 텍스트를 오타, 사투리, 특수문자를 포함하여 글자 그대로 필사해라.
+4. 결과는 아래 JSON 스키마 구조를 100% 만족시켜라.
+5. 응답에는 마크다운 기호(예: ```json)나 기타 부가 텍스트 없이 오직 순수한 JSON 문자열만 반환해라.
+
+[JSON Schema]
+{
+  "results": [
+    {
+      "index": 1,
+      "text": "추출한 대사 텍스트 그대로 기재 (줄바꿈이 있는 경우 한 줄로 공백 구분하여 연결)"
+    }
+  ]
+}
+"""
+
+    b64_data = base64.b64encode(png_bytes).decode('utf-8')
+    parts = [
+        {"text": system_prompt},
+        {"text": "분석할 만화 컷 이미지:"},
+        {
+            "inlineData": {
+                "mimeType": "image/png",
+                "data": b64_data
+            }
+        }
+    ]
+
+    payload = {
+        "contents": [{"parts": parts}],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "temperature": 0.1,
+            "maxOutputTokens": 8192
+        }
+    }
+
+    model = "gemini-3.5-flash"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={active_key}"
+    headers = {"Content-Type": "application/json"}
+
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=60)
+        if res.status_code == 200:
+            res_data = res.json()
+            content_text = res_data['candidates'][0]['content']['parts'][0]['text']
+            parsed_json = json.loads(content_text.strip())
+            results = parsed_json.get("results", [])
+            return [item.get("text", "").strip() for item in results if item.get("text", "").strip()]
+        else:
+            print(f"Gemini API 에러 (HTTP {res.status_code}): {res.text}. Fallback 시도...")
+            fallback_model = "gemini-3.1-flash-lite"
+            fb_url = f"https://generativelanguage.googleapis.com/v1beta/models/{fallback_model}:generateContent?key={active_key}"
+            res_fb = requests.post(fb_url, headers=headers, json=payload, timeout=60)
+            if res_fb.status_code == 200:
+                res_data = res_fb.json()
+                content_text = res_data['candidates'][0]['content']['parts'][0]['text']
+                parsed_json = json.loads(content_text.strip())
+                results = parsed_json.get("results", [])
+                return [item.get("text", "").strip() for item in results if item.get("text", "").strip()]
+    except Exception as e:
+        print(f"Gemini API 호출 에러: {e}")
+    return []
+
+def get_gemini_ocr_data_smart(cache_key, png_bytes, force=False):
+    cache_path = os.path.join(CACHE_DIR, "gemini_" + cache_key + ".json")
+    if force or not os.path.exists(cache_path):
+        data = call_gemini_api_raw(png_bytes)
+        if data:
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+        return data, True 
+    with open(cache_path, "r", encoding="utf-8") as f:
+        return json.load(f), False
+
 class OCRWorker(QThread):
     progress_val = Signal(int)
     progress_text = Signal(str)
@@ -137,10 +222,6 @@ class OCRWorker(QThread):
         return target_y
 
     def run(self):
-        if self.engine == "gemini":
-            self.run_gemini_ocr()
-            return
-
         full_results = []
         global_counter = 1
         
@@ -223,22 +304,43 @@ class OCRWorker(QThread):
                 
             self.progress_text.emit(f"🚀 [그룹 {chunk_idx + 1}/{total_chunks}] 병렬 문자 추출 중...")
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                future_to_task = {executor.submit(get_ocr_data_smart, t["key"], t["bytes"], self.force_mode): t for t in tasks}
-                for future in concurrent.futures.as_completed(future_to_task):
-                    task = future_to_task[future]
-                    blocks, is_api_called = future.result()
-                    if is_api_called: self.api_used.emit()
-                    for b in blocks:
-                        b_copy = b.copy()
-                        b_copy['y'] += task["offset"]
-                        b_copy['bottom'] += task["offset"]
-                        full_results.append(b_copy)
+                if self.engine == "gemini":
+                    future_to_task = {executor.submit(get_gemini_ocr_data_smart, t["key"], t["bytes"], self.force_mode): t for t in tasks}
+                    slice_results = []
+                    for future in concurrent.futures.as_completed(future_to_task):
+                        task = future_to_task[future]
+                        lines, is_api_called = future.result()
+                        if is_api_called: self.api_used.emit()
+                        slice_results.append((task["offset"], lines))
+                    
+                    # Y축 오프셋 순서대로 정렬하여 자연스러운 독서 흐름 보장
+                    slice_results.sort(key=lambda x: x[0])
+                    for offset, lines in slice_results:
+                        for line in lines:
+                            full_results.append(line)
+                else:
+                    future_to_task = {executor.submit(get_ocr_data_smart, t["key"], t["bytes"], self.force_mode): t for t in tasks}
+                    for future in concurrent.futures.as_completed(future_to_task):
+                        task = future_to_task[future]
+                        blocks, is_api_called = future.result()
+                        if is_api_called: self.api_used.emit()
+                        for b in blocks:
+                            b_copy = b.copy()
+                            b_copy['y'] += task["offset"]
+                            b_copy['bottom'] += task["offset"]
+                            full_results.append(b_copy)
                         
             # 다음 청크 사이의 안전 여백 추가 (50px)
             cumulative_height_offset += chunk_total_h + 50
             self.progress_val.emit(int((chunk_idx + 1) / total_chunks * 90))
             
-        # 4. 말풍선 그룹화 및 대사 복원
+        # 4. 결과 반환 처리
+        if self.engine == "gemini":
+            final_lines = [f"[{global_counter + i}] {line}" for i, line in enumerate(full_results)]
+            self.progress_val.emit(100)
+            self.finished_ocr.emit(final_lines)
+            return
+
         self.progress_text.emit("📝 말풍선 그룹화 및 대사 복원 중...")
         merged_lines = self.merge_close_blocks(full_results)
         final_lines = [f"[{global_counter + i}] {line}" for i, line in enumerate(merged_lines)]
@@ -340,140 +442,6 @@ class OCRWorker(QThread):
             final_merged.append(merged_text)
 
         return final_merged
-
-    def run_gemini_ocr(self):
-        # 1. 제미나이 API 키 확인
-        active_key = config.AI_API_KEY
-        if not active_key:
-            self.progress_text.emit("❌ AI API 키가 설정되지 않았습니다. [설정]에서 확인하세요.")
-            self.finished_ocr.emit([])
-            return
-
-        self.progress_text.emit("⏳ 제미나이 멀티모달 OCR 분석 준비 중...")
-        self.progress_val.emit(5)
-
-        # 2. 프롬프트 메시지 조립 (오직 텍스트만 자연스러운 순서로 추출)
-        system_prompt = """너는 웹툰/만화 컷 이미지 분석 및 대사 추출 전문가야.
-제시된 만화 컷 이미지에서 모든 대사 텍스트를 정확하게 추출해줘.
-
-[작업 규칙]
-1. 웹툰 컷의 자연스러운 독서 흐름(위에서 아래, 말풍선 흐름)에 맞춰 순서대로 텍스트를 검출해라.
-2. 모든 대사(말풍선), 내레이션(설명 박스), 효과음(의성어/의태어 등 배경 글자)을 누락 없이 글자 그대로 추출해라.
-3. 절대 임의로 대사를 수정하거나 보정하지 말고, 이미지에 보이는 텍스트를 오타, 사투리, 특수문자를 포함하여 글자 그대로 필사해라.
-4. 결과는 아래 JSON 스키마 구조를 100% 만족시켜라.
-5. 응답에는 마크다운 기호(예: ```json)나 기타 부가 텍스트 없이 오직 순수한 JSON 문자열만 반환해라.
-
-[JSON Schema]
-{
-  "results": [
-    {
-      "index": 1,
-      "text": "추출한 대사 텍스트 그대로 기재 (줄바꿈이 있는 경우 한 줄로 공백 구분하여 연결)"
-    }
-  ]
-}
-"""
-
-        # 3. 각 웹툰 이미지에 대해 순차적 분석 진행
-        total_images = len(self.image_paths)
-        accumulated_results = []
-        
-        for idx, img_path in enumerate(self.image_paths):
-            if not self.is_running:
-                break
-                
-            self.progress_text.emit(f"🔄 [컷 {idx+1}/{total_images}] 제미나이 AI가 이미지 분석 중...")
-            
-            ext = os.path.splitext(img_path)[1].lower()
-            mime_type = "image/png" if ext == ".png" else "image/jpeg"
-            
-            try:
-                with open(img_path, "rb") as img_file:
-                    webtoon_b64 = base64.b64encode(img_file.read()).decode('utf-8')
-            except Exception as read_err:
-                print(f"이미지 읽기 에러 ({img_path}): {read_err}")
-                continue
-
-            # API 요청 Payload 조립
-            parts = [
-                {"text": system_prompt},
-                {"text": "분석할 만화 컷 이미지:"},
-                {
-                    "inlineData": {
-                        "mimeType": mime_type,
-                        "data": webtoon_b64
-                    }
-                }
-            ]
-
-            payload = {
-                "contents": [
-                    {
-                        "parts": parts
-                    }
-                ],
-                "generationConfig": {
-                    "responseMimeType": "application/json",
-                    "temperature": 0.1
-                }
-            }
-
-            model = "gemini-3.5-flash"
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={active_key}"
-            headers = {"Content-Type": "application/json"}
-
-            try:
-                res = requests.post(url, headers=headers, json=payload, timeout=60)
-                self.api_used.emit()
-                
-                if res.status_code == 200:
-                    res_data = res.json()
-                    try:
-                        content_text = res_data['candidates'][0]['content']['parts'][0]['text']
-                        parsed_json = json.loads(content_text.strip())
-                        results = parsed_json.get("results", [])
-                        accumulated_results.extend(results)
-                    except Exception as parse_err:
-                        print(f"Gemini 응답 파싱 실패 ({img_path}): {parse_err}")
-                        print(res.text[:1000])
-                else:
-                    # gemini-3.5-flash 에러 시 fallback 시도 (gemini-3.1-flash-lite)
-                    print(f"Gemini API 에러 (HTTP {res.status_code}): {res.text}. Fallback 시도...")
-                    fallback_model = "gemini-3.1-flash-lite"
-                    fb_url = f"https://generativelanguage.googleapis.com/v1beta/models/{fallback_model}:generateContent?key={active_key}"
-                    res_fb = requests.post(fb_url, headers=headers, json=payload, timeout=60)
-                    
-                    if res_fb.status_code == 200:
-                        res_data = res_fb.json()
-                        try:
-                            content_text = res_data['candidates'][0]['content']['parts'][0]['text']
-                            parsed_json = json.loads(content_text.strip())
-                            results = parsed_json.get("results", [])
-                            accumulated_results.extend(results)
-                        except Exception as parse_err:
-                            print(f"Fallback Gemini 응답 파싱 실패: {parse_err}")
-                    else:
-                        print(f"Fallback Gemini API 에러 (HTTP {res_fb.status_code}): {res_fb.text}")
-            except Exception as req_err:
-                print(f"Gemini API 요청 중 에러 발생: {req_err}")
-            
-            # 진행 상태 전송
-            self.progress_val.emit(int((idx + 1) / total_images * 100))
-
-        # 4. 수집된 결과를 순수 대사 텍스트 라인으로 최종 조립 (화자 표시 제거)
-        final_lines = []
-        global_counter = 1
-        for item in accumulated_results:
-            text = item.get("text", "").strip()
-            if not text:
-                continue
-            
-            final_lines.append(f"[{global_counter}] {text}")
-            global_counter += 1
-
-        self.progress_val.emit(100)
-        self.progress_text.emit("분석 완료!")
-        self.finished_ocr.emit(final_lines)
 
     def stop(self):
         self.is_running = False
