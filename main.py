@@ -5749,16 +5749,17 @@ if __name__ == "__main__":
     config.MODERN_STYLE = config.MODERN_STYLE.replace(config.FONT_FAMILY, font_family)
     config.MODERN_MENU_STYLE = config.MODERN_MENU_STYLE.replace(config.FONT_FAMILY, font_family)
 
-    TOOLTIP_STYLE = """
-        QToolTip {
+    TOOLTIP_STYLE = f"""
+        QToolTip {{
             background-color: #ffffff; 
             color: #333333;
             border: 1px solid #d1d5db; 
             border-radius: 3px;
             padding: 1px 4px;
-            font-family: 'Pretendard';
-            font-size: 13px;
-        }
+            font-family: '{font_family}';
+            font-size: 15px;
+            font-weight: 500;
+        }}
     """
     app.setStyleSheet(config.MODERN_STYLE + "\n" + TOOLTIP_STYLE)
     
