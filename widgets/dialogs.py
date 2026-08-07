@@ -1041,13 +1041,15 @@ class PreferencesDialog(QDialog):
                     return cnt * 7.0
             
             tooltip_html = [
-                "<div style='margin: 3px;'>",
-                "  <b style='color: #111827; font-size: 13px;'>[일별 세부 사용 내역]</b><br>",
-                "  <table style='border-collapse: collapse; margin-top: 6px; min-width: 280px; font-size: 12px; border: 1px solid #D1D5DB;'>",
-                "    <tr style='background-color: #F3F4F6;'>",
-                "      <th style='padding: 6px 10px; border: 1px solid #D1D5DB; text-align: left; color: #374151; font-weight: bold;'>모델 / 엔진</th>",
-                "      <th style='padding: 6px 10px; border: 1px solid #D1D5DB; text-align: center; color: #374151; font-weight: bold;'>사용 횟수</th>",
-                "      <th style='padding: 6px 10px; border: 1px solid #D1D5DB; text-align: right; color: #374151; font-weight: bold;'>예상 비용</th>",
+                "<div style='margin: 3px; font-family: Pretendard, -apple-system, sans-serif;'>",
+                "  <div style='font-size: 13px; font-weight: bold; color: #1E293B; border-bottom: 2px solid #FF5722; padding-bottom: 3px; display: inline-block;'>",
+                "    📊 일별 세부 분석 내역",
+                "  </div>",
+                "  <table style='border-collapse: collapse; margin-top: 8px; min-width: 280px; font-size: 12px; border: none;'>",
+                "    <tr style='background-color: #F8FAFC; border-bottom: 1.5px solid #CBD5E1;'>",
+                "      <th style='padding: 6px 10px; text-align: left; color: #475569; font-weight: 600; border: none;'>모델 / 엔진</th>",
+                "      <th style='padding: 6px 10px; text-align: center; color: #475569; font-weight: 600; border: none;'>사용 횟수</th>",
+                "      <th style='padding: 6px 10px; text-align: right; color: #475569; font-weight: 600; border: none;'>예상 비용</th>",
                 "    </tr>"
             ]
             
@@ -1056,20 +1058,20 @@ class PreferencesDialog(QDialog):
                     name = model_names_ko.get(k, k)
                     cost_val = int(get_model_cost(k, v))
                     tooltip_html.append(
-                        f"    <tr>"
-                        f"      <td style='padding: 5px 10px; border: 1px solid #D1D5DB; color: #4B5563;'>{name}</td>"
-                        f"      <td style='padding: 5px 10px; border: 1px solid #D1D5DB; text-align: center; color: #4B5563;'>{v}회</td>"
-                        f"      <td style='padding: 5px 10px; border: 1px solid #D1D5DB; text-align: right; color: #FF5722; font-weight: bold;'>약 {cost_val:,}원</td>"
+                        f"    <tr style='border-bottom: 1px solid #F1F5F9;'>"
+                        f"      <td style='padding: 6px 10px; color: #334155; border: none;'>{name}</td>"
+                        f"      <td style='padding: 6px 10px; text-align: center; color: #0F172A; font-weight: bold; border: none;'>{v}회</td>"
+                        f"      <td style='padding: 6px 10px; text-align: right; color: #FF5722; font-weight: bold; border: none;'>약 {cost_val:,}원</td>"
                         f"    </tr>"
                     )
             else:
                 name = model_names_ko.get("vision")
                 cost_val = int(get_model_cost("vision", count_val))
                 tooltip_html.append(
-                    f"    <tr>"
-                    f"      <td style='padding: 5px 10px; border: 1px solid #D1D5DB; color: #4B5563;'>{name}</td>"
-                    f"      <td style='padding: 5px 10px; border: 1px solid #D1D5DB; text-align: center; color: #4B5563;'>{count_val}회</td>"
-                    f"      <td style='padding: 5px 10px; border: 1px solid #D1D5DB; text-align: right; color: #FF5722; font-weight: bold;'>약 {cost_val:,}원</td>"
+                    f"    <tr style='border-bottom: 1px solid #F1F5F9;'>"
+                    f"      <td style='padding: 6px 10px; color: #334155; border: none;'>{name}</td>"
+                    f"      <td style='padding: 6px 10px; text-align: center; color: #0F172A; font-weight: bold; border: none;'>{count_val}회</td>"
+                    f"      <td style='padding: 6px 10px; text-align: right; color: #FF5722; font-weight: bold; border: none;'>약 {cost_val:,}원</td>"
                     f"    </tr>"
                 )
                 
