@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QMenu, QListWidgetItem, QListWidget, QListView, 
                                QScrollArea, QCheckBox, QGridLayout, QStackedWidget,
                                QDialog, QFormLayout, QInputDialog, QGraphicsOpacityEffect,
-                               QRadioButton, QWidgetAction, QToolButton, QToolTip, QSizePolicy)
+                               QRadioButton, QWidgetAction, QToolButton, QToolTip, QSizePolicy, QButtonGroup)
 from PySide6.QtCore import (Qt, QTimer, QSize, QPropertyAnimation, QEasingCurve, 
                             QAbstractAnimation, QEvent, QPoint, QMimeData, QObject, QRect)
 from PySide6.QtGui import (QCursor, QFontDatabase, QFont, QTextCursor, QAction, 
@@ -1204,6 +1204,15 @@ class WebtoonManager(QMainWindow):
         self.radio_engine_gemini.setStyleSheet(option_style)
         self.check_reanalyze.setStyleSheet(option_style)
         self.radio_fast.setChecked(True)
+        
+        # [신규 추가] 라디오 버튼 그룹화 (서로 간섭하지 않게 분리)
+        self.mode_group = QButtonGroup(self)
+        self.mode_group.addButton(self.radio_fast)
+        self.mode_group.addButton(self.radio_smart)
+        
+        self.engine_group = QButtonGroup(self)
+        self.engine_group.addButton(self.radio_engine_vision)
+        self.engine_group.addButton(self.radio_engine_gemini)
         
         # Config에서 기존 엔진 로드
         if config.OCR_ENGINE == "gemini":
