@@ -1044,7 +1044,7 @@ class PreferencesDialog(QDialog):
             app_ff = QApplication.font().family() or "Pretendard"
             tooltip_html = [
                 f"<div style='margin: 4px; font-family: \"{app_ff}\";'>",
-                "  <table style='border-collapse: collapse; margin-top: 0px; min-width: 340px; font-size: 15px; border: none; line-height: 1.4;'>",
+                f"  <table style='border-collapse: collapse; margin-top: 0px; min-width: 340px; font-family: \"{app_ff}\"; font-size: 15px; border: none; line-height: 1.4;'>",
                 "    <tr style='background-color: #F8FAFC; border-bottom: 1.5px solid #CBD5E1;'>",
                 "      <th style='padding: 8px 14px; text-align: left; color: #475569; border: none; font-weight: normal;'>모델 / 엔진</th>",
                 "      <th style='padding: 8px 14px; text-align: center; color: #475569; border: none; font-weight: normal;'>사용 횟수</th>",
