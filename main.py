@@ -1186,19 +1186,20 @@ class WebtoonManager(QMainWindow):
         lbl_engine = QLabel("분석 엔진")
         lbl_engine.setStyleSheet("font-size: 11px; font-weight: bold; color: #4B5563; margin-top: 4px; margin-left: 2px;")
         
-        self.radio_engine_vision = QRadioButton("구글 비전 OCR")
         self.radio_engine_gemini = QRadioButton("제미나이 AI 분석")
+        self.radio_engine_vision = QRadioButton("구글 비전 OCR")
         
         self.check_reanalyze = QCheckBox("새로 분석하기")
         self.check_reanalyze.setToolTip("기존 결과를 무시하고 새로 분석합니다. API가 소모됩니다.")
         
         option_style = """
             QRadioButton, QCheckBox { font-size: 13px; color: #374151; }
+            QRadioButton:disabled { color: #9CA3AF; }
         """
         self.radio_fast.setStyleSheet(option_style)
         self.radio_smart.setStyleSheet(option_style)
-        self.radio_engine_vision.setStyleSheet(option_style)
         self.radio_engine_gemini.setStyleSheet(option_style)
+        self.radio_engine_vision.setStyleSheet(option_style)
         self.check_reanalyze.setStyleSheet(option_style)
         self.radio_fast.setChecked(True)
         
@@ -1208,24 +1209,21 @@ class WebtoonManager(QMainWindow):
         self.mode_group.addButton(self.radio_smart)
         
         self.engine_group = QButtonGroup(self)
-        self.engine_group.addButton(self.radio_engine_vision)
         self.engine_group.addButton(self.radio_engine_gemini)
+        self.engine_group.addButton(self.radio_engine_vision)
         
-        # Config에서 기존 엔진 로드
-        if config.OCR_ENGINE == "gemini":
-            self.radio_engine_gemini.setChecked(True)
-        else:
-            self.radio_engine_vision.setChecked(True)
+        # Vision API 키 유무에 따라 라디오 활성화 상태 및 선택 상태 갱신
+        self.update_engine_availability()
             
-        self.radio_engine_vision.toggled.connect(self._save_engine_settings)
         self.radio_engine_gemini.toggled.connect(self._save_engine_settings)
+        self.radio_engine_vision.toggled.connect(self._save_engine_settings)
 
         menu_layout.addWidget(self.radio_fast)
         menu_layout.addWidget(self.radio_smart)
         menu_layout.addWidget(line_m)
         menu_layout.addWidget(lbl_engine)
-        menu_layout.addWidget(self.radio_engine_vision)
         menu_layout.addWidget(self.radio_engine_gemini)
+        menu_layout.addWidget(self.radio_engine_vision)
         
         line_m2 = QFrame()
         line_m2.setFrameShape(QFrame.HLine)
@@ -2475,6 +2473,8 @@ class WebtoonManager(QMainWindow):
             self.setup_idiom_shortcuts()
             if self.idiom_viewer:
                 self.idiom_viewer.refresh_list()
+        # 설정 변경 후 닫히면 분석 엔진 활성화 상태 즉시 갱신
+        self.update_engine_availability()
 
     def move_window_safely(self, window, x, y):
         """윈도우가 화면(모니터) 영역 밖으로 벗어나 보이지 않는 현상을 방지하고 화면 안쪽으로 가둡니다."""
@@ -3537,9 +3537,39 @@ class WebtoonManager(QMainWindow):
         self.worker.progress_text.connect(self.ocr_progress.lbl_text.setText)
         self.worker.api_used.connect(self.increment_api_counter)
         self.worker.finished_ocr.connect(self.on_ocr_finished)
+        self.worker.error.connect(self.on_ocr_error)
         
         self.ocr_progress.show()
         self.worker.start()
+
+    def update_engine_availability(self):
+        """환경설정에 Vision API 키가 별도로 입력되어 있는지 검사하여 라디오 버튼 활성 상태를 갱신합니다."""
+        # 현재 활성 프리셋의 세부 정보 확인
+        active_preset = getattr(config, 'API_PRESETS', {}).get(getattr(config, 'ACTIVE_PRESET_NAME', 'Default'), {})
+        is_unified = active_preset.get("unified", True)
+        ui_ai = active_preset.get("ui_ai", "").strip()
+        
+        # 비전 전용 키가 분리되어 입력되어 있는지 판별
+        # (통합 모드가 아니면서 ui_ai(비전 키)가 존재하거나, 별도 키가 유효하게 등록된 경우)
+        has_vision_key = bool(not is_unified and ui_ai)
+
+        if not hasattr(self, 'radio_engine_vision') or not hasattr(self, 'radio_engine_gemini'):
+            return
+
+        self.radio_engine_vision.setEnabled(has_vision_key)
+        if has_vision_key:
+            self.radio_engine_vision.setToolTip("Google Cloud Vision OCR 엔진을 사용하여 분석합니다.")
+            if config.OCR_ENGINE == "vision":
+                self.radio_engine_vision.setChecked(True)
+            else:
+                self.radio_engine_gemini.setChecked(True)
+        else:
+            self.radio_engine_vision.setToolTip("환경설정에서 Google Vision API 키를 별도로 입력해야 사용할 수 있습니다.")
+            # 비전 키가 없으면 무조건 제미나이 AI로 고정
+            self.radio_engine_gemini.setChecked(True)
+            if config.OCR_ENGINE != "gemini":
+                config.OCR_ENGINE = "gemini"
+                config.save_settings()
 
     def _save_engine_settings(self):
         config.OCR_ENGINE = "gemini" if self.radio_engine_gemini.isChecked() else "vision"
@@ -3547,6 +3577,9 @@ class WebtoonManager(QMainWindow):
 
     def adjust_menu_position(self):
         """Qt의 자동 배치 로직이 끝난 직후, 메뉴를 강제로 위로 가둡니다."""
+        # 메뉴가 열릴 때마다 최신 API 키 등록 상태를 확인하여 비전 버튼 활성/비활성 갱신
+        self.update_engine_availability()
+        
         # 1. 일단 메뉴가 보이지 않게 투명하게 만듭니다 (잔상 방지)
         self.analysis_menu.setWindowOpacity(0.0)
         
@@ -3999,6 +4032,32 @@ class WebtoonManager(QMainWindow):
         
         # 완료 토스트 메시지 출력
         self.toast.show_message("✅ 이미지 분석이 완료되었습니다.")
+
+    def on_ocr_error(self, err_msg):
+        # 1. 진행 다이얼로그 닫기 및 초기화
+        if hasattr(self, 'ocr_progress') and self.ocr_progress:
+            try:
+                self.ocr_progress.rejected.disconnect(self.cancel_ocr)
+            except Exception:
+                pass
+            self.ocr_progress.close()
+            self.ocr_progress = None
+
+        # 2. UI 상태 원복
+        self.btn_start.setEnabled(True)
+        self.status_container.setVisible(False)
+        self.lbl_status.setText("분석 실패")
+        
+        # 3. 사용자에게 명확한 에러 이유 팝업 노출 및 설정 바로가기 옵션 제공
+        btn_options = ["설정 열기", "확인"] if ("API 키" in err_msg or "크레딧" in err_msg) else ["확인"]
+        reply = CustomMessageBox.critical(
+            self,
+            "분석 오류",
+            err_msg,
+            btn_options
+        )
+        if reply == "설정 열기":
+            self.open_preferences_dialog(0)
 
     def cancel_ocr(self):
         if hasattr(self, 'worker') and self.worker:

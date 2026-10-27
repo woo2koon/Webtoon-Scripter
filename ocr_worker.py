@@ -12,6 +12,76 @@ import config
 from config import CACHE_DIR
 from utils import clean_korean_text 
 
+class OCRAPIError(Exception):
+    """API 호출 실패 시 사용자에게 원인을 알리기 위한 예외"""
+    def __init__(self, message, status_code=None):
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
+def parse_gemini_error_message(status_code, response_text):
+    """Gemini API 에러 코드 및 응답을 분석하여 명확하고 친절한 한국어 안내 문구를 반환합니다."""
+    error_detail = ""
+    try:
+        err_json = json.loads(response_text)
+        if "error" in err_json:
+            error_detail = err_json["error"].get("message", "")
+    except Exception:
+        error_detail = response_text
+
+    if status_code in (401, 400, 403) or "API key not valid" in error_detail or "API_KEY_INVALID" in error_detail:
+        return (
+            "🔑 API 키가 유효하지 않습니다.\n\n"
+            "입력하신 API 키가 정확하지 않거나 삭제된 키입니다.\n"
+            "[설정 열기] 버튼을 눌러 정확한 Google Cloud or AI Studio API 키를 다시 등록해 주세요."
+        )
+    elif status_code == 402 or "depleted" in error_detail:
+        return (
+            "💳 API 선불 크레딧이 모두 소진되었습니다.\n\n"
+            "Google AI Studio 결제 정책으로 인해 선불 잔액이 $0이면 호출이 차단됩니다.\n"
+            "• 해결 방법 1: https://aistudio.google.com/projects 에서 크레딧을 충전하세요.\n"
+            "• 해결 방법 2: https://aistudio.google.com/apikey 에서 새 프로젝트로 무료 키를 발급받아 등록하세요."
+        )
+    elif status_code == 404:
+        return (
+            "🚫 설정된 Gemini AI 모델을 찾을 수 없거나 사용이 중단되었습니다.\n\n"
+            f"• 상세 내용: {error_detail}\n"
+            "• 최신 모델로 업데이트가 필요합니다."
+        )
+    elif status_code == 429:
+        return (
+            "⏳ API 분당 호출 한도(Rate Limit)를 초과했습니다.\n\n"
+            "잠시(약 1~2분) 기다리신 후 다시 시도해 주세요."
+        )
+    elif status_code >= 500:
+        return (
+            f"☁️ Google Gemini 서버에 일시적인 장애가 발생했습니다 (HTTP {status_code}).\n\n"
+            "잠시 후 다시 시도해 주세요."
+        )
+    else:
+        return f"⚠️ Gemini API 호출 오류 (HTTP {status_code}):\n{error_detail}"
+
+def parse_vision_error_message(status_code, response_text):
+    """Google Vision API 에러 분석 문구 반환"""
+    error_detail = ""
+    try:
+        err_json = json.loads(response_text)
+        if "error" in err_json:
+            error_detail = err_json["error"].get("message", "")
+    except Exception:
+        error_detail = response_text
+
+    if status_code in (400, 403):
+        return (
+            "🔑 Google Vision API 키가 유효하지 않거나 비활성화되어 있습니다.\n\n"
+            f"• 상세 내용: {error_detail}\n\n"
+            "[설정]에서 Google Cloud 콘솔에 Cloud Vision API가 사용 설정되어 있는지 확인해 주세요."
+        )
+    elif status_code == 429:
+        return "⏳ Google Vision API 호출 한도를 초과했습니다. 잠시 후 다시 시도해 주세요."
+    else:
+        return f"⚠️ Google Vision API 호출 오류 (HTTP {status_code}):\n{error_detail}"
+
 def preprocess_image_for_ocr(pil_img):
     """OCR 인식률 극대화를 위한 Pillow 기반 고성능 전처리 파이프라인 (2배 업스케일링 포함)"""
     try:
@@ -38,60 +108,64 @@ session = requests.Session()
 
 def call_google_api_raw(png_bytes):
     """구글 비전 API에 직접 이미지 데이터를 보내 텍스트를 추출합니다."""
-    try:
-        current_key = config.OCR_API_KEY
-        if not current_key: return []
-            
-        image_content = base64.b64encode(png_bytes).decode("utf-8")
-        req = {
-            "requests": [
-                {
-                    "image": {"content": image_content},
-                    "features": [{"type": "DOCUMENT_TEXT_DETECTION"}],
-                    "imageContext": {
-                        "languageHints": ["ko"]
-                    }
+    current_key = config.OCR_API_KEY
+    if not current_key:
+        raise OCRAPIError("Google Vision API 키가 설정되지 않았습니다.\n[설정]에서 API 키를 등록해 주세요.")
+        
+    image_content = base64.b64encode(png_bytes).decode("utf-8")
+    req = {
+        "requests": [
+            {
+                "image": {"content": image_content},
+                "features": [{"type": "DOCUMENT_TEXT_DETECTION"}],
+                "imageContext": {
+                    "languageHints": ["ko"]
                 }
-            ]
-        }
-        
+            }
+        ]
+    }
+    
+    try:
         # 연결 풀링을 사용해 구글 서버와 더 빠르게 통신
-        res = session.post(f"https://vision.googleapis.com/v1/images:annotate?key={current_key}", json=req, timeout=15)
-        
-        if res.status_code != 200: return []
-        
-        blocks_found = []
-        result = res.json()
-        responses = result.get("responses", [])
-
-        if responses and "fullTextAnnotation" in responses[0]:
-            for page in responses[0]["fullTextAnnotation"]["pages"]:
-                for block in page["blocks"]:
-                    block_text = ""
-                    for p in block["paragraphs"]:
-                        for w in p["words"]:
-                            for s in w["symbols"]:
-                                block_text += s["text"]
-                                if "property" in s and "detectedBreak" in s["property"]:
-                                    break_type = s["property"]["detectedBreak"]["type"]
-                                    if break_type in ["SPACE", "SURE_SPACE", "EOL_SURE_SPACE", "LINE_BREAK"]:
-                                        block_text += " "
-                    
-                    cleaned = clean_korean_text(block_text)
-                    vs = block["boundingBox"]["vertices"]
-                    if cleaned:
-                        # 전처리 단계의 2배 업스케일링을 고려하여 좌표값을 다시 1/2로 보정합니다.
-                        blocks_found.append({
-                            "text": cleaned, 
-                            "y": int(min(v.get("y", 0) for v in vs) / 2.0), 
-                            "bottom": int(max(v.get("y", 0) for v in vs) / 2.0),
-                            "x1": int(min(v.get("x", 0) for v in vs) / 2.0), 
-                            "x2": int(max(v.get("x", 0) for v in vs) / 2.0)
-                        })
-        return blocks_found
+        res = session.post(f"https://vision.googleapis.com/v1/images:annotate?key={current_key}", json=req, timeout=20)
+    except requests.exceptions.Timeout:
+        raise OCRAPIError("Google Vision API 응답 시간이 초과되었습니다.\n인터넷 연결 상태를 확인해 주세요.")
     except Exception as e:
-        print(f"API Error: {e}")
-        return []
+        raise OCRAPIError(f"Google Vision API 네트워크 통신 오류: {e}")
+    
+    if res.status_code != 200:
+        err_msg = parse_vision_error_message(res.status_code, res.text)
+        raise OCRAPIError(err_msg, status_code=res.status_code)
+    
+    blocks_found = []
+    result = res.json()
+    responses = result.get("responses", [])
+
+    if responses and "fullTextAnnotation" in responses[0]:
+        for page in responses[0]["fullTextAnnotation"]["pages"]:
+            for block in page["blocks"]:
+                block_text = ""
+                for p in block["paragraphs"]:
+                    for w in p["words"]:
+                        for s in w["symbols"]:
+                            block_text += s["text"]
+                            if "property" in s and "detectedBreak" in s["property"]:
+                                break_type = s["property"]["detectedBreak"]["type"]
+                                if break_type in ["SPACE", "SURE_SPACE", "EOL_SURE_SPACE", "LINE_BREAK"]:
+                                    block_text += " "
+                
+                cleaned = clean_korean_text(block_text)
+                vs = block["boundingBox"]["vertices"]
+                if cleaned:
+                    # 전처리 단계의 2배 업스케일링을 고려하여 좌표값을 다시 1/2로 보정합니다.
+                    blocks_found.append({
+                        "text": cleaned, 
+                        "y": int(min(v.get("y", 0) for v in vs) / 2.0), 
+                        "bottom": int(max(v.get("y", 0) for v in vs) / 2.0),
+                        "x1": int(min(v.get("x", 0) for v in vs) / 2.0), 
+                        "x2": int(max(v.get("x", 0) for v in vs) / 2.0)
+                    })
+    return blocks_found
 
 def get_ocr_data_smart(cache_key, png_bytes, force=False):
     """[수정됨] 누락되었던 캐싱 및 API 호출 제어 함수"""
@@ -178,17 +252,24 @@ def call_gemini_api_raw(png_bytes):
 
     try:
         res = requests.post(url, headers=headers, json=payload, timeout=60)
-        if res.status_code == 200:
+    except requests.exceptions.Timeout:
+        raise OCRAPIError("Google Gemini API 응답 시간이 초과되었습니다.\n인터넷 연결 상태를 확인해 주세요.")
+    except Exception as e:
+        raise OCRAPIError(f"Google Gemini API 네트워크 통신 오류: {e}")
+
+    if res.status_code == 200:
+        try:
             res_data = res.json()
             content_text = res_data['candidates'][0]['content']['parts'][0]['text']
             parsed_json = clean_and_parse_json(content_text)
             results = parsed_json.get("results", [])
             return [item.get("text", "").strip() for item in results if item.get("text", "").strip()]
-        else:
-            print(f"Gemini API 에러 (HTTP {res.status_code}): {res.text}")
-    except Exception as e:
-        print(f"Gemini API 호출 에러: {e}")
-    return []
+        except Exception as e:
+            raise OCRAPIError(f"Gemini 응답 데이터 해석 실패: {e}")
+    else:
+        err_msg = parse_gemini_error_message(res.status_code, res.text)
+        print(f"Gemini API 에러 (HTTP {res.status_code}): {res.text}")
+        raise OCRAPIError(err_msg, status_code=res.status_code)
 
 def get_gemini_ocr_data_smart(cache_key, png_bytes, force=False):
     cache_path = os.path.join(CACHE_DIR, "gemini_" + cache_key + ".json")
@@ -205,6 +286,7 @@ class OCRWorker(QThread):
     progress_val = Signal(int)
     progress_text = Signal(str)
     finished_ocr = Signal(list)
+    error = Signal(str)
     api_used = Signal()
 
     def __init__(self, image_paths, mode="fast", force_mode=False, engine="vision", project_dir=None):
@@ -320,21 +402,38 @@ class OCRWorker(QThread):
             completed_tasks_count = 0
             total_tasks_count = max(1, len(tasks))
 
+            api_error_raised = None
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                 if self.engine == "gemini":
                     future_to_task = {executor.submit(get_gemini_ocr_data_smart, t["key"], t["bytes"], self.force_mode): t for t in tasks}
                     slice_results = []
                     for future in concurrent.futures.as_completed(future_to_task):
+                        if not self.is_running:
+                            break
                         task = future_to_task[future]
-                        lines, is_api_called = future.result()
-                        if is_api_called: self.api_used.emit()
-                        slice_results.append((task["offset"], lines))
+                        try:
+                            lines, is_api_called = future.result()
+                            if is_api_called: self.api_used.emit()
+                            slice_results.append((task["offset"], lines))
+                        except OCRAPIError as oe:
+                            api_error_raised = str(oe)
+                            self.is_running = False
+                            break
+                        except Exception as e:
+                            api_error_raised = f"분석 중 예상치 못한 오류 발생: {e}"
+                            self.is_running = False
+                            break
                         
                         completed_tasks_count += 1
                         current_pct = chunk_base_progress + int((completed_tasks_count / total_tasks_count) * chunk_span_progress)
                         self.progress_val.emit(min(90, current_pct))
                         self.progress_text.emit(f"🚀 [그룹 {chunk_idx + 1}/{total_chunks}] 문자 추출 중... ({completed_tasks_count}/{total_tasks_count})")
                     
+                    if api_error_raised:
+                        self.error.emit(api_error_raised)
+                        return
+
                     # Y축 오프셋 순서대로 정렬하여 자연스러운 독서 흐름 보장
                     slice_results.sort(key=lambda x: x[0])
                     for offset, lines in slice_results:
@@ -343,23 +442,41 @@ class OCRWorker(QThread):
                 else:
                     future_to_task = {executor.submit(get_ocr_data_smart, t["key"], t["bytes"], self.force_mode): t for t in tasks}
                     for future in concurrent.futures.as_completed(future_to_task):
+                        if not self.is_running:
+                            break
                         task = future_to_task[future]
-                        blocks, is_api_called = future.result()
-                        if is_api_called: self.api_used.emit()
-                        for b in blocks:
-                            b_copy = b.copy()
-                            b_copy['y'] += task["offset"]
-                            b_copy['bottom'] += task["offset"]
-                            full_results.append(b_copy)
+                        try:
+                            blocks, is_api_called = future.result()
+                            if is_api_called: self.api_used.emit()
+                            for b in blocks:
+                                b_copy = b.copy()
+                                b_copy['y'] += task["offset"]
+                                b_copy['bottom'] += task["offset"]
+                                full_results.append(b_copy)
+                        except OCRAPIError as oe:
+                            api_error_raised = str(oe)
+                            self.is_running = False
+                            break
+                        except Exception as e:
+                            api_error_raised = f"분석 중 예상치 못한 오류 발생: {e}"
+                            self.is_running = False
+                            break
                             
                         completed_tasks_count += 1
                         current_pct = chunk_base_progress + int((completed_tasks_count / total_tasks_count) * chunk_span_progress)
                         self.progress_val.emit(min(90, current_pct))
                         self.progress_text.emit(f"🚀 [그룹 {chunk_idx + 1}/{total_chunks}] 문자 추출 중... ({completed_tasks_count}/{total_tasks_count})")
+                    
+                    if api_error_raised:
+                        self.error.emit(api_error_raised)
+                        return
                         
             # 다음 청크 사이의 안전 여백 추가 (50px)
             cumulative_height_offset += chunk_total_h + 50
             self.progress_val.emit(int((chunk_idx + 1) / total_chunks * 90))
+            
+        if not self.is_running:
+            return
             
         # 4. 결과 반환 처리
         if self.engine == "gemini":

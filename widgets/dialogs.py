@@ -402,12 +402,12 @@ class PreferencesDialog(QDialog):
         keys_layout.setContentsMargins(15, 15, 15, 18) # 하단 여백 확보
         keys_layout.setSpacing(10)
         
-        lbl_ocr = QLabel("Google Cloud API 키 (Vision + Gemini)")
+        lbl_ocr = QLabel("Google Cloud or AI Studio API 키")
         lbl_ocr.setStyleSheet(f"font-weight: bold; color: #FF5722; font-size: 13px; border: none; background: transparent; font-family: '{app_ff}';")
         
         row_ocr_input = QHBoxLayout()
         self.input_ocr = QLineEdit()
-        self.input_ocr.setPlaceholderText("Google Cloud API Key")
+        self.input_ocr.setPlaceholderText("Google Cloud or AI Studio API Key")
         self.input_ocr.setEchoMode(QLineEdit.Password)
         self.input_ocr.setFixedHeight(36)
         self.input_ocr.setStyleSheet("QLineEdit { border: 1px solid #D1D5DB; border-radius: 6px; padding-left: 10px; background: white; } QLineEdit:focus { border: 2px solid #FF5722; }")
@@ -426,11 +426,11 @@ class PreferencesDialog(QDialog):
         keys_layout.addWidget(lbl_ocr)
         keys_layout.addLayout(row_ocr_input)
         
-        self.btn_toggle_advanced = QPushButton("Google AI Studio API 키 별도 설정 (선택 사항)")
+        self.btn_toggle_advanced = QPushButton("Google Vision API 키 별도 설정 (선택사항)")
         self.btn_toggle_advanced.setIcon(self.get_svg_icon(self.SVG_CHEVRON_DOWN))
         self.btn_toggle_advanced.setIconSize(QSize(12, 12))
         self.btn_toggle_advanced.setStyleSheet(f"QPushButton {{ text-align: left; color: #6B7280; background: transparent; border: none; font-size: 12px; font-family: '{app_ff}'; }} QPushButton:hover {{ color: #1F2937; font-weight: bold; }}")
-        self.btn_toggle_advanced.setToolTip("Google AI Studio에서 발급받은 API 키를 별도로 설정할 수 있습니다.\n설정 시 맞춤법 검사 용도로 사용됩니다.")
+        self.btn_toggle_advanced.setToolTip("Google Cloud Vision API 키를 별도로 설정할 수 있습니다.\n기본 키로 모두 동작하므로 특수한 경우에만 사용합니다.")
         self.btn_toggle_advanced.setCursor(Qt.PointingHandCursor)
         self.btn_toggle_advanced.clicked.connect(self.toggle_advanced_mode)
         keys_layout.addWidget(self.btn_toggle_advanced)
@@ -441,12 +441,12 @@ class PreferencesDialog(QDialog):
         ai_layout.setContentsMargins(0, 5, 0, 5) # 하단 여백 추가로 잘림 현상 제거
         ai_layout.setSpacing(8)
         
-        lbl_ai = QLabel("Google AI Studio API 키 (맞춤법 전용)")
+        lbl_ai = QLabel("Google Vision API 키 (선택사항)")
         lbl_ai.setStyleSheet(f"font-weight: bold; color: #2563EB; font-size: 13px; border: none; font-family: '{app_ff}';")
         
         row_ai_input = QHBoxLayout()
         self.input_ai = QLineEdit()
-        self.input_ai.setPlaceholderText("Google AI Studio API Key")
+        self.input_ai.setPlaceholderText("Google Vision API Key (선택사항)")
         self.input_ai.setEchoMode(QLineEdit.Password)
         self.input_ai.setFixedHeight(36)
         self.input_ai.setStyleSheet("QLineEdit { border: 1px solid #D1D5DB; border-radius: 6px; padding-left: 10px; background: white; } QLineEdit:focus { border: 2px solid #FF5722; }")
@@ -1222,10 +1222,10 @@ class PreferencesDialog(QDialog):
         self.ai_container.setVisible(not self.is_unified)
         if self.is_unified:
             self.btn_toggle_advanced.setIcon(self.get_svg_icon(self.SVG_CHEVRON_DOWN))
-            self.btn_toggle_advanced.setText("Google AI Studio API 키 별도 설정 (선택 사항)")
+            self.btn_toggle_advanced.setText("Google Vision API 키 별도 설정 (선택사항)")
         else:
             self.btn_toggle_advanced.setIcon(self.get_svg_icon(self.SVG_CHEVRON_UP))
-            self.btn_toggle_advanced.setText("Google AI Studio API 키 별도 설정 (닫기)")
+            self.btn_toggle_advanced.setText("Google Vision API 키 별도 설정 (닫기)")
 
     def toggle_advanced_mode(self):
         self.set_unified_mode(not self.is_unified)
@@ -1236,10 +1236,10 @@ class PreferencesDialog(QDialog):
         
         if is_unified:
             self.btn_toggle_advanced.setIcon(self.get_svg_icon(self.SVG_CHEVRON_DOWN))
-            self.btn_toggle_advanced.setText("Google AI Studio API 키 별도 설정 (선택 사항)")
+            self.btn_toggle_advanced.setText("Google Vision API 키 별도 설정 (선택사항)")
         else:
             self.btn_toggle_advanced.setIcon(self.get_svg_icon(self.SVG_CHEVRON_UP))
-            self.btn_toggle_advanced.setText("Google AI Studio API 키 별도 설정 (닫기)")
+            self.btn_toggle_advanced.setText("Google Vision API 키 별도 설정 (닫기)")
         self.save_temp_data()
 
     def save_temp_data(self):
