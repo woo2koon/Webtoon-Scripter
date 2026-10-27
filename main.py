@@ -8,7 +8,7 @@ import platform
 import unicodedata
 from utils import get_icon, get_colored_icon
 from copy import copy
-from ai_worker import SpellCheckWorker
+from ai_worker import SpellCheckWorker, TextCleanWorker
 from widgets import SpellCheckDialog, ScriptMergeDialog
 from widgets import ProjectManagementDialog, HoverIconButton
 
@@ -1639,7 +1639,7 @@ class WebtoonManager(QMainWindow):
             QPushButton:pressed { background-color: #A7F3D0; }
         """)
         btn_clean_text.clicked.connect(self.clean_editor_text)
-        btn_clean_text.setToolTip("OCR 분석 결과에서 의미 없는 자모음 파편, 기호,\n외자 영문 등의 텍스트 노이즈를 정제합니다.")
+        btn_clean_text.setToolTip("AI가 대사 및 내레이션을 제외한 효과음, 의성어, 의태어 등의\n텍스트 노이즈를 정제합니다.")
         top_toolbar.addWidget(btn_clean_text)
         
         # ★ [핵심] 빈 공간(스프링)을 둡니다. -> 모든 요소를 오른쪽으로 밀어버림
@@ -3489,7 +3489,7 @@ class WebtoonManager(QMainWindow):
         
         # 5. [실행] 이제 모든 준비가 끝났습니다! 분석 로직으로 전달합니다.
         selected_engine = "gemini" if self.radio_engine_gemini.isChecked() else "vision"
-        engine_display = f"Google Gemini AI (모델: {getattr(config, 'GEMINI_MODEL', 'gemini-3.5-flash')})" if selected_engine == "gemini" else "Google Vision OCR"
+        engine_display = f"Google Gemini AI (모델: {getattr(config, 'GEMINI_MODEL', 'gemini-3.1-flash-lite')})" if selected_engine == "gemini" else "Google Vision OCR"
         mode_display = "스마트 분석 (SMART)" if mode == "SMART" else "빠른 분석 (FAST)"
         analysis_type = "새로 분석하기 (기존 데이터 무시)" if force_mode else "기존 결과 불러오기 (캐시 데이터 사용)"
         
@@ -3590,15 +3590,7 @@ class WebtoonManager(QMainWindow):
         cost_per_call = 2.0  # Google Vision API 기본값
         
         if engine == "gemini":
-            model = getattr(config, 'GEMINI_MODEL', 'gemini-3.5-flash')
-            if model == 'gemini-3.5-flash-lite':
-                cost_per_call = 1.8
-            elif model == 'gemini-3.1-flash-lite':
-                cost_per_call = 1.2
-            elif model == 'gemini-3.6-flash':
-                cost_per_call = 7.0
-            else:
-                cost_per_call = 7.0  # gemini-3.5-flash
+            cost_per_call = 1.2  # Gemini 3.1 Flash-Lite 단가 (1회당 약 1.2원)
                 
         if self.api_display_mode == 0: # 현재 회차
             self.lbl_api_type.setText("현재 회차 API 사용 횟수")
@@ -3872,7 +3864,7 @@ class WebtoonManager(QMainWindow):
         # 현재 활성화된 엔진/모델 판별
         engine = getattr(config, 'OCR_ENGINE', 'vision')
         if engine == "gemini":
-            key_name = getattr(config, 'GEMINI_MODEL', 'gemini-3.5-flash')
+            key_name = getattr(config, 'GEMINI_MODEL', 'gemini-3.1-flash-lite')
         else:
             key_name = "vision"
             
@@ -4017,21 +4009,64 @@ class WebtoonManager(QMainWindow):
         self.toast.show_message("🚫 이미지 분석이 중단되었습니다.")
 
     def clean_editor_text(self):
-        text = self.text_editor.toPlainText()
-        cleaned = clean_ocr_text(text)
-        if text != cleaned:
-            from widgets import TextCleanDialog
-            dlg = TextCleanDialog(text, cleaned, self)
-            if dlg.exec() == QDialog.Accepted and dlg.result_text is not None:
-                # QTextCursor를 사용하여 Undo 스택에 변경 이력 기록
-                cursor = self.text_editor.textCursor()
-                cursor.beginEditBlock()
-                cursor.select(QTextCursor.Document)
-                cursor.insertText(dlg.result_text)
-                cursor.endEditBlock()
-                self.toast.show_message("✨ 텍스트 정리가 완료되었습니다.")
-        else:
-            self.toast.show_message("✨ 정리할 텍스트 노이즈가 없습니다.")
+        # API 키 등록 여부 검증
+        if not config.AI_API_KEY or not config.AI_API_KEY.strip():
+            reply = CustomMessageBox.warning(
+                self,
+                "API 키 필요",
+                "⚠️ 구글 Cloud API 키가 설정되지 않았습니다.\n\n"
+                "AI 효과음 정리를 시작하려면 먼저 설정에서 API 키를 입력해 주세요.",
+                ["설정 열기", "닫기"]
+            )
+            
+            if reply == "설정 열기":
+                self.open_preferences_dialog(0)
+            return
+
+        text = self.text_editor.toPlainText().strip()
+        if not text:
+             self.toast.show_message("⚠️ 정리할 텍스트가 없습니다.", 2000)
+             return
+
+        from widgets import ModernProgressDialog
+        self.clean_progress = ModernProgressDialog("⏳ AI가 효과음 및 의성어/의태어를 정리하고 있습니다...", None, 0, 0, self)
+        self.clean_progress.show()
+
+        self.clean_worker = TextCleanWorker(text)
+        self.clean_worker.finished.connect(self.on_text_clean_finished)
+        self.clean_worker.error.connect(self.on_text_clean_error)
+        self.clean_worker.start()
+
+    def on_text_clean_finished(self, cleaned_text):
+        if hasattr(self, 'clean_progress') and self.clean_progress:
+            self.clean_progress.close()
+            self.clean_progress = None
+
+        original_text = self.text_editor.toPlainText()
+        
+        # 만약 정제할 효과음이 없어서 동일하다면 메시지 노출 후 종료
+        if original_text.strip() == cleaned_text.strip():
+            self.toast.show_message("✨ 정리할 효과음 노이즈가 없습니다.", 2000)
+            return
+
+        from widgets import TextCleanDialog
+        dlg = TextCleanDialog(original_text, cleaned_text, self, initial_vscroll=0)
+        dlg.exec()
+        
+        if dlg.result(): # Accepted
+            cursor = self.text_editor.textCursor()
+            cursor.select(QTextCursor.Document)
+            cursor.beginEditBlock()
+            cursor.insertText(dlg.result_text)
+            cursor.endEditBlock()
+            self.save_text_content() 
+            self.toast.show_message("✨ 텍스트 정리가 완료되었습니다!", 2000)
+
+    def on_text_clean_error(self, err_msg):
+        if hasattr(self, 'clean_progress') and self.clean_progress:
+            self.clean_progress.close()
+            self.clean_progress = None
+        CustomMessageBox.critical(self, "오류", err_msg)
 
     def save_text_content(self):
         if not getattr(self, 'is_simple_mode', False) and not self.current_episode: return

@@ -172,7 +172,7 @@ def call_gemini_api_raw(png_bytes):
         }
     }
 
-    model = getattr(config, 'GEMINI_MODEL', 'gemini-3.5-flash')
+    model = getattr(config, 'GEMINI_MODEL', 'gemini-3.1-flash-lite')
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={active_key}"
     headers = {"Content-Type": "application/json"}
 
@@ -185,16 +185,7 @@ def call_gemini_api_raw(png_bytes):
             results = parsed_json.get("results", [])
             return [item.get("text", "").strip() for item in results if item.get("text", "").strip()]
         else:
-            print(f"Gemini API 에러 (HTTP {res.status_code}): {res.text}. Fallback 시도...")
-            fallback_model = "gemini-3.1-flash-lite"
-            fb_url = f"https://generativelanguage.googleapis.com/v1beta/models/{fallback_model}:generateContent?key={active_key}"
-            res_fb = requests.post(fb_url, headers=headers, json=payload, timeout=60)
-            if res_fb.status_code == 200:
-                res_data = res_fb.json()
-                content_text = res_data['candidates'][0]['content']['parts'][0]['text']
-                parsed_json = clean_and_parse_json(content_text)
-                results = parsed_json.get("results", [])
-                return [item.get("text", "").strip() for item in results if item.get("text", "").strip()]
+            print(f"Gemini API 에러 (HTTP {res.status_code}): {res.text}")
     except Exception as e:
         print(f"Gemini API 호출 에러: {e}")
     return []
@@ -322,7 +313,13 @@ class OCRWorker(QThread):
                 current_y = cut_y
                 slice_idx += 1
                 
-            self.progress_text.emit(f"🚀 [그룹 {chunk_idx + 1}/{total_chunks}] 병렬 문자 추출 중...")
+            self.progress_text.emit(f"🚀 [그룹 {chunk_idx + 1}/{total_chunks}] 병렬 문자 추출 중... (0/{len(tasks)})")
+            
+            chunk_base_progress = int((chunk_idx / total_chunks) * 90)
+            chunk_span_progress = int((1 / total_chunks) * 90)
+            completed_tasks_count = 0
+            total_tasks_count = max(1, len(tasks))
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                 if self.engine == "gemini":
                     future_to_task = {executor.submit(get_gemini_ocr_data_smart, t["key"], t["bytes"], self.force_mode): t for t in tasks}
@@ -332,6 +329,11 @@ class OCRWorker(QThread):
                         lines, is_api_called = future.result()
                         if is_api_called: self.api_used.emit()
                         slice_results.append((task["offset"], lines))
+                        
+                        completed_tasks_count += 1
+                        current_pct = chunk_base_progress + int((completed_tasks_count / total_tasks_count) * chunk_span_progress)
+                        self.progress_val.emit(min(90, current_pct))
+                        self.progress_text.emit(f"🚀 [그룹 {chunk_idx + 1}/{total_chunks}] 문자 추출 중... ({completed_tasks_count}/{total_tasks_count})")
                     
                     # Y축 오프셋 순서대로 정렬하여 자연스러운 독서 흐름 보장
                     slice_results.sort(key=lambda x: x[0])
@@ -349,6 +351,11 @@ class OCRWorker(QThread):
                             b_copy['y'] += task["offset"]
                             b_copy['bottom'] += task["offset"]
                             full_results.append(b_copy)
+                            
+                        completed_tasks_count += 1
+                        current_pct = chunk_base_progress + int((completed_tasks_count / total_tasks_count) * chunk_span_progress)
+                        self.progress_val.emit(min(90, current_pct))
+                        self.progress_text.emit(f"🚀 [그룹 {chunk_idx + 1}/{total_chunks}] 문자 추출 중... ({completed_tasks_count}/{total_tasks_count})")
                         
             # 다음 청크 사이의 안전 여백 추가 (50px)
             cumulative_height_offset += chunk_total_h + 50
@@ -356,12 +363,15 @@ class OCRWorker(QThread):
             
         # 4. 결과 반환 처리
         if self.engine == "gemini":
+            self.progress_text.emit("📝 대사 결과 정리 중...")
+            self.progress_val.emit(95)
             final_lines = [f"[{global_counter + i}] {line}" for i, line in enumerate(full_results)]
             self.progress_val.emit(100)
             self.finished_ocr.emit(final_lines)
             return
 
         self.progress_text.emit("📝 말풍선 그룹화 및 대사 복원 중...")
+        self.progress_val.emit(95)
         merged_lines = self.merge_close_blocks(full_results)
         final_lines = [f"[{global_counter + i}] {line}" for i, line in enumerate(merged_lines)]
         

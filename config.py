@@ -23,7 +23,7 @@ MY_DEFAULT_AI_KEY = ""   # <-- 여기에 직접 입력하지 마세요!
 
 # 1. 앱 이름 (이 이름으로 사용자의 컴퓨터에 폴더가 생깁니다)
 APP_NAME = "Webtoon Scripter"
-APP_VERSION = "3.2.1"
+APP_VERSION = "3.3.0"
 
 if getattr(sys, 'frozen', False):
     # [읽기전용] EXE 내부에 압축된 아이콘 등 (임시 폴더)
@@ -212,14 +212,14 @@ TAB_ORDER = ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"]
 # [신규 추가] 부분 영역 재분석 결과 처리 모드 (0: 자동삽입+클립보드, 1: 클립보드만, 2: 자동삽입만)
 PARTIAL_OCR_ROUTE_MODE = 0
 OCR_ENGINE = "vision" # [신규 추가] OCR 분석 엔진 ("vision" 또는 "gemini")
-GEMINI_MODEL = "gemini-3.5-flash" # [신규 추가] 제미나이 분석 모델 선택 ("gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite")
+GEMINI_MODEL = "gemini-3.1-flash-lite" # 제미나이 분석 모델 고정 (초경량/고속)
 
 def load_settings():
     global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST, PARTIAL_OCR_ROUTE_MODE, OCR_ENGINE, GEMINI_MODEL
     IS_SIMPLE_MODE = False
     PARTIAL_OCR_ROUTE_MODE = 0
     OCR_ENGINE = "vision"
-    GEMINI_MODEL = "gemini-3.5-flash"
+    GEMINI_MODEL = "gemini-3.1-flash-lite"
     TAB_ORDER = ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"]
     
     # 1. 일단 하드코딩된 키로 초기화
@@ -238,7 +238,7 @@ def load_settings():
                 APP_VERSION_LAST = data.get("app_version_last", "")
                 PARTIAL_OCR_ROUTE_MODE = data.get("partial_ocr_route_mode", 0)
                 OCR_ENGINE = data.get("ocr_engine", "vision")
-                GEMINI_MODEL = data.get("gemini_model", "gemini-3.5-flash")
+                GEMINI_MODEL = data.get("gemini_model", "gemini-3.1-flash-lite")
                 
                 if "presets" in data and isinstance(data["presets"], dict):
                     loaded_presets = data["presets"]
