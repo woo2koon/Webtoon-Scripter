@@ -1,5 +1,6 @@
 # widgets/common.py
 import os
+import json
 import platform
 import re
 import unicodedata
@@ -9,16 +10,17 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLineEdit, QPushButton, QWidget, QSizePolicy, QTextEdit,
     QTableWidget, QAbstractItemView, QTableWidgetItem, QApplication, QHeaderView,
     QGraphicsOpacityEffect, QMenu, QDialog, QVBoxLayout, QInputDialog,
-    QListWidget, QListWidgetItem, QStackedWidget, QFileDialog, QCheckBox
+    QListWidget, QListWidgetItem, QStackedWidget, QFileDialog, QCheckBox,
+    QStyleOptionViewItem, QStyle
 )
 from PySide6.QtCore import (
     Qt, QEvent, Signal, QTimer, QSize, QEasingCurve, QPropertyAnimation,
-    QRect, QRectF, QMimeData, QModelIndex, QByteArray, QPointF
+    QRect, QRectF, QMimeData, QModelIndex, QByteArray, QPointF, QPoint
 )
 from PySide6.QtGui import (
     QPixmap, QDrag, QPainter, QColor, QPen, QFont, QAction, QIcon,
     QRegion, QBrush, QLinearGradient, QTextCharFormat, QTextFormat,
-    QTextCursor, QKeySequence, QPainterPath, QPolygonF
+    QTextCursor, QKeySequence, QPainterPath, QPolygonF, QCursor
 )
 from PySide6.QtSvg import QSvgRenderer
 
@@ -41,13 +43,16 @@ class ResponsiveLabel(QLabel):
         self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
+        self._is_resizing = False
         
     def resizeEvent(self, event):
-        if not self.original_pixmap.isNull() and self.width() > 0:
+        if not self._is_resizing and not self.original_pixmap.isNull() and self.width() > 0:
             aspect_ratio = self.original_pixmap.height() / self.original_pixmap.width()
             target_height = int(self.width() * aspect_ratio)
             if self.height() != target_height:
+                self._is_resizing = True
                 self.setFixedHeight(target_height)
+                self._is_resizing = False
         super().resizeEvent(event)
 
     def show_context_menu(self, pos):
@@ -269,6 +274,40 @@ class ClickableComboBox(QComboBox):
         else: self.showPopup()
 
 # =================================================================
+# 뷰어 확대/축소 배지 (ZoomBadge)
+# =================================================================
+class ZoomBadge(QLabel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAlignment(Qt.AlignCenter)
+        self.setStyleSheet("""
+            QLabel {
+                background-color: rgba(30, 41, 59, 0.9);
+                color: #FFFFFF;
+                font-family: 'Pretendard';
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 14px;
+                padding: 6px 14px;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+            }
+        """)
+        self.hide()
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self.hide)
+
+    def show_zoom(self, percent_text, viewport_w):
+        self.setText(percent_text)
+        self.adjustSize()
+        x = max(10, viewport_w - self.width() - 20)
+        y = 20
+        self.move(x, y)
+        self.raise_()
+        self.show()
+        self.timer.start(1200)
+
+# =================================================================
 # 스크롤 뷰
 # =================================================================
 class WebtoonScrollArea(QScrollArea):
@@ -276,6 +315,18 @@ class WebtoonScrollArea(QScrollArea):
         super().__init__(parent)
         self.is_adjusting = False
         self.stable_ratio = 0.0
+        self.zoom_factor = 1.0
+        self.min_zoom = 1.0  # 100% 이하로는 축소 불가
+        self.max_zoom = 5.0
+
+        self._is_panning = False
+        self._pan_start_pos = QPoint()
+        self._pan_start_h = 0
+        self._pan_start_v = 0
+
+        self.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        self.zoom_badge = ZoomBadge(self.viewport())
+
         # 사용자가 직접 스크롤할 때만 비율을 업데이트하여 리사이즈 중의 간섭을 방지합니다.
         self.verticalScrollBar().valueChanged.connect(self._update_stable_ratio)
         # 리사이즈 등으로 인해 스크롤 범위가 변할 때 즉시 비율을 적용하여 깜빡임을 방지합니다.
@@ -293,11 +344,173 @@ class WebtoonScrollArea(QScrollArea):
         if self.is_adjusting and self.stable_ratio > 0:
             self.verticalScrollBar().setValue(int(max_val * self.stable_ratio))
 
+    def zoom_in(self, anchor_pos=None):
+        new_factor = min(self.max_zoom, self.zoom_factor * 1.15)
+        self.set_zoom_factor(new_factor, anchor_pos)
+
+    def zoom_out(self, anchor_pos=None):
+        if self.zoom_factor <= 1.0:
+            return  # 100% 이하로는 축소 불가
+        new_factor = max(1.0, self.zoom_factor / 1.15)
+        if abs(new_factor - 1.0) < 0.03:
+            new_factor = 1.0
+        self.set_zoom_factor(new_factor, anchor_pos)
+
+    def reset_zoom(self):
+        self.set_zoom_factor(1.0)
+
+    def set_zoom_factor(self, factor, anchor_pos=None):
+        factor = max(self.min_zoom, min(self.max_zoom, factor))
+        if abs(factor - 1.0) < 0.01:
+            factor = 1.0
+
+        if factor == self.zoom_factor and factor == 1.0:
+            return
+
+        content = self.widget()
+        if not content:
+            self.zoom_factor = factor
+            return
+
+        vp = self.viewport()
+        vp_w = vp.width()
+        vp_h = vp.height()
+        if vp_w <= 0:
+            self.zoom_factor = factor
+            return
+
+        # 앵커 마우스 좌표: 마우스 포인터가 가리키고 있는 뷰포트 내 지점
+        if anchor_pos is None:
+            anchor_pos = vp.mapFromGlobal(QCursor.pos())
+        if not vp.rect().contains(anchor_pos):
+            anchor_pos = QPoint(vp_w // 2, vp_h // 2)
+
+        old_w = content.width()
+        old_h = content.height()
+        pt_in_content = content.mapFrom(vp, anchor_pos)
+        ratio_x = (pt_in_content.x() / old_w) if old_w > 0 else 0.5
+        ratio_y = (pt_in_content.y() / old_h) if old_h > 0 else 0.5
+
+        self.zoom_factor = factor
+        self.is_adjusting = True
+
+        if self.zoom_factor == 1.0:
+            content.setMinimumWidth(0)
+            content.setMaximumWidth(16777215)
+            content.resize(vp_w, content.height())
+            target_w = vp_w
+        else:
+            target_w = int(vp_w * self.zoom_factor)
+            content.setFixedWidth(target_w)
+
+        content.adjustSize()
+
+        new_w = target_w
+        new_h = int(old_h * (target_w / old_w)) if old_w > 0 else content.height()
+
+        new_pt_x = ratio_x * new_w
+        new_pt_y = ratio_y * new_h
+
+        new_hbar = int(new_pt_x - anchor_pos.x()) if new_w > vp_w else 0
+        new_vbar = int(new_pt_y - anchor_pos.y())
+
+        def apply_scroll():
+            self.horizontalScrollBar().setValue(new_hbar)
+            self.verticalScrollBar().setValue(new_vbar)
+            self._update_stable_ratio()
+            self.is_adjusting = False
+
+        QTimer.singleShot(0, apply_scroll)
+
+        pct = int(round(self.zoom_factor * 100))
+        label_text = f"{pct}% (화면 맞춤)" if self.zoom_factor == 1.0 else f"{pct}%"
+        self.zoom_badge.show_zoom(label_text, vp.width())
+
+    def viewportEvent(self, event):
+        t = event.type()
+        if t == QEvent.MouseButtonPress:
+            if event.button() == Qt.MiddleButton:
+                self._is_panning = True
+                self._pan_start_pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
+                self._pan_start_h = self.horizontalScrollBar().value()
+                self._pan_start_v = self.verticalScrollBar().value()
+                self.viewport().setCursor(Qt.ClosedHandCursor)
+                event.accept()
+                return True
+        elif t == QEvent.MouseMove:
+            if self._is_panning:
+                if not (event.buttons() & Qt.MiddleButton):
+                    self._is_panning = False
+                    self.viewport().unsetCursor()
+                else:
+                    cur_pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
+                    delta = cur_pos - self._pan_start_pos
+                    self.horizontalScrollBar().setValue(self._pan_start_h - delta.x())
+                    self.verticalScrollBar().setValue(self._pan_start_v - delta.y())
+                    event.accept()
+                    return True
+        elif t == QEvent.MouseButtonRelease:
+            if event.button() == Qt.MiddleButton and self._is_panning:
+                self._is_panning = False
+                self.viewport().unsetCursor()
+                event.accept()
+                return True
+        return super().viewportEvent(event)
+
     def wheelEvent(self, event):
-        delta = event.angleDelta().y()
-        new_value = self.verticalScrollBar().value() - int(delta)
-        self.verticalScrollBar().setValue(new_value)
+        modifiers = event.modifiers()
+        is_ctrl_or_cmd = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier))
+        if is_ctrl_or_cmd:
+            delta = event.angleDelta().y()
+            if delta != 0:
+                if hasattr(event, 'globalPosition'):
+                    g_pos = event.globalPosition().toPoint()
+                else:
+                    g_pos = QCursor.pos()
+                mouse_pos = self.viewport().mapFromGlobal(g_pos)
+                if delta > 0:
+                    self.zoom_in(mouse_pos)
+                else:
+                    self.zoom_out(mouse_pos)
+                event.accept()
+                return
+
+        # Shift + Wheel = 가로 스크롤
+        if modifiers & Qt.ShiftModifier:
+            delta = event.angleDelta().y() or event.angleDelta().x()
+            new_val = self.horizontalScrollBar().value() - int(delta)
+            self.horizontalScrollBar().setValue(new_val)
+            event.accept()
+            return
+
+        # 일반 휠 스크롤 (세로 및 트랙패드 가로 스크롤 지원)
+        delta_y = event.angleDelta().y()
+        delta_x = event.angleDelta().x()
+        if delta_y != 0:
+            new_value = self.verticalScrollBar().value() - int(delta_y)
+            self.verticalScrollBar().setValue(new_value)
+        if delta_x != 0:
+            new_value = self.horizontalScrollBar().value() - int(delta_x)
+            self.horizontalScrollBar().setValue(new_value)
         event.accept()
+
+    def keyPressEvent(self, event):
+        modifiers = event.modifiers()
+        is_ctrl_or_cmd = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier))
+        if is_ctrl_or_cmd:
+            if event.key() in (Qt.Key_0, Qt.Key_ParenRight):
+                self.reset_zoom()
+                event.accept()
+                return
+            elif event.key() in (Qt.Key_Plus, Qt.Key_Equal):
+                self.zoom_in()
+                event.accept()
+                return
+            elif event.key() in (Qt.Key_Minus, Qt.Key_Underscore):
+                self.zoom_out()
+                event.accept()
+                return
+        super().keyPressEvent(event)
 
     def get_scroll_ratio(self):
         return self.stable_ratio
@@ -320,6 +533,18 @@ class WebtoonScrollArea(QScrollArea):
         # 리사이즈 시작 시 잠금
         self.is_adjusting = True
         super().resizeEvent(event)
+        content = self.widget()
+        if content:
+            if self.zoom_factor == 1.0:
+                content.setMinimumWidth(0)
+                content.setMaximumWidth(16777215)
+                content.resize(self.viewport().width(), content.height())
+            else:
+                target_w = int(self.viewport().width() * self.zoom_factor)
+                content.setFixedWidth(target_w)
+        if hasattr(self, 'zoom_badge') and self.zoom_badge.isVisible():
+            x = max(10, self.viewport().width() - self.zoom_badge.width() - 20)
+            self.zoom_badge.move(x, 20)
         # 리사이즈 완료 후 잠금 해제 (연속 리사이즈 시 계속 연장됨)
         QTimer.singleShot(100, self._stop_adjusting)
 
@@ -660,6 +885,16 @@ class DropOverlay(QWidget):
             event.ignore()
 
 # =================================================================
+# =================================================================
+# 플랫 아이템 델리게이트 (선택/포커스 시 3D 볼록 테두리 제거)
+# =================================================================
+class FlatItemDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index):
+        opt = QStyleOptionViewItem(option)
+        opt.state &= ~QStyle.State_HasFocus
+        super().paint(painter, opt, index)
+
+# =================================================================
 # 파일 드롭 리스트 위젯
 # =================================================================
 class FileDropListWidget(QListWidget):
@@ -667,26 +902,129 @@ class FileDropListWidget(QListWidget):
         super().__init__(parent)
         self.setAcceptDrops(True)
         self.setSelectionMode(QListWidget.ExtendedSelection)
+        self.setItemDelegate(FlatItemDelegate(self))
         
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
         
-        self.normal_style = """
-            QListWidget { 
+        scrollbar_style = """
+            QScrollBar:horizontal {
+                border: none;
+                background: #F3F4F6;
+                height: 8px;
+                margin: 0px 2px 2px 2px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #D1D5DB;
+                min-width: 25px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #9CA3AF;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                width: 0px;
+                height: 0px;
+                background: none;
+                border: none;
+            }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+                background: none;
+            }
+            QScrollBar:vertical {
+                border: none;
+                background: #F3F4F6;
+                width: 8px;
+                margin: 2px 2px 2px 0px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical {
+                background: #D1D5DB;
+                min-height: 25px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #9CA3AF;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                width: 0px;
+                height: 0px;
+                background: none;
+                border: none;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
+            QScrollBar::corner {
+                background: transparent;
+            }
+        """
+
+        self.normal_style = f"""
+            QListWidget {{ 
                 border: 1px solid #d1d5db; 
                 background: white; 
                 border-radius: 4px; 
                 padding: 5px; 
                 color: #333; 
-            }
+                outline: none;
+            }}
+            QListWidget::item {{ 
+                border: none;
+                outline: none;
+                padding: 6px 8px;
+                border-radius: 4px;
+            }}
+            QListWidget::item:focus {{
+                border: none;
+                outline: none;
+            }}
+            QListWidget::item:selected {{ 
+                background-color: #FFECEC; 
+                color: #FF4B4B; 
+                border: none;
+                outline: none;
+            }}
+            QListWidget::item:selected:focus {{ 
+                background-color: #FFECEC; 
+                color: #FF4B4B; 
+                border: none;
+                outline: none;
+            }}
+            {scrollbar_style}
         """
 
-        self.active_style = """
-            QListWidget { 
+        self.active_style = f"""
+            QListWidget {{ 
                 border: 2px dashed #FB923C; /* 오렌지색 점선 */
                 background: #FFF7ED;        /* 아주 연한 오렌지색 배경 */
                 border-radius: 6px; 
-            }
+                outline: none;
+            }}
+            QListWidget::item {{ 
+                border: none;
+                outline: none;
+                padding: 6px 8px;
+                border-radius: 4px;
+            }}
+            QListWidget::item:focus {{
+                border: none;
+                outline: none;
+            }}
+            QListWidget::item:selected {{ 
+                background-color: #FFECEC; 
+                color: #FF4B4B; 
+                border: none;
+                outline: none;
+            }}
+            QListWidget::item:selected:focus {{ 
+                background-color: #FFECEC; 
+                color: #FF4B4B; 
+                border: none;
+                outline: none;
+            }}
+            {scrollbar_style}
         """
         self.setStyleSheet(self.normal_style)
 
@@ -707,32 +1045,100 @@ class FileDropListWidget(QListWidget):
 
         mw = self.window()
         try:
-            _, i_path, _ = mw.get_paths()
-            abs_i_path = os.path.abspath(i_path)
+            e_path, i_path, _ = mw.get_paths()
+            abs_i_path = os.path.abspath(i_path) if i_path else ""
         except Exception as e:
             print(f"경로 획득 실패: {e}")
             return
 
+        if not e_path:
+            return
+
+        # 1. episode_info.json 로드 (외부 참조 모드 메타데이터 확인)
+        info_file = os.path.join(e_path, "episode_info.json")
+        has_info = os.path.exists(info_file)
+        info_data = {}
+        external_images = []
+        is_external_mode = False
+        if has_info:
+            try:
+                with open(info_file, "r", encoding="utf-8") as f:
+                    info_data = json.load(f)
+                    if "external_images" in info_data:
+                        is_external_mode = True
+                        external_images = list(info_data.get("external_images", []))
+            except Exception as e:
+                print(f"episode_info.json 로드 실패: {e}")
+
+        # 설정이 원본 유지 모드인 경우에도 외부 참조 모드로 판정
+        if not getattr(config, 'COPY_IMAGES_TO_PROJECT', True):
+            is_external_mode = True
+
         deleted_count = 0
+        external_updated = False
+
         for item in selected_items:
             display_text = item.text()
             file_name = display_text.replace("📄", "").strip()
-            file_name = unicodedata.normalize('NFC', file_name)
-            full_path = os.path.join(abs_i_path, file_name)
+            norm_target_name = unicodedata.normalize('NFC', os.path.normcase(file_name))
 
-            print(f"DEBUG: 삭제 시도 경로 -> {full_path}")
+            stored_path = item.data(Qt.UserRole)
+            norm_stored_path = unicodedata.normalize('NFC', os.path.normcase(os.path.abspath(stored_path))) if stored_path else ""
 
-            if os.path.exists(full_path):
+            # (A) 외부 참조 모드인 경우:
+            # 컴퓨터의 원본 파일은 지우지 않고 안전하게 보존하며, 회차의 외부 참조 목록에서만 제거!
+            matched_external = None
+            if is_external_mode and external_images:
+                for ext_p in external_images:
+                    norm_ext_abs = unicodedata.normalize('NFC', os.path.normcase(os.path.abspath(ext_p)))
+                    norm_ext_base = unicodedata.normalize('NFC', os.path.normcase(os.path.basename(ext_p)))
+                    if norm_stored_path and norm_stored_path == norm_ext_abs:
+                        matched_external = ext_p
+                        break
+                    elif norm_target_name == norm_ext_base:
+                        matched_external = ext_p
+                        break
+
+            if matched_external:
+                external_images.remove(matched_external)
+                external_updated = True
+                deleted_count += 1
+                continue
+
+            # (B) 기본 복사 모드인 경우: images/ 폴더 안의 복사본 파일 직접 삭제
+            full_path = stored_path if stored_path and os.path.exists(stored_path) else os.path.join(abs_i_path, file_name)
+            if full_path and os.path.exists(full_path):
                 try:
                     os.remove(full_path)
                     deleted_count += 1
-                    self.takeItem(self.row(item))
                 except Exception as e:
                     print(f"삭제 실패 ({file_name}): {e}")
             else:
-                print(f"❌ 파일을 찾을 수 없습니다: {file_name}")
-                print(f"   ㄴ 상위 폴더 존재 여부: {os.path.exists(abs_i_path)}")
-        
+                # 파일명이 직접 일치하는 경우도 탐색
+                deleted_by_name = False
+                if abs_i_path and os.path.exists(abs_i_path):
+                    for f in os.listdir(abs_i_path):
+                        if unicodedata.normalize('NFC', os.path.normcase(f)) == norm_target_name:
+                            try:
+                                os.remove(os.path.join(abs_i_path, f))
+                                deleted_count += 1
+                                deleted_by_name = True
+                                break
+                            except Exception:
+                                pass
+                if not deleted_by_name:
+                    print(f"❌ 파일을 찾을 수 없습니다: {file_name}")
+
+        # 외부 참조 목록 갱신 저장
+        if external_updated:
+            info_data["external_images"] = external_images
+            try:
+                with open(info_file, "w", encoding="utf-8") as f:
+                    json.dump(info_data, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                print(f"episode_info.json 갱신 실패: {e}")
+
+        # 삭제 후 목록 및 뷰어 갱신
         if hasattr(mw, 'load_images'):
             mw.load_images()
         if hasattr(mw, 'load_data'):
@@ -742,15 +1148,28 @@ class FileDropListWidget(QListWidget):
             mw.toast.show_message(f"✨ {deleted_count}개의 파일 삭제 완료")
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Delete:
+        if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
             self.delete_selected_items()
+            event.accept()
         else:
             super().keyPressEvent(event)
 
     def show_context_menu(self, pos):
+        item = self.itemAt(pos)
+        if item and not item.isSelected():
+            self.clearSelection()
+            item.setSelected(True)
+            self.setCurrentItem(item)
+
+        selected_items = self.selectedItems()
+        if not selected_items:
+            return
+
         menu = QMenu(self)
         menu.setFont(QApplication.font())
-        delete_action = QAction(get_icon(config.ICON_DELETE), "선택한 파일 지우기", self)
+        count = len(selected_items)
+        del_label = f"선택한 파일 지우기 ({count}개)" if count > 1 else "선택한 파일 지우기"
+        delete_action = QAction(get_icon(config.ICON_DELETE), del_label, self)
         delete_action.triggered.connect(self.delete_selected_items)
         menu.addAction(delete_action)
         menu.exec(self.mapToGlobal(pos))

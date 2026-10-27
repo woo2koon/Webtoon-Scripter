@@ -1,6 +1,7 @@
 # widgets/dialogs.py
 import sys
 import os
+import json
 import re
 import difflib
 import time
@@ -17,13 +18,13 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QPoint, QSize, QMimeData, QByteArray, QTimer, QEvent, QPropertyAnimation, QEasingCurve, QRect
 from PySide6.QtGui import (
     QPixmap, QIcon, QDrag, QPainter, QColor, QPen, QFont, QFontMetrics, QAction, QKeySequence,
-    QTextCharFormat, QTextFormat, QTextCursor
+    QTextCharFormat, QTextFormat, QTextCursor, QCursor
 )
 
 import config
 from config import PROJECTS_DIR, STORAGE_DIR
-from utils import get_icon, get_colored_icon, get_colored_pixmap, open_path
-from .common import PopupItemDelegate, SingleClickLineEdit
+from utils import get_icon, get_colored_icon, get_colored_pixmap, open_path, natural_sort_key
+from .common import PopupItemDelegate, SingleClickLineEdit, ZoomBadge
 from .character import GlobalCharacterSettingsDialog
 from .message_box import CustomMessageBox
 
@@ -513,65 +514,81 @@ class PreferencesDialog(QDialog):
         path_row.addWidget(btn_browse_storage)
         box_layout.addLayout(path_row)
         
-        # 복구용 기본값 설정 링크 단추
-        btn_reset_storage = QPushButton("↩ 기본값(내 문서)으로 초기화")
+        # 복구용 기본값 설정 버튼 (눈에 잘 띄는 정돈된 버튼 스타일)
+        reset_row = QHBoxLayout()
+        btn_reset_storage = QPushButton("↩ 기본 경로로 초기화 (내 문서)")
+        btn_reset_storage.setFixedHeight(30)
         btn_reset_storage.setCursor(Qt.PointingHandCursor)
-        btn_reset_storage.setStyleSheet(f"QPushButton {{ text-align: left; color: #4B5563; border: none; background: transparent; font-size: 12px; text-decoration: underline; font-family: '{app_ff}'; }} QPushButton:hover {{ color: #FF5722; }}") # 폰트 크기 11px -> 12px로 1픽셀 상향 조정
+        btn_reset_storage.setStyleSheet(f"""
+            QPushButton {{ 
+                text-align: center; 
+                color: #4B5563; 
+                border: 1px solid #D1D5DB; 
+                background-color: white; 
+                border-radius: 6px; 
+                padding: 4px 12px;
+                font-size: 12px; 
+                font-family: '{app_ff}'; 
+            }} 
+            QPushButton:hover {{ 
+                background-color: #F3F4F6;
+                color: #FF5722; 
+                border-color: #FF5722;
+            }}
+            QPushButton:pressed {{
+                background-color: #E5E7EB;
+            }}
+        """)
         btn_reset_storage.clicked.connect(self.reset_storage_path)
-        box_layout.addWidget(btn_reset_storage)
+        reset_row.addWidget(btn_reset_storage)
+        reset_row.addStretch()
+        box_layout.addLayout(reset_row)
         
         storage_layout.addWidget(storage_box)
 
-        # 2. 이전 버전 데이터 가져오기 (별개 박스로 분리)
-        migration_box = QFrame()
-        migration_box.setStyleSheet("QFrame { background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; }")
-        mig_box_layout = QVBoxLayout(migration_box)
-        mig_box_layout.setContentsMargins(15, 15, 15, 15)
-        mig_box_layout.setSpacing(10)
+        # 2. 이미지 추가 시 처리 방식 (독립된 별도 카드 박스로 분리)
+        image_mode_box = QFrame()
+        image_mode_box.setStyleSheet("QFrame { background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; }")
+        img_box_layout = QVBoxLayout(image_mode_box)
+        img_box_layout.setContentsMargins(15, 15, 15, 15)
+        img_box_layout.setSpacing(10)
 
-        # 이전 버전 데이터 가져오기 (마이그레이션) 안내 및 버튼
-        lbl_mig_title = QLabel("이전 버전 데이터 가져오기")
-        lbl_mig_title.setStyleSheet(f"font-weight: bold; color: #374151; font-size: 13px; border: none; background: transparent; font-family: '{app_ff}';")
-        mig_box_layout.addWidget(lbl_mig_title)
+        lbl_img_mode_title = QLabel("이미지 추가 시 처리 방식")
+        lbl_img_mode_title.setStyleSheet(f"QLabel {{ font-size: 13px; font-weight: bold; color: #1F2937; border: none; background: transparent; font-family: '{app_ff}'; }}")
+        img_box_layout.addWidget(lbl_img_mode_title)
 
-        lbl_mig_desc = QLabel("이전 실행파일 버전(.exe)에 생성된 프로젝트 폴더(작품 및 회차 데이터가 모여있는 폴더) 데이터를\n안전하게 마이그레이션(가져오기) 합니다.")
-        lbl_mig_desc.setStyleSheet(f"color: #6B7280; font-size: 12px; border: none; background: transparent; font-family: '{app_ff}';")
-        mig_box_layout.addWidget(lbl_mig_desc)
+        is_copy_mode = getattr(config, 'COPY_IMAGES_TO_PROJECT', True)
 
-        btn_migrate = QPushButton("이전 버전 데이터 마이그레이션 실행...")
-        btn_migrate.setFixedHeight(36)
-        btn_migrate.setCursor(Qt.PointingHandCursor)
-        btn_migrate.setStyleSheet(f"""
-            QPushButton {{
-                background-color: white; 
-                border: 1px solid #D1D5DB; 
-                border-radius: 6px; 
-                color: #374151;
-                font-weight: bold; 
-                font-family: '{app_ff}'; 
-                font-size: 13px;
-                margin-top: 5px;
-            }} 
-            QPushButton:hover {{ 
-                background-color: #F9FAFB; 
-                border-color: #9CA3AF; 
-            }}
-            QPushButton:pressed {{
-                background-color: #F3F4F6;
-            }}
-        """)
-        
-        def run_migration():
-            main_win = self.parent()
-            if main_win and hasattr(main_win, 'migrate_old_projects'):
-                main_win.migrate_old_projects()
-            else:
-                CustomMessageBox.warning(self, "알림", "마이그레이션 기능을 실행할 수 없습니다.")
-                
-        btn_migrate.clicked.connect(run_migration)
-        mig_box_layout.addWidget(btn_migrate)
-        
-        storage_layout.addWidget(migration_box)
+        self.radio_copy_images = QRadioButton("프로젝트 폴더로 이미지 복사 (기본값)")
+        self.radio_copy_images.setChecked(is_copy_mode)
+        self.radio_copy_images.setStyleSheet(f"QRadioButton {{ font-size: 12px; font-weight: bold; color: #374151; font-family: '{app_ff}'; margin-top: 4px; }}")
+        img_box_layout.addWidget(self.radio_copy_images)
+
+        lbl_desc_copy = QLabel("  • 원본을 프로젝트 내부로 안전하게 복사하여 파일 이동/삭제 시에도 대본을 온전히 보존합니다.")
+        lbl_desc_copy.setStyleSheet(f"color: #6B7280; font-size: 11px; margin-bottom: 6px; border: none; background: transparent; font-family: '{app_ff}';")
+        img_box_layout.addWidget(lbl_desc_copy)
+
+        self.radio_keep_origin = QRadioButton("원본 디렉토리 유지 (경로 참조)")
+        self.radio_keep_origin.setChecked(not is_copy_mode)
+        self.radio_keep_origin.setStyleSheet(f"QRadioButton {{ font-size: 12px; font-weight: bold; color: #374151; font-family: '{app_ff}'; }}")
+        img_box_layout.addWidget(self.radio_keep_origin)
+
+        lbl_desc_keep = QLabel("  • 복사하지 않고 원본 위치를 직접 참조하여 디스크 용량을 절약하고 초고속으로 회차를 생성합니다.")
+        lbl_desc_keep.setStyleSheet(f"color: #6B7280; font-size: 11px; margin-bottom: 2px; border: none; background: transparent; font-family: '{app_ff}';")
+        img_box_layout.addWidget(lbl_desc_keep)
+
+        # 라디오 버튼 그룹 설정
+        self.group_image_mode = QButtonGroup(self)
+        self.group_image_mode.addButton(self.radio_copy_images)
+        self.group_image_mode.addButton(self.radio_keep_origin)
+
+        def on_image_mode_changed():
+            config.COPY_IMAGES_TO_PROJECT = self.radio_copy_images.isChecked()
+            config.save_settings()
+
+        self.radio_copy_images.toggled.connect(on_image_mode_changed)
+
+        storage_layout.addWidget(image_mode_box)
         storage_layout.addStretch()
         self.pages.addWidget(self.page_storage)
         
@@ -2458,6 +2475,15 @@ class ClearTypeHeaderView(QHeaderView):
         self._text_color = QColor(text_color)
         self._border_color = QColor("#E5E7EB")
 
+    def setSectionFont(self, font):
+        self._section_font = font
+        self.update()
+
+    def setFont(self, font):
+        super().setFont(font)
+        self._section_font = font
+        self.update()
+
     def paintSection(self, painter, rect, logical_index):
         painter.save()
         # 배경 채우기
@@ -2955,6 +2981,34 @@ class EpisodeItemWidget(QWidget):
                 font-weight: bold;
             """
 
+def get_episode_images(epi_dir):
+    """회차 디렉토리 내의 이미지 전체 경로 목록을 반환합니다. (외부 참조 및 images/ 폴더 모두 지원)"""
+    if not epi_dir or not os.path.exists(epi_dir):
+        return []
+    
+    # 1. 외부 이미지 참조 메타데이터(episode_info.json) 확인
+    info_file = os.path.join(epi_dir, "episode_info.json")
+    if os.path.exists(info_file):
+        try:
+            with open(info_file, "r", encoding="utf-8") as f:
+                info_data = json.load(f)
+                if "external_images" in info_data:
+                    external_files = info_data.get("external_images", [])
+                    valid_external = [p for p in external_files if os.path.exists(p)]
+                    return sorted(valid_external, key=natural_sort_key)
+        except Exception:
+            pass
+
+    # 2. 기본값: images/ 폴더
+    img_dir = os.path.join(epi_dir, "images")
+    if os.path.exists(img_dir):
+        valid_exts = {'.png', '.jpg', '.jpeg', '.webp'}
+        files = [os.path.join(img_dir, f) for f in os.listdir(img_dir) 
+                 if os.path.splitext(f.lower())[1] in valid_exts and not f.startswith('.')]
+        return sorted(files, key=natural_sort_key)
+    
+    return []
+
 # =================================================================
 # 이미지 보기 다이얼로그 (ImageViewerDialog)
 # =================================================================
@@ -2970,6 +3024,7 @@ class ImageViewerDialog(QDialog):
         
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
         self.scroll_area.setStyleSheet("""
             QScrollArea { background-color: #F9FAFB; border: none; }
             QScrollBar:vertical {
@@ -2992,9 +3047,38 @@ class ImageViewerDialog(QDialog):
             QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
                 background: none;
             }
+            QScrollBar:horizontal {
+                border: none;
+                background: #F3F4F6;
+                height: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #D1D5DB;
+                min-width: 20px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #9CA3AF;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                width: 0px;
+            }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+                background: none;
+            }
         """)
         self.scroll_area.verticalScrollBar().setSingleStep(150)
-        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.zoom_badge = ZoomBadge(self.scroll_area.viewport())
+        self.zoom_factor = 1.0
+        self.min_zoom = 1.0  # 100% 이하로는 축소 불가
+        self.max_zoom = 5.0
+        
+        self._is_panning = False
+        self._pan_start_pos = QPoint()
+        self._pan_start_h = 0
+        self._pan_start_v = 0
         
         self.image_labels = []
         self.original_pixmaps = []
@@ -3009,36 +3093,549 @@ class ImageViewerDialog(QDialog):
         
         self.scroll_area.setWidget(self.content_widget)
         layout.addWidget(self.scroll_area)
+        self.scroll_area.viewport().installEventFilter(self)
 
     def load_images(self, epi_dir):
-        img_dir = os.path.join(epi_dir, "images")
-        if not os.path.exists(img_dir):
+        files = get_episode_images(epi_dir)
+        if not files:
+            empty_lbl = QLabel("등록된 이미지가 없습니다.")
+            empty_lbl.setAlignment(Qt.AlignCenter)
+            empty_lbl.setStyleSheet("color: #9CA3AF; font-size: 15px; padding: 40px;")
+            self.content_layout.addWidget(empty_lbl)
             return
             
-        valid_exts = {'.png', '.jpg', '.jpeg'}
-        files = sorted([f for f in os.listdir(img_dir) if os.path.splitext(f.lower())[1] in valid_exts])
-        
-        for f in files:
+        for f_path in files:
             lbl = QLabel()
             lbl.setAlignment(Qt.AlignCenter)
-            pixmap = QPixmap(os.path.join(img_dir, f))
+            pixmap = QPixmap(f_path)
             if not pixmap.isNull():
                 self.image_labels.append(lbl)
                 self.original_pixmaps.append(pixmap)
                 self.content_layout.addWidget(lbl)
-                
-        self.scroll_area.viewport().installEventFilter(self)
 
     def eventFilter(self, obj, event):
-        if obj == self.scroll_area.viewport() and event.type() == QEvent.Resize:
-            self.adjust_images()
+        if obj == self.scroll_area.viewport():
+            if event.type() == QEvent.Resize:
+                self.adjust_images()
+                if hasattr(self, 'zoom_badge') and self.zoom_badge.isVisible():
+                    x = max(10, self.scroll_area.viewport().width() - self.zoom_badge.width() - 20)
+                    self.zoom_badge.move(x, 20)
+            elif event.type() == QEvent.MouseButtonPress:
+                if event.button() == Qt.MiddleButton:
+                    self._is_panning = True
+                    self._pan_start_pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
+                    self._pan_start_h = self.scroll_area.horizontalScrollBar().value()
+                    self._pan_start_v = self.scroll_area.verticalScrollBar().value()
+                    self.scroll_area.viewport().setCursor(Qt.ClosedHandCursor)
+                    return True
+            elif event.type() == QEvent.MouseMove:
+                if self._is_panning:
+                    if not (event.buttons() & Qt.MiddleButton):
+                        self._is_panning = False
+                        self.scroll_area.viewport().unsetCursor()
+                    else:
+                        cur_pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
+                        delta = cur_pos - self._pan_start_pos
+                        self.scroll_area.horizontalScrollBar().setValue(self._pan_start_h - delta.x())
+                        self.scroll_area.verticalScrollBar().setValue(self._pan_start_v - delta.y())
+                        return True
+            elif event.type() == QEvent.MouseButtonRelease:
+                if event.button() == Qt.MiddleButton and self._is_panning:
+                    self._is_panning = False
+                    self.scroll_area.viewport().unsetCursor()
+                    return True
+            elif event.type() == QEvent.Wheel:
+                modifiers = event.modifiers()
+                is_ctrl_or_cmd = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier))
+                if is_ctrl_or_cmd:
+                    delta = event.angleDelta().y()
+                    if delta != 0:
+                        if hasattr(event, 'globalPosition'):
+                            g_pos = event.globalPosition().toPoint()
+                        else:
+                            g_pos = QCursor.pos()
+                        pos = self.scroll_area.viewport().mapFromGlobal(g_pos)
+                        if delta > 0:
+                            self.zoom_in(pos)
+                        else:
+                            self.zoom_out(pos)
+                        return True
+                elif modifiers & Qt.ShiftModifier:
+                    delta = event.angleDelta().y() or event.angleDelta().x()
+                    hbar = self.scroll_area.horizontalScrollBar()
+                    hbar.setValue(hbar.value() - int(delta))
+                    return True
         return super().eventFilter(obj, event)
 
-    def adjust_images(self):
-        target_width = self.scroll_area.viewport().width()
-        if target_width > 0:
-            for lbl, pixmap in zip(self.image_labels, self.original_pixmaps):
-                lbl.setPixmap(pixmap.scaledToWidth(target_width, Qt.SmoothTransformation))
+    def zoom_in(self, anchor_pos=None):
+        new_factor = min(self.max_zoom, self.zoom_factor * 1.15)
+        self.set_zoom_factor(new_factor, anchor_pos)
+
+    def zoom_out(self, anchor_pos=None):
+        if self.zoom_factor <= 1.0:
+            return  # 100% 이하로는 축소 불가
+        new_factor = max(1.0, self.zoom_factor / 1.15)
+        if abs(new_factor - 1.0) < 0.03:
+            new_factor = 1.0
+        self.set_zoom_factor(new_factor, anchor_pos)
+
+    def reset_zoom(self):
+        self.set_zoom_factor(1.0)
+
+    def set_zoom_factor(self, factor, anchor_pos=None):
+        factor = max(self.min_zoom, min(self.max_zoom, factor))
+        if abs(factor - 1.0) < 0.01:
+            factor = 1.0
+        if factor == self.zoom_factor and factor == 1.0:
+            return
+        self.zoom_factor = factor
+        self.adjust_images(anchor_pos)
+        pct = int(round(self.zoom_factor * 100))
+        label_text = f"{pct}% (화면 맞춤)" if self.zoom_factor == 1.0 else f"{pct}%"
+        self.zoom_badge.show_zoom(label_text, self.scroll_area.viewport().width())
+
+    def adjust_images(self, anchor_pos=None):
+        if not self.image_labels:
+            return
+        vp = self.scroll_area.viewport()
+        vp_w = vp.width()
+        vp_h = vp.height()
+        if vp_w <= 0:
+            return
+
+        if anchor_pos is None:
+            anchor_pos = vp.mapFromGlobal(QCursor.pos())
+        if not vp.rect().contains(anchor_pos):
+            anchor_pos = QPoint(vp_w // 2, vp_h // 2)
+
+        old_w = self.content_widget.width()
+        old_h = self.content_widget.height()
+        pt_in_content = self.content_widget.mapFrom(vp, anchor_pos)
+        ratio_x = (pt_in_content.x() / old_w) if old_w > 0 else 0.5
+        ratio_y = (pt_in_content.y() / old_h) if old_h > 0 else 0.5
+
+        if self.zoom_factor == 1.0:
+            self.content_widget.setMinimumWidth(0)
+            self.content_widget.setMaximumWidth(16777215)
+            self.content_widget.resize(vp_w, self.content_widget.height())
+            target_width = vp_w
+        else:
+            target_width = int(vp_w * self.zoom_factor)
+            self.content_widget.setFixedWidth(target_width)
+
+        for lbl, pixmap in zip(self.image_labels, self.original_pixmaps):
+            lbl.setPixmap(pixmap.scaledToWidth(target_width, Qt.SmoothTransformation))
+
+        self.content_widget.adjustSize()
+
+        new_w = target_width
+        new_h = int(old_h * (target_width / old_w)) if old_w > 0 else self.content_widget.height()
+
+        new_pt_x = ratio_x * new_w
+        new_pt_y = ratio_y * new_h
+
+        new_hbar = int(new_pt_x - anchor_pos.x()) if new_w > vp_w else 0
+        new_vbar = int(new_pt_y - anchor_pos.y())
+
+        def apply_scroll():
+            self.scroll_area.horizontalScrollBar().setValue(new_hbar)
+            self.scroll_area.verticalScrollBar().setValue(new_vbar)
+
+        QTimer.singleShot(0, apply_scroll)
+
+    def keyPressEvent(self, event):
+        modifiers = event.modifiers()
+        is_ctrl_or_cmd = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier))
+        if is_ctrl_or_cmd:
+            if event.key() in (Qt.Key_0, Qt.Key_ParenRight):
+                self.reset_zoom()
+                event.accept()
+                return
+            elif event.key() in (Qt.Key_Plus, Qt.Key_Equal):
+                self.zoom_in()
+                event.accept()
+                return
+            elif event.key() in (Qt.Key_Minus, Qt.Key_Underscore):
+                self.zoom_out()
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
+# =================================================================
+# 미디어 다시 연결 다이얼로그 (RelinkMediaDialog - Premiere Link Media 방식)
+# =================================================================
+class RelinkMediaDialog(QDialog):
+    def __init__(self, epi_dir, parent=None):
+        super().__init__(parent)
+        self.epi_dir = epi_dir
+        ep_name = os.path.basename(epi_dir)
+        self.setWindowTitle(f"미디어 다시 연결 (Link Media) - {ep_name}")
+        self.resize(960, 600)
+        self.setWindowFlags(Qt.Window | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
+        self.setFont(QFont("Pretendard", 13))
+        
+        # 시스템 기본 폰트 패밀리 안전 추출 (쉼표 나열 CSS 방지)
+        self.app_ff = "Pretendard"
+        
+        # 메타데이터 로드
+        self.info_file = os.path.join(epi_dir, "episode_info.json")
+        self.info_data = {}
+        self.all_external_images = []
+        self.missing_images = []
+        self.matched_mapping = {} # {old_path: new_path}
+        
+        self.load_metadata()
+        self.init_ui()
+        self.populate_table()
+
+    def load_metadata(self):
+        if os.path.exists(self.info_file):
+            try:
+                with open(self.info_file, "r", encoding="utf-8") as f:
+                    self.info_data = json.load(f)
+                    self.all_external_images = self.info_data.get("external_images", [])
+            except Exception as e:
+                print(f"Relink dialog load error: {e}")
+                self.all_external_images = []
+        
+        self.missing_images = [p for p in self.all_external_images if not os.path.exists(p)]
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 22, 22, 22)
+        layout.setSpacing(16)
+
+        # 1. 상단 타이틀 & 설명
+        top_box = QVBoxLayout()
+        top_box.setSpacing(8)
+        
+        lbl_title = QLabel("누락된 미디어 파일 다시 연결 (Link Missing Media)")
+        title_font = QFont("Pretendard", 16)
+        title_font.setBold(True)
+        title_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        title_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        lbl_title.setFont(title_font)
+        lbl_title.setStyleSheet("color: #1F2937;")
+        top_box.addWidget(lbl_title)
+
+        lbl_desc = QLabel(
+            "목록에서 누락된 파일을 선택한 후 [위치 찾기 (Locate)...] 버튼을 눌러 이동된 원본 파일을 지정하세요.\n"
+            "선택한 폴더 안에 동일한 파일명을 가진 다른 누락된 파일이 있다면 자동으로 일괄 연결됩니다."
+        )
+        desc_font = QFont("Pretendard", 12)
+        desc_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        desc_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        lbl_desc.setFont(desc_font)
+        lbl_desc.setStyleSheet("color: #4B5563;")
+        top_box.addWidget(lbl_desc)
+        layout.addLayout(top_box)
+
+        # 2. 미디어 목록 테이블
+        self.table = QTableWidget(0, 3)
+        self.table.setHorizontalHeaderLabels(["파일명", "상태", "경로"])
+        
+        # 헤더 폰트 설정 (기존 10pt에서 2포인트 키운 12pt Pretendard Bold)
+        app_font = QApplication.font()
+        f_family = app_font.family()
+        if not f_family or f_family == "sans-serif":
+            f_family = "Pretendard"
+        header_font = QFont(f_family, 12)
+        header_font.setBold(True)
+        header_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        header_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        if platform.system() == "Windows":
+            header_font.setWeight(QFont.Weight.Bold)
+
+        # 프로그램 내 ScriptMergeDialog 등과 동일하게 ClearTypeHeaderView를 적용하여
+        # Windows 스타일시트 적용 시 헤더 폰트가 깨지는 Qt 고질 버그 해결
+        header = ClearTypeHeaderView(Qt.Horizontal, header_font, bg_color="#F9FAFB", text_color="#1F2937", parent=self.table)
+        self.table.setHorizontalHeader(header)
+        header.setFixedHeight(42)
+
+        header.setSectionResizeMode(0, QHeaderView.Interactive)
+        self.table.setColumnWidth(0, 280) # 파일명 기본 너비
+        header.setSectionResizeMode(1, QHeaderView.Interactive)
+        self.table.setColumnWidth(1, 170) # 상태 열 고정 너비 (말줄임표 방지)
+        header.setSectionResizeMode(2, QHeaderView.Stretch) # 경로 가변 확장
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setFocusPolicy(Qt.NoFocus) # 클릭 시 3D 볼록 테두리 효과 완전 제거
+        self.table.setShowGrid(False) # 플랫 구분선 사용
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(38) # 본문 행 높이 기존 크기로 복원
+        self.table.setStyleSheet("""
+            QTableWidget {
+                background-color: white;
+                border: 1px solid #D1D5DB;
+                border-radius: 8px;
+                outline: none;
+            }
+            QTableWidget::item {
+                padding: 8px 14px;
+                border: none;
+                border-bottom: 1px solid #F3F4F6;
+                outline: none;
+                color: #374151;
+            }
+            QTableWidget::item:selected {
+                background-color: #EFF6FF;
+                border: none;
+                outline: none;
+            }
+            QTableWidget::item:focus {
+                border: none;
+                outline: none;
+            }
+        """)
+        self.table.itemDoubleClicked.connect(lambda item: self.locate_selected())
+        layout.addWidget(self.table, 1)
+
+        # 3. 하단 옵션
+        self.check_auto_match = QCheckBox("동일한 폴더 내의 다른 일치하는 파일 자동 일괄 연결 (권장)")
+        self.check_auto_match.setChecked(True)
+        check_font = QFont("Pretendard", 13)
+        check_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        check_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        if platform.system() == "Windows":
+            check_font.setWeight(QFont.Weight.Medium)
+        self.check_auto_match.setFont(check_font)
+        self.check_auto_match.setStyleSheet("color: #374151;")
+        layout.addWidget(self.check_auto_match)
+
+        # 4. 버튼 영역
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(12)
+
+        btn_font = QFont("Pretendard", 13)
+        btn_font.setBold(True)
+        btn_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        btn_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        if platform.system() == "Windows":
+            btn_font.setWeight(QFont.Weight.DemiBold)
+
+        # [위치 찾기 (Locate)] 버튼
+        self.btn_locate = QPushButton("📂 위치 찾기 (Locate)...")
+        self.btn_locate.setFixedHeight(44)
+        self.btn_locate.setFont(btn_font)
+        self.btn_locate.setCursor(Qt.PointingHandCursor)
+        self.btn_locate.setStyleSheet("""
+            QPushButton {
+                background-color: #2563EB;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 0 20px;
+            }
+            QPushButton:hover {
+                background-color: #1D4ED8;
+            }
+            QPushButton:pressed {
+                background-color: #1E40AF;
+            }
+        """)
+        self.btn_locate.clicked.connect(self.locate_selected)
+        bottom_row.addWidget(self.btn_locate)
+
+        bottom_row.addStretch()
+
+        btn_cancel = QPushButton("오프라인 유지 (취소)")
+        btn_cancel.setFixedHeight(44)
+        btn_cancel.setFont(btn_font)
+        btn_cancel.setCursor(Qt.PointingHandCursor)
+        btn_cancel.setStyleSheet("""
+            QPushButton {
+                background-color: white;
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                color: #4B5563;
+                padding: 0 18px;
+            }
+            QPushButton:hover {
+                background-color: #F9FAFB;
+                border-color: #9CA3AF;
+            }
+        """)
+        btn_cancel.clicked.connect(self.reject)
+        bottom_row.addWidget(btn_cancel)
+
+        self.btn_accept = QPushButton("연결 완료 (확인)")
+        self.btn_accept.setFixedHeight(44)
+        self.btn_accept.setFont(btn_font)
+        self.btn_accept.setCursor(Qt.PointingHandCursor)
+        self.btn_accept.setStyleSheet("""
+            QPushButton {
+                background-color: #FF5722;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 0 22px;
+            }
+            QPushButton:hover {
+                background-color: #E64A19;
+            }
+        """)
+        self.btn_accept.clicked.connect(self.save_and_accept)
+        bottom_row.addWidget(self.btn_accept)
+
+        layout.addLayout(bottom_row)
+
+    def populate_table(self):
+        self.table.setRowCount(0)
+        self.row_data_map = {}
+        
+        # 본문 셀 폰트: 기존 방식(10pt)으로 복원
+        cell_font = QFont(QApplication.font())
+        cell_font.setPointSize(10)
+        cell_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        cell_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        if platform.system() == "Windows":
+            cell_font.setWeight(QFont.Weight.Medium)
+
+        for i, old_path in enumerate(self.all_external_images):
+            self.table.insertRow(i)
+            self.row_data_map[i] = old_path
+            base_name = os.path.basename(old_path)
+            
+            item_name = QTableWidgetItem(f" {base_name}")
+            item_name.setIcon(get_icon(config.ICON_FILE))
+            item_name.setFont(cell_font)
+            item_name.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            self.table.setItem(i, 0, item_name)
+
+            if old_path in self.matched_mapping:
+                new_path = self.matched_mapping[old_path]
+                item_status = QTableWidgetItem("🟢 연결됨 (Matched)")
+                item_status.setForeground(QColor("#059669"))
+                item_path = QTableWidgetItem(new_path)
+                item_path.setForeground(QColor("#059669"))
+            elif os.path.exists(old_path):
+                item_status = QTableWidgetItem("🟢 정상 (Online)")
+                item_status.setForeground(QColor("#10B981"))
+                item_path = QTableWidgetItem(old_path)
+                item_path.setForeground(QColor("#6B7280"))
+            else:
+                item_status = QTableWidgetItem("🔴 누락됨 (Missing)")
+                item_status.setForeground(QColor("#DC2626"))
+                item_path = QTableWidgetItem(old_path)
+                item_path.setForeground(QColor("#DC2626"))
+
+            item_status.setFont(cell_font)
+            item_status.setTextAlignment(Qt.AlignCenter)
+            item_path.setFont(cell_font)
+            item_path.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+            self.table.setItem(i, 1, item_status)
+            self.table.setItem(i, 2, item_path)
+
+        # 상태 열 너비 160px 재확인
+        self.table.setColumnWidth(1, 160)
+
+        for row in range(self.table.rowCount()):
+            old_p = self.row_data_map.get(row)
+            if old_p and not os.path.exists(old_p) and old_p not in self.matched_mapping:
+                self.table.selectRow(row)
+                break
+
+    def locate_selected(self):
+        current_row = self.table.currentRow()
+        if current_row < 0:
+            for row in range(self.table.rowCount()):
+                old_p = self.row_data_map.get(row)
+                if old_p and not os.path.exists(old_p) and old_p not in self.matched_mapping:
+                    current_row = row
+                    self.table.selectRow(row)
+                    break
+
+        if current_row < 0:
+            CustomMessageBox.information(self, "알림", "모든 이미지가 이미 정상 연결되어 있습니다.")
+            return
+
+        old_path = self.row_data_map[current_row]
+        base_name = os.path.basename(old_path)
+        ext = os.path.splitext(base_name)[1].lower()
+
+        fallback = os.path.join(os.path.expanduser("~"), "Desktop")
+        default_dir = config.get_initial_dir(fallback)
+
+        filter_str = f"Target Image (*{ext});;All Images (*.png *.jpg *.jpeg *.webp);;All Files (*.*)"
+        selected_file, _ = QFileDialog.getOpenFileName(
+            self,
+            f"'{base_name}' 파일 위치 찾기 (Locate)",
+            os.path.join(default_dir, base_name),
+            filter_str
+        )
+
+        if not selected_file:
+            return
+
+        new_dir = os.path.dirname(selected_file)
+        config.update_last_save_dir(new_dir)
+
+        # 1. 선택한 파일 매칭
+        self.matched_mapping[old_path] = selected_file
+        matched_batch_count = 1
+
+        # 2. 동일 폴더 내 다른 누락 파일 자동 매칭
+        if self.check_auto_match.isChecked():
+            valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
+            new_file_map = {}
+            for file in os.listdir(new_dir):
+                full_p = os.path.join(new_dir, file)
+                if os.path.isfile(full_p) and file.lower().endswith(valid_exts) and not file.startswith('.'):
+                    new_file_map[os.path.normcase(file)] = full_p
+
+            for p in self.all_external_images:
+                if p not in self.matched_mapping and not os.path.exists(p):
+                    b_name = os.path.basename(p)
+                    norm_k = os.path.normcase(b_name)
+                    if norm_k in new_file_map:
+                        self.matched_mapping[p] = new_file_map[norm_k]
+                        matched_batch_count += 1
+
+        self.populate_table()
+
+        remaining_missing = [p for p in self.all_external_images if not os.path.exists(p) and p not in self.matched_mapping]
+        if not remaining_missing:
+            reply = CustomMessageBox.question(
+                self,
+                "리링크 완료",
+                f"✅ 모든 누락된 파일({matched_batch_count}개)이 성공적으로 연결되었습니다!\n\n지금 바로 적용하시겠습니까?",
+                [CustomMessageBox.Yes, CustomMessageBox.No]
+            )
+            if reply == CustomMessageBox.Yes:
+                self.save_and_accept()
+        else:
+            CustomMessageBox.information(
+                self,
+                "부분 연결 완료",
+                f"선택한 폴더에서 {matched_batch_count}개의 파일을 찾아 연결했습니다.\n"
+                f"아직 {len(remaining_missing)}개의 파일이 누락되어 있습니다."
+            )
+
+    def save_and_accept(self):
+        if not self.matched_mapping:
+            self.accept()
+            return
+
+        updated_images = []
+        for p in self.all_external_images:
+            if p in self.matched_mapping:
+                updated_images.append(self.matched_mapping[p])
+            else:
+                updated_images.append(p)
+
+        updated_images = sorted(list(dict.fromkeys(updated_images)), key=natural_sort_key)
+        self.info_data["external_images"] = updated_images
+
+        try:
+            with open(self.info_file, "w", encoding="utf-8") as f:
+                json.dump(self.info_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            CustomMessageBox.warning(self, "오류", f"메타데이터 저장 실패: {e}")
+            return
+
+        self.accept()
 
 # =================================================================
 # 작품 및 회차 관리 다이얼로그 (ProjectManagementDialog)
@@ -3295,9 +3892,8 @@ class ProjectManagementDialog(QDialog):
             
             for epi in episodes:
                 epi_dir = os.path.join(t_path, epi)
-                img_path = os.path.join(epi_dir, "images")
-                
-                has_images = os.path.exists(img_path) and os.listdir(img_path)
+                epi_images = get_episode_images(epi_dir)
+                has_images = len(epi_images) > 0
                 has_txt = os.path.exists(os.path.join(epi_dir, "script.txt"))
                 has_csv = os.path.exists(os.path.join(epi_dir, "script_data.csv"))
                 
@@ -3427,6 +4023,24 @@ class ProjectManagementDialog(QDialog):
         action_open_folder = menu.addAction(get_icon(config.ICON_FOLDER), "폴더 열기")
         action_view_image = menu.addAction(get_icon(config.ICON_FILE), "이미지 보기")
         action_view_image.setEnabled(not is_multiple)
+
+        # 미디어 리링크 메뉴 (외부 참조 이미지가 있는 경우 노출)
+        action_relink = None
+        has_external_images = False
+        if not is_multiple and len(selected_items) == 1:
+            epi_dir = os.path.join(PROJECTS_DIR, title, epi_names[0])
+            info_file = os.path.join(epi_dir, "episode_info.json")
+            if os.path.exists(info_file):
+                try:
+                    with open(info_file, "r", encoding="utf-8") as f:
+                        info_data = json.load(f)
+                        if info_data.get("external_images"):
+                            has_external_images = True
+                except Exception:
+                    pass
+
+        if has_external_images:
+            action_relink = menu.addAction(get_icon(config.ICON_FOLDER), "🔗 미디어 리링크 (경로 재연결)...")
         
         menu.addSeparator()
         txt_label = f"일괄 텍스트 저장 ({count}개)" if is_multiple else "텍스트 파일 저장"
@@ -3436,14 +4050,19 @@ class ProjectManagementDialog(QDialog):
         action_save_excel = menu.addAction(get_icon(config.ICON_EXCEL), excel_label)
         
         has_ready = False
+        has_script = False
         for item in selected_items:
             status = item.data(Qt.UserRole + 1)
+            name = item.data(Qt.UserRole)
+            epi_dir = os.path.join(PROJECTS_DIR, title, name)
+            if os.path.exists(os.path.join(epi_dir, "script.txt")) or os.path.exists(os.path.join(epi_dir, "script_data.csv")):
+                has_script = True
             if status and status != "대기중":
                 has_ready = True
-                break
         
-        action_save_text.setEnabled(has_ready)
-        action_save_excel.setEnabled(has_ready)
+        # 대본이 존재하면 이미지가 유실되었어도 텍스트/엑셀 저장을 허용
+        action_save_text.setEnabled(has_script or has_ready)
+        action_save_excel.setEnabled(has_script or has_ready)
         action_view_image.setEnabled(not is_multiple and has_ready)
         
         menu.addSeparator()
@@ -3461,12 +4080,26 @@ class ProjectManagementDialog(QDialog):
             epi_dir = os.path.join(PROJECTS_DIR, title, epi_names[0])
             dialog = ImageViewerDialog(epi_dir, self)
             dialog.exec()
+        elif action_relink and action == action_relink:
+            self.relink_episode(title, epi_names[0])
         elif action == action_save_text:
             self.batch_save_text()
         elif action == action_save_excel:
             self.batch_save_excel()
         elif action == action_delete:
             self.delete_episode()
+
+    def relink_episode(self, title, ep_name):
+        """작품 관리 창에서 특정 회차의 미디어 리링크(Link Media) 브라우저를 실행합니다."""
+        epi_dir = os.path.join(PROJECTS_DIR, title, ep_name)
+        dialog = RelinkMediaDialog(epi_dir, self)
+        if dialog.exec() == QDialog.Accepted:
+            self.load_episodes(title)
+            main_win = self.parent()
+            if main_win and hasattr(main_win, 'current_episode') and main_win.current_episode == ep_name:
+                if hasattr(main_win, 'load_images'):
+                    main_win.load_images()
+
 
     def delete_episode(self):
         title_item = self.list_titles.currentItem()

@@ -213,13 +213,15 @@ TAB_ORDER = ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"]
 PARTIAL_OCR_ROUTE_MODE = 0
 OCR_ENGINE = "vision" # [신규 추가] OCR 분석 엔진 ("vision" 또는 "gemini")
 GEMINI_MODEL = "gemini-3.1-flash-lite" # 제미나이 분석 모델 고정 (초경량/고속)
+COPY_IMAGES_TO_PROJECT = True # [신규 추가] 회차 이미지 추가 시 프로젝트 폴더로 직접 복사 여부 (False: 원본 경로 참조)
 
 def load_settings():
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST, PARTIAL_OCR_ROUTE_MODE, OCR_ENGINE, GEMINI_MODEL
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST, PARTIAL_OCR_ROUTE_MODE, OCR_ENGINE, GEMINI_MODEL, COPY_IMAGES_TO_PROJECT
     IS_SIMPLE_MODE = False
     PARTIAL_OCR_ROUTE_MODE = 0
     OCR_ENGINE = "vision"
     GEMINI_MODEL = "gemini-3.1-flash-lite"
+    COPY_IMAGES_TO_PROJECT = True
     TAB_ORDER = ["Step 1. 텍스트", "Step 2. 캐릭터", "Step 3. 배정"]
     
     # 1. 일단 하드코딩된 키로 초기화
@@ -239,6 +241,7 @@ def load_settings():
                 PARTIAL_OCR_ROUTE_MODE = data.get("partial_ocr_route_mode", 0)
                 OCR_ENGINE = data.get("ocr_engine", "vision")
                 GEMINI_MODEL = data.get("gemini_model", "gemini-3.1-flash-lite")
+                COPY_IMAGES_TO_PROJECT = data.get("copy_images_to_project", True)
                 
                 if "presets" in data and isinstance(data["presets"], dict):
                     loaded_presets = data["presets"]
@@ -321,7 +324,7 @@ def load_settings():
         AI_API_KEY = OCR_API_KEY
 
 def save_settings(presets=None, active_name=None, is_simple_mode=None):
-    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST, PARTIAL_OCR_ROUTE_MODE, OCR_ENGINE, GEMINI_MODEL
+    global OCR_API_KEY, AI_API_KEY, API_PRESETS, ACTIVE_PRESET_NAME, IS_SIMPLE_MODE, IDIOMS, LAST_SAVE_DIR, AVATAR_SIZE_ALL, AVATAR_SIZE_CURRENT, TEXT_ZOOM_STEP, IDIOM_VIEWER_POS, IDIOM_VIEWER_SIZE, CHARACTER_VIEWER_POS, CHARACTER_VIEWER_SIZE, MAIN_WINDOW_POS, MAIN_WINDOW_SIZE, TAB_ORDER, MIGRATION_PROMPTED, APP_VERSION_LAST, PARTIAL_OCR_ROUTE_MODE, OCR_ENGINE, GEMINI_MODEL, COPY_IMAGES_TO_PROJECT
     
     if presets is not None:
         API_PRESETS = presets
@@ -357,7 +360,8 @@ def save_settings(presets=None, active_name=None, is_simple_mode=None):
         "app_version_last": APP_VERSION_LAST,
         "partial_ocr_route_mode": PARTIAL_OCR_ROUTE_MODE,
         "ocr_engine": OCR_ENGINE,
-        "gemini_model": GEMINI_MODEL
+        "gemini_model": GEMINI_MODEL,
+        "copy_images_to_project": COPY_IMAGES_TO_PROJECT
     }
     try:
         print(f"[DEBUG CONFIG] Saving settings to: {SETTINGS_FILE}")
@@ -546,16 +550,24 @@ QPushButton#BlackBtn:hover { background-color: #000000; }
 QTabWidget::pane { border: 1px solid #e5e7eb; border-radius: 4px; top: -1px; }
 QTabBar::tab { background: transparent; border-bottom: 3px solid transparent; padding: 10px 16px; font-weight: 600; font-size: 17px; color: #888; margin-right: 4px; }
 QTabBar::tab:selected { color: #ff4b4b; border-bottom: 3px solid #ff4b4b; }
-QListWidget { border: 1px solid #e0e0e0; border-radius: 4px; background-color: #ffffff; padding: 5px; }
-QListWidget::item { padding: 8px; border-bottom: 1px solid #f0f0f0; color: #333; }
-QListWidget::item:selected { background-color: #ffecec; color: #ff4b4b; border: none; }
+QListWidget { border: 1px solid #e0e0e0; border-radius: 4px; background-color: #ffffff; padding: 5px; outline: none; }
+QListWidget::item { padding: 8px; border-bottom: 1px solid #f0f0f0; color: #333; outline: none; border: none; }
+QListWidget::item:focus { outline: none; border: none; }
+QListWidget::item:selected { background-color: #ffecec; color: #ff4b4b; border: none; outline: none; }
+QListWidget::item:selected:focus { background-color: #ffecec; color: #ff4b4b; border: none; outline: none; }
 QLabel#ApiCountTitle { font-size: 13px; color: #666; margin-top: 10px; }
 QLabel#ApiCountNum { font-size: 32px; font-weight: bold; color: #333; margin-bottom: 10px; font-family: sans-serif; }
-QScrollBar:vertical { border: none; background: #f1f1f1; width: 10px; margin: 0px; }
+QScrollBar:vertical { border: none; background: #f1f1f1; width: 10px; margin: 0px; border-radius: 5px; }
 QScrollBar::handle:vertical { background: #c1c1c1; min-height: 30px; border-radius: 5px; }
 QScrollBar::handle:vertical:hover { background: #a8a8a8; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; width: 0px; background: none; border: none; }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+QScrollBar:horizontal { border: none; background: #f1f1f1; height: 8px; margin: 0px; border-radius: 4px; }
+QScrollBar::handle:horizontal { background: #c1c1c1; min-width: 30px; border-radius: 4px; }
+QScrollBar::handle:horizontal:hover { background: #a8a8a8; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { height: 0px; width: 0px; background: none; border: none; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: none; }
+QScrollBar::corner { background: transparent; }
 QProgressBar { border: none; background-color: #f0f0f0; border-radius: 2px; text-align: center; }
 QProgressBar::chunk { background-color: #ff4b4b; border-radius: 2px; }
 QTextEdit { color: #333333; line-height: 160%; background-color: white; border: 1px solid #d1d5db; border-radius: 4px; }

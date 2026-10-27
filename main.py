@@ -1,6 +1,7 @@
 # main.py
 import sys
 import os
+import json
 import re
 import shutil
 import subprocess
@@ -1135,7 +1136,7 @@ class WebtoonManager(QMainWindow):
         body_layout.addWidget(files_title_container)
 
         self.file_list_widget = FileDropListWidget(self)
-        self.file_list_widget.setFocusPolicy(Qt.NoFocus)
+        self.file_list_widget.setFocusPolicy(Qt.StrongFocus)
         body_layout.addWidget(self.file_list_widget, 1) 
         body_layout.addSpacing(-1) # 초밀착
 
@@ -1446,52 +1447,93 @@ class WebtoonManager(QMainWindow):
         # 1. 오른쪽 영역을 담을 메인 컨테이너 생성
         self.viewer_container = QWidget()
         self.viewer_container.setStyleSheet("background-color: white; border-radius: 8px;")
-        # 1. 오른쪽 영역 컨테이너 (QStackedWidget으로 변경!)
-        # [수정] background-color를 white에서 #F9FAFB로 변경
+        # 1. 오른쪽 뷰어 영역 컨테이너 (리링크 배너 + QStackedWidget)
+        viewer_container = QWidget()
+        viewer_container_layout = QVBoxLayout(viewer_container)
+        viewer_container_layout.setContentsMargins(0, 0, 0, 0)
+        viewer_container_layout.setSpacing(6)
+
+        # [미디어 리링크 경고 배너] 유실된 외부 이미지가 있을 때만 노출
+        self.relink_banner = QFrame()
+        self.relink_banner.setObjectName("RelinkBanner")
+        self.relink_banner.setStyleSheet("""
+            #RelinkBanner {
+                background-color: #FEF3C7; 
+                border: 1px solid #F59E0B; 
+                border-radius: 8px; 
+            }
+        """)
+        relink_layout = QHBoxLayout(self.relink_banner)
+        relink_layout.setContentsMargins(12, 8, 12, 8)
+        relink_layout.setSpacing(10)
+
+        self.lbl_relink_msg = QLabel("⚠️ 원본 이미지의 위치가 변경되었거나 삭제되었습니다.")
+        self.lbl_relink_msg.setStyleSheet("color: #92400E; font-weight: bold; font-size: 13px; background: transparent; border: none;")
+        relink_layout.addWidget(self.lbl_relink_msg, 1)
+
+        self.btn_relink = QPushButton("🔗 미디어 리링크 (폴더 찾기)...")
+        self.btn_relink.setCursor(Qt.PointingHandCursor)
+        self.btn_relink.setStyleSheet("""
+            QPushButton {
+                background-color: #F59E0B; 
+                color: white; 
+                font-weight: bold; 
+                border: none; 
+                border-radius: 6px; 
+                padding: 6px 14px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #D97706;
+            }
+            QPushButton:pressed {
+                background-color: #B45309;
+            }
+        """)
+        self.btn_relink.clicked.connect(self.relink_current_episode_images)
+        relink_layout.addWidget(self.btn_relink)
+        self.relink_banner.hide()
+        viewer_container_layout.addWidget(self.relink_banner)
+
+        # 뷰어 스택 위젯
         self.viewer_stack = QStackedWidget()
         self.viewer_stack.setObjectName("ViewerStack")
         self.viewer_stack.setFrameShape(QFrame.NoFrame)
-        # padding: 1px를 추가하여 내부 위젯이 테두리 선을 덮지 않도록 보호합니다.
         self.viewer_stack.setStyleSheet("#ViewerStack { background-color: #F9FAFB; border-radius: 8px; border: 1px solid #D1D5DB; padding: 1px; }")
 
         # ---------------------------------------------------------
         # [Index 0] 초기 안내 화면 (empty_widget) 수정 버전
         # ---------------------------------------------------------
-        # [수정] background를 white에서 transparent 또는 #F9FAFB로 변경
         self.empty_widget = QWidget()
-        self.empty_widget.setStyleSheet("border: none; background: transparent; border-radius: 8px;") # 바닥(stack) 색이 보이게 투명 처리
+        self.empty_widget.setStyleSheet("border: none; background: transparent; border-radius: 8px;")
         
         empty_vbox = QVBoxLayout(self.empty_widget)
         empty_vbox.addStretch(1) # 위쪽 여백
 
-        # 1. 안내 문구 수정
-        lbl_info = QLabel("이미지 추가 버튼을 누르거나<br>드래그 앤 드롭으로 이미지를 추가하세요")
-        lbl_info.setStyleSheet("color: #6B7280; font-size: 15px; font-weight: 500; border: none; background: transparent;")
-        lbl_info.setAlignment(Qt.AlignCenter)
-        empty_vbox.addWidget(lbl_info) # 바로 메인 레이아웃에 추가
+        # 1. 안내 문구
+        self.lbl_empty_info = QLabel("이미지 추가 버튼을 누르거나<br>드래그 앤 드롭으로 이미지를 추가하세요")
+        self.lbl_empty_info.setStyleSheet("color: #6B7280; font-size: 15px; font-weight: 500; border: none; background: transparent;")
+        self.lbl_empty_info.setAlignment(Qt.AlignCenter)
+        empty_vbox.addWidget(self.lbl_empty_info)
 
-        empty_vbox.addSpacing(20) # 문구와 버튼 사이 간격
+        empty_vbox.addSpacing(20)
 
-        # 2. 중앙 이미지 추가 버튼 (스타일 유지)
+        # 2. 중앙 이미지 추가 버튼
         self.btn_viewer_add = QPushButton(" 이미지 추가")
-        # 2. 아이콘 설정 (진우님이 정의하신 ICON_UPLOAD 사용)
         self.btn_viewer_add.setIcon(get_icon(config.ICON_UPLOAD)) 
-        self.btn_viewer_add.setIconSize(QSize(24, 24)) # 아이콘 크기 조절
-        
+        self.btn_viewer_add.setIconSize(QSize(24, 24))
         self.btn_viewer_add.setFixedSize(180, 60)
         self.btn_viewer_add.setCursor(Qt.PointingHandCursor)
-        
-        # 3. 스타일시트 수정 (dashed -> solid로 변경)
         self.btn_viewer_add.setStyleSheet("""
             QPushButton {
                 background-color: #FFF7ED; 
                 color: #FB923C;
-                border: 2px solid #FB923C; /* 점선을 실선으로 변경 */
+                border: 2px solid #FB923C;
                 border-radius: 12px;
                 font-size: 18px;
                 font-weight: bold;
-                text-align: center;      /* 글자 중앙 정렬 */
-                padding-left: 0px;       /* 왼쪽 패딩 초기화 */
+                text-align: center;
+                padding-left: 0px;
                 padding-right: 5px;
             }
             QPushButton:hover {
@@ -1503,13 +1545,32 @@ class WebtoonManager(QMainWindow):
                 background-color: #FFEDD5;
             }
         """)
-        
-        # 4. 기존 함수 연결
         self.btn_viewer_add.clicked.connect(self.upload_images)
+        empty_vbox.addWidget(self.btn_viewer_add, 0, Qt.AlignCenter)
 
-        empty_vbox.addWidget(self.btn_viewer_add, 0, Qt.AlignCenter) # 버튼도 바로 추가
+        # [미디어 리링크 버튼] (유실 시 빈 화면 중앙에도 제공)
+        self.btn_empty_relink = QPushButton("🔗 미디어 리링크 (누락된 폴더 찾기)...")
+        self.btn_empty_relink.setFixedSize(260, 44)
+        self.btn_empty_relink.setCursor(Qt.PointingHandCursor)
+        self.btn_empty_relink.setStyleSheet("""
+            QPushButton {
+                background-color: #FEF3C7; 
+                color: #92400E; 
+                border: 1px solid #F59E0B; 
+                border-radius: 8px; 
+                font-weight: bold; 
+                font-size: 14px;
+                margin-top: 10px;
+            }
+            QPushButton:hover {
+                background-color: #FDE68A;
+            }
+        """)
+        self.btn_empty_relink.clicked.connect(self.relink_current_episode_images)
+        self.btn_empty_relink.hide()
+        empty_vbox.addWidget(self.btn_empty_relink, 0, Qt.AlignCenter)
         
-        empty_vbox.addStretch(1) # 아래쪽 여백
+        empty_vbox.addStretch(1)
 
         # ---------------------------------------------------------
         # [Index 1] 실제 웹툰 이미지가 보일 스크롤 영역
@@ -1517,7 +1578,6 @@ class WebtoonManager(QMainWindow):
         self.scroll_area = WebtoonScrollArea()
         self.scroll_area.setFrameShape(QFrame.NoFrame)
         self.scroll_area.setWidgetResizable(True)
-        # 내부 뷰포트와 스크롤 영역 자체에 라운드를 주어 이미지가 뚫고 나가지 않게 함
         self.scroll_area.setStyleSheet("""
             QScrollArea { border: none; background: transparent; border-radius: 8px; }
             QWidget { border-radius: 8px; }
@@ -1541,8 +1601,10 @@ class WebtoonManager(QMainWindow):
         self.viewer_stack.addWidget(self.empty_widget) # Index 0
         self.viewer_stack.addWidget(self.scroll_area)  # Index 1
 
-        # 스플리터에 이 스택 위젯을 추가!
-        splitter.addWidget(self.viewer_stack)
+        viewer_container_layout.addWidget(self.viewer_stack, 1)
+
+        # 스플리터에 뷰어 컨테이너 추가
+        splitter.addWidget(viewer_container)
 
         self.tabs = QTabWidget()
         self.tabs.setMovable(True)
@@ -2893,6 +2955,37 @@ class WebtoonManager(QMainWindow):
         os.makedirs(i_path, exist_ok=True)
         return e_path, i_path, os.path.join(e_path, "script.txt")
 
+    def get_current_episode_images(self):
+        """현재 회차의 이미지 파일 전체 경로(리스트)를 반환합니다.
+        외부 참조 모드(COPY_IMAGES_TO_PROJECT=False)인 경우 episode_info.json에 저장된 외부 경로 목록을 우선 반환하고,
+        그렇지 않은 경우 기존 images/ 폴더의 파일들을 반환합니다.
+        """
+        e_path, i_path, _ = self.get_paths()
+        if not e_path:
+            return []
+
+        # 1. 외부 이미지 참조 메타데이터(episode_info.json) 확인
+        info_file = os.path.join(e_path, "episode_info.json")
+        if os.path.exists(info_file):
+            try:
+                with open(info_file, "r", encoding="utf-8") as f:
+                    info_data = json.load(f)
+                    if "external_images" in info_data:
+                        external_files = info_data.get("external_images", [])
+                        # 실제 파일이 존재하는지 검증
+                        valid_external = [p for p in external_files if os.path.exists(p)]
+                        return sorted(valid_external, key=natural_sort_key)
+            except Exception as e:
+                print(f"회차 메타데이터 로드 실패: {e}")
+
+        # 2. 기본값: images/ 폴더 내부 파일 목록
+        if i_path and os.path.exists(i_path):
+            files = sorted([os.path.join(i_path, f) for f in os.listdir(i_path) 
+                           if f.lower().endswith(('png', 'jpg', 'jpeg', 'webp')) and not f.startswith('.')],
+                           key=natural_sort_key)
+            return files
+        return []
+
     def refresh_project_list(self):
         self.combo_project.blockSignals(True)
         self.combo_project.clear()
@@ -3076,11 +3169,7 @@ class WebtoonManager(QMainWindow):
 
         # 1. 경로 획득 및 파일 개수 / 대본 행 수 미리 세기
         e_path, i_path, _ = self.get_paths()
-        files = []
-        if i_path and os.path.exists(i_path):
-            files = sorted([f for f in os.listdir(i_path) 
-                            if f.lower().endswith(('png','jpg','jpeg')) and not f.startswith('.')], 
-                           key=natural_sort_key)
+        files = self.get_current_episode_images()
         
         script_rows_count = 0
         if e_path:
@@ -3278,7 +3367,8 @@ class WebtoonManager(QMainWindow):
         super().keyPressEvent(event)
 
     def clear_workspace(self):
-        # 스크롤 위치 초기화
+        # 스크롤 위치 및 줌 초기화
+        self.scroll_area.reset_zoom()
         self.scroll_area.verticalScrollBar().setValue(0)
         
         while self.image_layout.count():
@@ -3295,44 +3385,102 @@ class WebtoonManager(QMainWindow):
         self.table_script.setRowCount(0)
         self.file_list_widget.clear()
 
-    # [수정] 통합된 이미지 처리 함수 (버튼 + 드래그앤드롭 공용)
+    # [수정] 통합된 이미지 처리 함수 (버튼 + 드래그앤드롭 공용, A방식/복사방식 지원)
     def process_image_files(self, file_paths):
         if not getattr(self, 'is_simple_mode', False) and not self.current_episode:
              self.toast.show_message("⚠️ 이미지를 추가하려면 먼저 '회차'를 선택해주세요!")
              return
         
-        _, i_path, _ = self.get_paths()
-        valid_extensions = ('.png', '.jpg', '.jpeg')
+        e_path, i_path, _ = self.get_paths()
+        if not e_path:
+             return
+
+        valid_extensions = ('.png', '.jpg', '.jpeg', '.webp')
+        
+        # 폴더가 포함되어 있을 경우 내부 이미지 파일 수집
+        expanded_paths = []
+        for path in file_paths:
+            if os.path.isdir(path):
+                for root, _, files in os.walk(path):
+                    for f in files:
+                        if f.lower().endswith(valid_extensions) and not f.startswith('.'):
+                            expanded_paths.append(os.path.join(root, f))
+            else:
+                if path.lower().endswith(valid_extensions) and not os.path.basename(path).startswith('.'):
+                    expanded_paths.append(path)
+
+        expanded_paths = sorted(expanded_paths, key=natural_sort_key)
+        if not expanded_paths:
+            self.toast.show_message("⚠️ 추가할 유효한 이미지 파일이 없습니다.")
+            return
+
+        copy_to_project = getattr(config, 'COPY_IMAGES_TO_PROJECT', True)
         processed_count = 0
         duplicate_count = 0
         
-        # 파일 복사 역시 대량이거나 대용량일 경우 오래 걸릴 수 있으므로 ModernProgressDialog 적용
         from widgets import ModernProgressDialog
-        progress = ModernProgressDialog("⏳ 이미지를 추가하는 중...", None, 0, len(file_paths), self)
+        progress = ModernProgressDialog("⏳ 이미지를 추가하는 중...", None, 0, len(expanded_paths), self)
         progress.show()
         from PySide6.QtWidgets import QApplication
         QApplication.processEvents()
 
-        for i, fname in enumerate(file_paths):
-            base_name = os.path.basename(fname)
-            dest_path = os.path.join(i_path, base_name)
-            
-            # 중복 체크
-            if os.path.exists(dest_path):
-                duplicate_count += 1
-                progress.setValue(i + 1)
-                QApplication.processEvents()
-                continue
+        if copy_to_project:
+            # [기본 복사 모드] 프로젝트 회차 폴더(images/) 내부로 직접 복사
+            for i, fname in enumerate(expanded_paths):
+                base_name = os.path.basename(fname)
+                dest_path = os.path.join(i_path, base_name)
+                
+                # 중복 체크
+                if os.path.exists(dest_path):
+                    duplicate_count += 1
+                    progress.setValue(i + 1)
+                    QApplication.processEvents()
+                    continue
 
-            if fname.lower().endswith(valid_extensions) and not base_name.startswith('.'):
                 try:
                     shutil.copy(fname, i_path)
                     processed_count += 1
                 except Exception as e:
                     print(f"파일 복사 실패: {fname} ({e})")
-            
-            progress.setValue(i + 1)
-            QApplication.processEvents()
+                
+                progress.setValue(i + 1)
+                QApplication.processEvents()
+        else:
+            # [A 방식: 외부 참조 모드] 파일 복사 없이 episode_info.json에 절대 경로 기록
+            info_file = os.path.join(e_path, "episode_info.json")
+            existing_data = {}
+            if os.path.exists(info_file):
+                try:
+                    with open(info_file, "r", encoding="utf-8") as f:
+                        existing_data = json.load(f)
+                except Exception as e:
+                    print(f"episode_info.json 로드 실패: {e}")
+                    existing_data = {}
+
+            current_external = existing_data.get("external_images", [])
+            current_external_norm = {os.path.normcase(os.path.abspath(p)) for p in current_external}
+
+            new_external = list(current_external)
+            for i, fname in enumerate(expanded_paths):
+                abs_p = os.path.abspath(fname)
+                norm_p = os.path.normcase(abs_p)
+                if norm_p in current_external_norm:
+                    duplicate_count += 1
+                else:
+                    new_external.append(abs_p)
+                    current_external_norm.add(norm_p)
+                    processed_count += 1
+                progress.setValue(i + 1)
+                QApplication.processEvents()
+
+            if processed_count > 0:
+                new_external = sorted(new_external, key=natural_sort_key)
+                existing_data["external_images"] = new_external
+                try:
+                    with open(info_file, "w", encoding="utf-8") as f:
+                        json.dump(existing_data, f, ensure_ascii=False, indent=2)
+                except Exception as e:
+                    print(f"episode_info.json 저장 실패: {e}")
 
         if processed_count > 0:
             self.load_images(progress_dialog=progress)
@@ -3343,45 +3491,78 @@ class WebtoonManager(QMainWindow):
         else:
             progress.close()
             if duplicate_count > 0:
-                self.toast.show_message("이미 추가한 파일입니다.")
+                self.toast.show_message("이미 추가된 이미지입니다.")
 
     def upload_images(self):
         # 마지막 저장 폴더 또는 바탕화면을 기본값으로 설정
         fallback = os.path.join(os.path.expanduser("~"), "Desktop")
         default_dir = config.get_initial_dir(fallback)
         
-        file_names, _ = QFileDialog.getOpenFileNames(self, "이미지 선택", default_dir, "Images (*.png *.jpg *.jpeg)")
+        file_names, _ = QFileDialog.getOpenFileNames(self, "이미지 선택", default_dir, "Images (*.png *.jpg *.jpeg *.webp)")
         if file_names:
             # 선택한 폴더를 기억하도록 업데이트
             config.update_last_save_dir(file_names[0])
             self.process_image_files(file_names)
 
+    def relink_current_episode_images(self):
+        """현재 회차의 미디어 리링크(Link Media) 브라우저를 실행합니다."""
+        e_path, _, _ = self.get_paths()
+        if not e_path:
+            self.toast.show_message("⚠️ 회차를 먼저 선택해 주세요.")
+            return
+
+        from widgets import RelinkMediaDialog
+        dialog = RelinkMediaDialog(e_path, self)
+        if dialog.exec() == QDialog.Accepted:
+            self.load_images()
+
     def load_images(self, progress_dialog=None, start_val=0):
         # 1. 기존 위젯 및 리스트 청소
+        self.scroll_area.reset_zoom()
         while self.image_layout.count():
             child = self.image_layout.takeAt(0)
             if child.widget(): child.widget().deleteLater()
         
         self.file_list_widget.clear() 
 
-        # 2. 경로 체크
-        _, i_path, _ = self.get_paths()
-        if not i_path or not os.path.exists(i_path):
-            # 경로가 아예 없거나 프로젝트가 안 열렸을 때도 회색 배경이어야 합니다.
-            self.update_viewer_background(False) # [추가 1]
+        # 2. 경로 및 파일 목록 확인 (A방식 외부참조 or images/ 폴더)
+        e_path, i_path, _ = self.get_paths()
+        if not e_path:
+            self.update_viewer_background(False)
             self.viewer_stack.setCurrentIndex(0)
             if progress_dialog:
                 progress_dialog.close()
             return
 
-        # 파일 목록 가져오기
-        files = sorted([f for f in os.listdir(i_path) 
-                       if f.lower().endswith(('png','jpg','jpeg')) and not f.startswith('.')], 
-                       key=natural_sort_key)
+        files = self.get_current_episode_images()
+
+        # [미디어 리링크 검사] 외부 참조 이미지 중 누락된 파일이 있는지 확인
+        missing_count = 0
+        info_file = os.path.join(e_path, "episode_info.json")
+        if os.path.exists(info_file):
+            try:
+                with open(info_file, "r", encoding="utf-8") as f:
+                    info_data = json.load(f)
+                    ext_list = info_data.get("external_images", [])
+                    if ext_list:
+                        missing_count = sum(1 for p in ext_list if not os.path.exists(p))
+            except Exception:
+                pass
+
+        if hasattr(self, 'relink_banner'):
+            if missing_count > 0:
+                self.lbl_relink_msg.setText(f"⚠️ 원본 이미지 {missing_count}개를 찾을 수 없습니다. (위치 이동 또는 삭제됨)")
+                self.relink_banner.show()
+                if hasattr(self, 'btn_empty_relink'):
+                    self.btn_empty_relink.show()
+            else:
+                self.relink_banner.hide()
+                if hasattr(self, 'btn_empty_relink'):
+                    self.btn_empty_relink.hide()
 
         # 3. 파일 유무 판별 및 배경색 업데이트
         has_images = len(files) > 0
-        self.update_viewer_background(has_images) # [추가 2 - 핵심 위치]
+        self.update_viewer_background(has_images)
 
         if not has_images:
             self.viewer_stack.setCurrentIndex(0)
@@ -3410,15 +3591,17 @@ class WebtoonManager(QMainWindow):
             from PySide6.QtWidgets import QApplication
             QApplication.processEvents()
             
-            for i, f in enumerate(files):
+            for i, f_path in enumerate(files):
                 # (A) 중앙 뷰어에 이미지 추가
-                lbl_img = ResponsiveLabel(os.path.join(i_path, f))
+                lbl_img = ResponsiveLabel(f_path)
                 lbl_img.request_reanalysis.connect(self.start_partial_reanalysis)
                 self.image_layout.addWidget(lbl_img)
 
                 # (B) 사이드바 리스트에도 추가
-                item = QListWidgetItem(f" {f}")
+                file_name = os.path.basename(f_path)
+                item = QListWidgetItem(f" {file_name}")
                 item.setIcon(get_icon(config.ICON_FILE)) 
+                item.setData(Qt.UserRole, f_path)
                 self.file_list_widget.addItem(item)
                 
                 # 진행도 업데이트
@@ -3430,8 +3613,6 @@ class WebtoonManager(QMainWindow):
             # 로딩 후 스크롤을 최상단(0)으로 확실히 유지하고 시그널 원복
             scrollbar.setValue(0)
             scrollbar.blockSignals(False)
-
-        
 
     def run_ocr(self):
         # 0. API 키 등록 여부 검증
@@ -3449,10 +3630,7 @@ class WebtoonManager(QMainWindow):
             return
 
         # 1. 파일 경로 및 대상 확인
-        _, i_path, _ = self.get_paths()
-        files = sorted([os.path.join(i_path, f) for f in os.listdir(i_path) 
-                    if f.lower().endswith(('png','jpg')) and not f.startswith('.')], 
-                   key=natural_sort_key)
+        files = self.get_current_episode_images()
         if not files: return
 
         # 2. '새로 분석하기' 체크 여부를 먼저 파악합니다.
