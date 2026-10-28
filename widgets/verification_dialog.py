@@ -104,6 +104,14 @@ class VerificationImageLabel(QLabel):
         self._select_current = QPoint()
         self._is_resizing = False
 
+    def minimumSizeHint(self):
+        return QSize(400, 200)
+
+    def sizeHint(self):
+        if not self.original_pixmap.isNull() and self.original_pixmap.width() > 0:
+            return QSize(700, int(700 * (self.original_pixmap.height() / self.original_pixmap.width())))
+        return QSize(700, 1000)
+
     def resizeEvent(self, event):
         if not self._is_resizing and not self.original_pixmap.isNull() and self.width() > 0:
             aspect_ratio = self.original_pixmap.height() / self.original_pixmap.width()
@@ -524,6 +532,12 @@ class VerificationScrollArea(QScrollArea):
             }
         """)
 
+    def sizeHint(self):
+        return QSize(750, 800)
+
+    def minimumSizeHint(self):
+        return QSize(550, 400)
+
     def viewportEvent(self, event):
         t = event.type()
         if t == QEvent.MouseButtonPress:
@@ -700,6 +714,19 @@ class ScriptVerificationDialog(QDialog):
             except Exception:
                 pass
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(0, self._apply_initial_splitter_sizes)
+
+    def _apply_initial_splitter_sizes(self):
+        total_w = self.splitter.width() if self.splitter.width() > 0 else self.width()
+        if total_w > 0:
+            left_w = max(550, int(total_w * 0.55))
+            right_w = max(400, total_w - left_w)
+            self.splitter.setSizes([left_w, right_w])
+        if hasattr(self, 'scroll_area'):
+            self.scroll_area.set_zoom_factor(1.0)
+
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -814,15 +841,18 @@ class ScriptVerificationDialog(QDialog):
 
         # 1. 좌측 뷰어 (웹툰 세로 스크롤)
         self.scroll_area = VerificationScrollArea()
+        self.scroll_area.setMinimumWidth(550)
         self.viewer_content = QWidget()
         self.viewer_layout = QVBoxLayout(self.viewer_content)
         self.viewer_layout.setContentsMargins(0, 0, 0, 0)
         self.viewer_layout.setSpacing(0)
+        self.viewer_layout.setAlignment(Qt.AlignTop)
         self.scroll_area.setWidget(self.viewer_content)
         self.splitter.addWidget(self.scroll_area)
 
         # 2. 우측 검수 작업창 패널
         right_panel = QWidget()
+        right_panel.setMinimumWidth(400)
         right_panel.setStyleSheet("background-color: #F8FAFC;")
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(16, 14, 16, 14)
@@ -917,6 +947,7 @@ class ScriptVerificationDialog(QDialog):
         self.splitter.addWidget(right_panel)
         self.splitter.setStretchFactor(0, 55)
         self.splitter.setStretchFactor(1, 45)
+        self.splitter.setSizes([760, 620])
         main_layout.addWidget(self.splitter)
 
         # ---------------------------------------------------------
@@ -1029,6 +1060,7 @@ class ScriptVerificationDialog(QDialog):
         self.rebuild_cards()
         self.update_image_boxes()
         self.update_progress()
+        QTimer.singleShot(50, lambda: self.scroll_area.set_zoom_factor(1.0))
 
     def _fallback_load_from_script(self):
         """ocr_boxes.json이 없는 경우 script.txt 또는 script_data.csv에서 복원"""
