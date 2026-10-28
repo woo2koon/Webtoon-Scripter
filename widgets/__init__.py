@@ -16,4 +16,5 @@ from .dialogs import (
 )
 from .message_box import CustomMessageBox
 from .search_widget import SearchWidget
+from .verification_dialog import ScriptVerificationDialog
 

@@ -5621,6 +5621,9 @@ class OnboardingMigrationDialog(QDialog):
         btn_layout.addWidget(btn_no, 1)
         layout.addLayout(btn_layout)
 
+from .verification_dialog import ScriptVerificationDialog
+
+
 
 
 

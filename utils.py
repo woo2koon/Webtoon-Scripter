@@ -1,6 +1,7 @@
 # utils.py
 import re
 import os
+import json
 import base64
 import subprocess
 import platform
@@ -272,3 +273,30 @@ def clean_ocr_text(text):
     result = '\n'.join(cleaned_lines)
     result = re.sub(r'\n{3,}', '\n\n', result)
     return result.strip()
+
+def save_ocr_boxes(episode_dir, items):
+    """검수용 대사 및 바운딩 박스 데이터를 ocr_boxes.json으로 저장"""
+    if not episode_dir or not os.path.exists(episode_dir):
+        return False
+    target = os.path.join(episode_dir, "ocr_boxes.json")
+    try:
+        with open(target, "w", encoding="utf-8") as f:
+            json.dump(items, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"ocr_boxes.json 저장 실패: {e}")
+        return False
+
+def load_ocr_boxes(episode_dir):
+    """ocr_boxes.json 로드. 파일이 없거나 오류 발생 시 빈 리스트 반환"""
+    if not episode_dir:
+        return []
+    target = os.path.join(episode_dir, "ocr_boxes.json")
+    if not os.path.exists(target):
+        return []
+    try:
+        with open(target, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"ocr_boxes.json 로드 실패: {e}")
+        return []

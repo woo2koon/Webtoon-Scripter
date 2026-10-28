@@ -10,7 +10,7 @@ from PIL import Image, ImageOps, ImageEnhance
 from PySide6.QtCore import QThread, Signal
 import config
 from config import CACHE_DIR
-from utils import clean_korean_text 
+from utils import clean_korean_text, save_ocr_boxes, load_ocr_boxes
 
 class OCRAPIError(Exception):
     """API 호출 실패 시 사용자에게 원인을 알리기 위한 예외"""
@@ -202,7 +202,8 @@ def call_gemini_api_raw(png_bytes):
 1. 웹툰 컷의 자연스러운 독서 흐름(위에서 아래, 말풍선 흐름)에 맞춰 순서대로 텍스트를 검출해라.
 2. 모든 대사(말풍선), 내레이션(설명 박스), 효과음(의성어/의태어 등 배경 글자)을 누락 없이 글자 그대로 추출해라.
 3. 절대 임의로 대사를 수정하거나 보정하지 말고, 이미지에 보이는 텍스트를 오타, 사투리, 특수문자를 포함하여 글자 그대로 필사해라.
-4. 결과는 아래 JSON 스키마 구조를 100% 만족시켜라.
+4. 각 대사의 위치를 나타내는 2D 바운딩 박스 [ymin, xmin, ymax, xmax] (0~1000 정규화 정수)를 box_2d 필드에 포함해라.
+5. 결과는 아래 JSON 스키마 구조를 100% 만족시켜라.
 """
 
     b64_data = base64.b64encode(png_bytes).decode('utf-8')
@@ -227,7 +228,12 @@ def call_gemini_api_raw(png_bytes):
                     "type": "OBJECT",
                     "properties": {
                         "index": {"type": "INTEGER"},
-                        "text": {"type": "STRING"}
+                        "text": {"type": "STRING"},
+                        "box_2d": {
+                            "type": "ARRAY",
+                            "items": {"type": "INTEGER"},
+                            "description": "Bounding box [ymin, xmin, ymax, xmax] normalized to 0-1000"
+                        }
                     },
                     "required": ["index", "text"]
                 }
@@ -263,7 +269,16 @@ def call_gemini_api_raw(png_bytes):
             content_text = res_data['candidates'][0]['content']['parts'][0]['text']
             parsed_json = clean_and_parse_json(content_text)
             results = parsed_json.get("results", [])
-            return [item.get("text", "").strip() for item in results if item.get("text", "").strip()]
+            output = []
+            for item in results:
+                if isinstance(item, dict):
+                    txt = item.get("text", "").strip()
+                    if txt:
+                        b2d = item.get("box_2d")
+                        output.append({"text": txt, "box_2d": b2d})
+                elif isinstance(item, str) and item.strip():
+                    output.append({"text": item.strip(), "box_2d": None})
+            return output
         except Exception as e:
             raise OCRAPIError(f"Gemini 응답 데이터 해석 실패: {e}")
     else:
@@ -286,6 +301,7 @@ class OCRWorker(QThread):
     progress_val = Signal(int)
     progress_text = Signal(str)
     finished_ocr = Signal(list)
+    finished_verification_data = Signal(list)
     error = Signal(str)
     api_used = Signal()
 
@@ -299,6 +315,7 @@ class OCRWorker(QThread):
         self.is_running = True
         self.MERGE_THRESHOLD = 80 
         self.MAX_SLICE_HEIGHT = 2450 
+        self.verification_data = []
 
     def find_panel_gap(self, img, start_y, max_h):
         """[스마트 모드] 컷 사이의 흰색 여백을 찾아 절단 지점 반환"""
@@ -316,6 +333,7 @@ class OCRWorker(QThread):
 
     def run(self):
         full_results = []
+        vision_blocks = []
         global_counter = 1
         
         # 1. 램 부하 및 안전을 위해 이미지 높이 임계치(25,000px) 기준으로 청크 생성
@@ -345,6 +363,7 @@ class OCRWorker(QThread):
             
         total_chunks = len(chunks)
         cumulative_height_offset = 0
+        image_global_ranges = []
         
         # 2. 각 청크별 처리 실행
         for chunk_idx, chunk in enumerate(chunks):
@@ -364,6 +383,14 @@ class OCRWorker(QThread):
                         # 이미지를 가로축 정중앙에 배치
                         x_offset = (w_max - w) // 2
                         stitched_img.paste(img, (x_offset, current_y))
+                        image_global_ranges.append({
+                            "path": img_path,
+                            "y_start": cumulative_height_offset + current_y,
+                            "y_end": cumulative_height_offset + current_y + h,
+                            "w": w,
+                            "h": h,
+                            "x_offset": x_offset
+                        })
                         current_y += h
             except Exception as e:
                 print(f"이미지 병합 실패: {e}")
@@ -390,6 +417,8 @@ class OCRWorker(QThread):
                 tasks.append({
                     "bytes": png_bytes,
                     "offset": cumulative_height_offset + current_y,
+                    "slice_h": cut_y - current_y,
+                    "slice_w": w_max,
                     "key": f"{hashlib.md5(png_bytes).hexdigest()}_slice_{chunk_idx}_{slice_idx}"
                 })
                 current_y = cut_y
@@ -415,7 +444,7 @@ class OCRWorker(QThread):
                         try:
                             lines, is_api_called = future.result()
                             if is_api_called: self.api_used.emit()
-                            slice_results.append((task["offset"], lines))
+                            slice_results.append((task, lines))
                         except OCRAPIError as oe:
                             api_error_raised = str(oe)
                             self.is_running = False
@@ -435,10 +464,34 @@ class OCRWorker(QThread):
                         return
 
                     # Y축 오프셋 순서대로 정렬하여 자연스러운 독서 흐름 보장
-                    slice_results.sort(key=lambda x: x[0])
-                    for offset, lines in slice_results:
-                        for line in lines:
-                            full_results.append(line)
+                    slice_results.sort(key=lambda x: x[0]["offset"])
+                    for task, lines in slice_results:
+                        total_lines = len(lines)
+                        for k, item in enumerate(lines):
+                            if isinstance(item, dict):
+                                txt = item.get("text", "").strip()
+                                box_2d = item.get("box_2d")
+                            else:
+                                txt = str(item).strip()
+                                box_2d = None
+                            if not txt:
+                                continue
+                            if box_2d and len(box_2d) == 4:
+                                ymin, xmin, ymax, xmax = box_2d
+                                abs_y1 = task["offset"] + int(ymin * task["slice_h"] / 1000.0)
+                                abs_y2 = task["offset"] + int(ymax * task["slice_h"] / 1000.0)
+                                abs_x1 = int(xmin * task["slice_w"] / 1000.0)
+                                abs_x2 = int(xmax * task["slice_w"] / 1000.0)
+                            else:
+                                step = task["slice_h"] / max(1, total_lines)
+                                abs_y1 = task["offset"] + int(k * step)
+                                abs_y2 = task["offset"] + int((k + 0.8) * step)
+                                abs_x1 = int(task["slice_w"] * 0.1)
+                                abs_x2 = int(task["slice_w"] * 0.9)
+                            full_results.append({
+                                "text": txt,
+                                "abs_box": (abs_x1, abs_y1, abs_x2, abs_y2)
+                            })
                 else:
                     future_to_task = {executor.submit(get_ocr_data_smart, t["key"], t["bytes"], self.force_mode): t for t in tasks}
                     for future in concurrent.futures.as_completed(future_to_task):
@@ -452,7 +505,7 @@ class OCRWorker(QThread):
                                 b_copy = b.copy()
                                 b_copy['y'] += task["offset"]
                                 b_copy['bottom'] += task["offset"]
-                                full_results.append(b_copy)
+                                vision_blocks.append(b_copy)
                         except OCRAPIError as oe:
                             api_error_raised = str(oe)
                             self.is_running = False
@@ -478,28 +531,72 @@ class OCRWorker(QThread):
         if not self.is_running:
             return
             
-        # 4. 결과 반환 처리
-        if self.engine == "gemini":
-            self.progress_text.emit("📝 대사 결과 정리 중...")
+        # 4. 결과 반환 및 좌표 매핑 처리
+        if self.engine != "gemini":
+            self.progress_text.emit("📝 말풍선 그룹화 및 대사 복원 중...")
             self.progress_val.emit(95)
-            final_lines = [f"[{global_counter + i}] {line}" for i, line in enumerate(full_results)]
-            self.progress_val.emit(100)
-            self.finished_ocr.emit(final_lines)
-            return
+            merged_lines, merged_boxes = self.merge_close_blocks(vision_blocks)
+            for txt, box in zip(merged_lines, merged_boxes):
+                full_results.append({
+                    "text": txt,
+                    "abs_box": box
+                })
 
-        self.progress_text.emit("📝 말풍선 그룹화 및 대사 복원 중...")
-        self.progress_val.emit(95)
-        merged_lines = self.merge_close_blocks(full_results)
-        final_lines = [f"[{global_counter + i}] {line}" for i, line in enumerate(merged_lines)]
-        
+        self.progress_text.emit("📝 대사 및 위치 데이터 정리 중...")
+        self.progress_val.emit(97)
+
+        verification_items = []
+        for i, item in enumerate(full_results):
+            txt = item["text"]
+            bx1, by1, bx2, by2 = item["abs_box"]
+            by_mid = (by1 + by2) / 2.0
+            matched_img = None
+            for idx, img_info in enumerate(image_global_ranges):
+                if img_info["y_start"] <= by_mid <= img_info["y_end"]:
+                    matched_img = (idx, img_info)
+                    break
+            if not matched_img and image_global_ranges:
+                matched_img = min(enumerate(image_global_ranges), key=lambda x: abs(x[1]["y_start"] - by_mid))
+            
+            if matched_img:
+                img_idx, info = matched_img
+                lx1 = max(0, min(info["w"], bx1 - info["x_offset"]))
+                ly1 = max(0, min(info["h"], by1 - info["y_start"]))
+                lx2 = max(0, min(info["w"], bx2 - info["x_offset"]))
+                ly2 = max(0, min(info["h"], by2 - info["y_start"]))
+                img_file = os.path.basename(info["path"])
+                box = [int(lx1), int(ly1), int(lx2), int(ly2)]
+            else:
+                img_idx = 0
+                img_file = os.path.basename(self.image_paths[0]) if self.image_paths else ""
+                box = [0, 0, 100, 100]
+            
+            verification_items.append({
+                "id": i + 1,
+                "text": txt,
+                "character": "",
+                "image_index": img_idx,
+                "image_file": img_file,
+                "box": box,
+                "is_verified": False
+            })
+
+        final_lines = [f"[{item['id']}] {item['text']}" for item in verification_items]
+        self.verification_data = verification_items
+
+        if self.project_dir:
+            save_ocr_boxes(self.project_dir, verification_items)
+
         self.progress_val.emit(100)
+        self.finished_verification_data.emit(verification_items)
         self.finished_ocr.emit(final_lines)
 
     def merge_close_blocks(self, results):
-        if not results: return []
+        if not results: return [], []
 
         valid_results = [b for b in results if b['bottom'] > b['y']]
-        if not valid_results: return [b['text'] for b in results]
+        if not valid_results: 
+            return [b['text'] for b in results], [(b.get('x1', 0), b.get('y', 0), b.get('x2', 100), b.get('bottom', 100)) for b in results]
             
         avg_height = sum(b['bottom'] - b['y'] for b in valid_results) / len(valid_results)
         
@@ -532,7 +629,6 @@ class OCRWorker(QThread):
             if not matched_groups:
                 groups.append([block])
             else:
-                # [수정 완료] 변수 이름을 first_idx로 통일했습니다.
                 first_idx = matched_groups[0]
                 groups[first_idx].append(block)
                 for other_idx in reversed(matched_groups[1:]):
@@ -579,16 +675,18 @@ class OCRWorker(QThread):
 
         # 커스텀 비교 정렬 적용
         group_metadata.sort(key=cmp_to_key(compare_metadata))
-        sorted_groups = [m['group'] for m in group_metadata]
 
         final_merged = []
-        for group in sorted_groups:
+        final_boxes = []
+        for m in group_metadata:
+            group = m['group']
             # 같은 말풍선 안에서도 비슷한 높이면 왼쪽부터 합치도록 미세 조정
             group.sort(key=lambda b: (int(b['y'] // (avg_height * 0.5)), b['x1']))
             merged_text = " ".join(b['text'] for b in group)
             final_merged.append(merged_text)
+            final_boxes.append((m['x1'], m['y1'], m['x2'], m['y2']))
 
-        return final_merged
+        return final_merged, final_boxes
 
     def stop(self):
         self.is_running = False

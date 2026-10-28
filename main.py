@@ -1701,6 +1701,27 @@ class WebtoonManager(QMainWindow):
         btn_clean_text.clicked.connect(self.clean_editor_text)
         btn_clean_text.setToolTip("AI가 대사 및 내레이션을 제외한 효과음, 의성어, 의태어 등의\n텍스트 노이즈를 정제합니다.")
         top_toolbar.addWidget(btn_clean_text)
+
+        # 대조 검수 버튼
+        btn_verify_text = QPushButton(" 🔍 대조 검수")
+        btn_verify_text.setFixedHeight(32)
+        btn_verify_text.setCursor(Qt.PointingHandCursor)
+        btn_verify_text.setStyleSheet("""
+            QPushButton { 
+                border: 1px solid #BFDBFE; 
+                background-color: #EFF6FF; 
+                border-radius: 4px; 
+                color: #1D4ED8; 
+                font-size: 13px; 
+                font-weight: 600;
+                padding: 0 12px;
+            } 
+            QPushButton:hover { background-color: #DBEAFE; border-color: #93C5FD; } 
+            QPushButton:pressed { background-color: #BFDBFE; }
+        """)
+        btn_verify_text.clicked.connect(self.open_verification_dialog)
+        btn_verify_text.setToolTip("웹툰 원본 이미지와 추출된 대사를 1:1로 비교하며 검수 및 수정합니다.")
+        top_toolbar.addWidget(btn_verify_text)
         
         # ★ [핵심] 빈 공간(스프링)을 둡니다. -> 모든 요소를 오른쪽으로 밀어버림
         top_toolbar.addStretch() 
@@ -2111,6 +2132,27 @@ class WebtoonManager(QMainWindow):
             }
         """)
         self.btn_load_script.clicked.connect(self.load_script_to_table)
+
+        # 2. 대조 검수 버튼 (스텝 3)
+        btn_verify_step3 = QPushButton(" 🔍 대조 검수")
+        btn_verify_step3.setFixedHeight(32)
+        btn_verify_step3.setCursor(Qt.PointingHandCursor)
+        btn_verify_step3.setStyleSheet("""
+            QPushButton { 
+                border: 1px solid #BFDBFE; 
+                background-color: #EFF6FF; 
+                border-radius: 4px; 
+                color: #1D4ED8; 
+                font-size: 13px; 
+                font-weight: 600;
+                padding: 0 12px;
+            } 
+            QPushButton:hover { background-color: #DBEAFE; border-color: #93C5FD; } 
+            QPushButton:pressed { background-color: #BFDBFE; }
+        """)
+        btn_verify_step3.clicked.connect(self.open_verification_dialog)
+        btn_verify_step3.setToolTip("웹툰 원본 이미지와 추출된 대사를 1:1로 비교하며 검수 및 수정합니다.")
+        top_bar.addWidget(btn_verify_step3)
 
         # 3. 관용구 보기 (스텝 3 추가)
         btn_view_idioms_step3 = QPushButton(" 관용구 보기")
@@ -3692,7 +3734,7 @@ class WebtoonManager(QMainWindow):
         # [신규 추가] 분석 엔진 선택 및 프로젝트 폴더 전달
         selected_engine = "gemini" if self.radio_engine_gemini.isChecked() else "vision"
         e_path, _, _ = self.get_paths()
-        project_dir = os.path.dirname(e_path) if e_path else None
+        project_dir = e_path if e_path else None
         
         # 워커 생성 및 실행
         self.worker = OCRWorker(
@@ -4210,6 +4252,27 @@ class WebtoonManager(QMainWindow):
         
         # 완료 토스트 메시지 출력
         self.toast.show_message("✅ 이미지 분석이 완료되었습니다.")
+
+        # 대조 검수 바로가기 제안 팝업
+        reply = CustomMessageBox.question(
+            self,
+            "분석 완료",
+            "✅ 만화 대사 분석이 완료되었습니다!\n\n지금 바로 원본 이미지와 1:1로 비교하며 대조 검수를 진행하시겠습니까?",
+            ["대조 검수 열기", "나중에 하기"]
+        )
+        if reply == "대조 검수 열기":
+            self.open_verification_dialog()
+
+    def open_verification_dialog(self):
+        """스크립트 대조 검수 모달창 열기"""
+        e_path, _, _ = self.get_paths()
+        if not e_path or not os.path.exists(e_path):
+            self.toast.show_message("⚠️ 먼저 작업할 회차를 선택해 주세요.")
+            return
+
+        from widgets import ScriptVerificationDialog
+        dlg = ScriptVerificationDialog(e_path, self)
+        dlg.exec()
 
     def on_ocr_error(self, err_msg):
         # 1. 진행 다이얼로그 닫기 및 초기화
