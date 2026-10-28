@@ -1703,7 +1703,9 @@ class WebtoonManager(QMainWindow):
         top_toolbar.addWidget(btn_clean_text)
 
         # 대조 검수 버튼
-        btn_verify_text = QPushButton(" 🔍 대조 검수")
+        btn_verify_text = QPushButton("대조 검수")
+        btn_verify_text.setIcon(get_colored_icon(config.ICON_SEARCH, "#1D4ED8"))
+        btn_verify_text.setIconSize(QSize(15, 15))
         btn_verify_text.setFixedHeight(32)
         btn_verify_text.setCursor(Qt.PointingHandCursor)
         btn_verify_text.setStyleSheet("""
@@ -2134,7 +2136,9 @@ class WebtoonManager(QMainWindow):
         self.btn_load_script.clicked.connect(self.load_script_to_table)
 
         # 2. 대조 검수 버튼 (스텝 3)
-        btn_verify_step3 = QPushButton(" 🔍 대조 검수")
+        btn_verify_step3 = QPushButton("대조 검수")
+        btn_verify_step3.setIcon(get_colored_icon(config.ICON_SEARCH, "#1D4ED8"))
+        btn_verify_step3.setIconSize(QSize(15, 15))
         btn_verify_step3.setFixedHeight(32)
         btn_verify_step3.setCursor(Qt.PointingHandCursor)
         btn_verify_step3.setStyleSheet("""
@@ -4257,7 +4261,7 @@ class WebtoonManager(QMainWindow):
         reply = CustomMessageBox.question(
             self,
             "분석 완료",
-            "✅ 만화 대사 분석이 완료되었습니다!\n\n지금 바로 원본 이미지와 1:1로 비교하며 대조 검수를 진행하시겠습니까?",
+            "만화 대사 분석이 완료되었습니다!\n\n지금 바로 원본 이미지와 1:1로 비교하며 대조 검수를 진행하시겠습니까?",
             ["대조 검수 열기", "나중에 하기"]
         )
         if reply == "대조 검수 열기":
@@ -4267,7 +4271,7 @@ class WebtoonManager(QMainWindow):
         """스크립트 대조 검수 모달창 열기"""
         e_path, _, _ = self.get_paths()
         if not e_path or not os.path.exists(e_path):
-            self.toast.show_message("⚠️ 먼저 작업할 회차를 선택해 주세요.")
+            self.toast.show_message("먼저 작업할 회차를 선택해 주세요.")
             return
 
         from widgets import ScriptVerificationDialog

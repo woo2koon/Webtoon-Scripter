@@ -170,6 +170,8 @@ ICON_SELECT_ALL = os.path.join(ASSETS_DIR, "context_menu", "select_all.svg")
 ICON_SUCCESS = os.path.join(ASSETS_DIR, "check.svg")
 ICON_INFO = os.path.join(ASSETS_DIR, "info.svg")
 ICON_WARNING = os.path.join(ASSETS_DIR, "warning.svg")
+ICON_SEARCH = os.path.join(ASSETS_DIR, "search.svg")
+ICON_TAG = os.path.join(ASSETS_DIR, "tag.svg")
 # =================================================================
 
 OCR_API_KEY = ""

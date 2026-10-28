@@ -269,9 +269,15 @@ class VerificationImageLabel(QLabel):
 
             # 뱃지 번호 라벨 그리기
             if self.show_badges:
-                badge_text = f"#{item_id} ✓" if is_verified else f"#{item_id}"
+                badge_text = f"#{item_id}"
                 fm = QFontMetrics(badge_font)
-                text_w = fm.horizontalAdvance(badge_text) + 10
+                num_w = fm.horizontalAdvance(badge_text)
+                if is_verified:
+                    icon_w = 11
+                    gap = 3
+                    text_w = num_w + icon_w + gap + 10
+                else:
+                    text_w = num_w + 10
                 text_h = 18
 
                 bx = rect.x()
@@ -283,7 +289,12 @@ class VerificationImageLabel(QLabel):
                 painter.drawRoundedRect(badge_rect, 4, 4)
 
                 painter.setPen(QColor("#FFFFFF"))
-                painter.drawText(badge_rect, Qt.AlignCenter, badge_text)
+                if is_verified:
+                    painter.drawText(QRect(bx + 5, by, num_w, text_h), Qt.AlignVCenter | Qt.AlignLeft, badge_text)
+                    check_pix = get_colored_pixmap(config.ICON_SUCCESS, "#FFFFFF", 11, 11)
+                    painter.drawPixmap(bx + 5 + num_w + gap, by + (text_h - 11) // 2, check_pix)
+                else:
+                    painter.drawText(badge_rect, Qt.AlignCenter, badge_text)
 
         # 2. 마우스 드래그로 영역 생성 중인 경우
         if self._is_selecting:
@@ -826,7 +837,8 @@ class ScriptVerificationDialog(QDialog):
         self.show_badges = True
 
         epi_title = os.path.basename(episode_dir)
-        self.setWindowTitle(f"🔍 스크립트 대조 검수 - {epi_title}")
+        self.setWindowTitle(f"스크립트 대조 검수 - {epi_title}")
+        self.setWindowIcon(get_colored_icon(config.ICON_SEARCH, "#2563EB"))
         self.resize(1380, 880)
         self.setWindowFlags(Qt.Window | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
 
@@ -885,7 +897,11 @@ class ScriptVerificationDialog(QDialog):
         header_layout.setSpacing(15)
 
         # 타이틀 & 회차명
-        lbl_title = QLabel("🔍 스크립트 대조 검수")
+        icon_title = QLabel()
+        icon_title.setPixmap(get_colored_pixmap(config.ICON_SEARCH, "#2563EB", 20, 20))
+        header_layout.addWidget(icon_title)
+
+        lbl_title = QLabel("스크립트 대조 검수")
         lbl_title.setFont(QFont("Pretendard", 15, QFont.Bold))
         lbl_title.setStyleSheet("color: #0F172A;")
         header_layout.addWidget(lbl_title)
@@ -926,6 +942,8 @@ class ScriptVerificationDialog(QDialog):
 
         # 번호 뱃지 토글 버튼
         self.btn_toggle_badges = QPushButton("번호 뱃지 표시")
+        self.btn_toggle_badges.setIcon(get_colored_icon(config.ICON_TAG, "#334155"))
+        self.btn_toggle_badges.setIconSize(QSize(14, 14))
         self.btn_toggle_badges.setCheckable(True)
         self.btn_toggle_badges.setChecked(True)
         self.btn_toggle_badges.setFixedHeight(32)
@@ -1005,7 +1023,8 @@ class ScriptVerificationDialog(QDialog):
         tool_layout.setSpacing(8)
 
         self.txt_search = QLineEdit()
-        self.txt_search.setPlaceholderText("🔍 대사 또는 캐릭터 검색...")
+        self.txt_search.setPlaceholderText("대사 또는 캐릭터 검색...")
+        self.txt_search.addAction(get_colored_icon(config.ICON_SEARCH, "#94A3B8"), QLineEdit.LeadingPosition)
         self.txt_search.setFixedHeight(34)
         self.txt_search.setFont(QFont("Pretendard", 10))
         self.txt_search.setStyleSheet("""
@@ -1103,7 +1122,11 @@ class ScriptVerificationDialog(QDialog):
         bottom_layout.setSpacing(12)
 
         # 단축키 안내
-        lbl_shortcuts = QLabel("💡 단축키: [Enter: 저장 후 다음]  [Shift+Enter: 줄바꿈]  [휠 클릭 드래그: 화면 이동]  [Ctrl+휠: 확대/축소]")
+        icon_shortcuts = QLabel()
+        icon_shortcuts.setPixmap(get_colored_pixmap(config.ICON_KEYBOARD, "#64748B", 16, 16))
+        bottom_layout.addWidget(icon_shortcuts)
+
+        lbl_shortcuts = QLabel("단축키: [Enter: 저장 후 다음]  [Shift+Enter: 줄바꿈]  [휠 클릭 드래그: 화면 이동]  [Ctrl+휠: 확대/축소]")
         lbl_shortcuts.setFont(QFont("Pretendard", 10))
         lbl_shortcuts.setStyleSheet("color: #64748B;")
         bottom_layout.addWidget(lbl_shortcuts)
@@ -1651,6 +1674,6 @@ class ScriptVerificationDialog(QDialog):
             if hasattr(mw, 'load_data'):
                 mw.load_data()
             if hasattr(mw, 'toast'):
-                mw.toast.show_message("✨ 대조 검수 결과가 성공적으로 반영되었습니다.")
+                mw.toast.show_message("대조 검수 결과가 성공적으로 반영되었습니다.")
 
         self.accept()
