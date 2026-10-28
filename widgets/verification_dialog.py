@@ -19,7 +19,7 @@ from utils import (
     get_icon, get_colored_icon, get_colored_pixmap,
     load_ocr_boxes, save_ocr_boxes, natural_sort_key
 )
-from .common import ZoomBadge
+from .common import ZoomBadge, HoverIconButton
 from .dialogs import get_episode_images
 
 
@@ -372,17 +372,39 @@ class VerificationCardWidget(QFrame):
         top_layout.addStretch()
 
         # 도구 버튼들 (분할, 삭제)
-        btn_split = QPushButton("✂️")
+        btn_split = HoverIconButton("", config.ICON_CUT, normal_color="#64748B", hover_color="#2563EB")
         btn_split.setToolTip("대사 2개로 분할")
         btn_split.setFixedSize(26, 26)
-        btn_split.setStyleSheet("QPushButton { border: 1px solid #E5E7EB; border-radius: 4px; background: white; } QPushButton:hover { background: #F3F4F6; }")
+        btn_split.setIconSize(QSize(15, 15))
+        btn_split.setStyleSheet("""
+            QPushButton {
+                border: 1px solid #E2E8F0;
+                border-radius: 4px;
+                background-color: #FFFFFF;
+            }
+            QPushButton:hover {
+                background-color: #EFF6FF;
+                border-color: #93C5FD;
+            }
+        """)
         btn_split.clicked.connect(lambda: self.request_split.emit(self.item))
         top_layout.addWidget(btn_split)
 
-        btn_del = QPushButton("🗑️")
+        btn_del = HoverIconButton("", config.ICON_DELETE, normal_color="#94A3B8", hover_color="#EF4444")
         btn_del.setToolTip("대사 삭제")
         btn_del.setFixedSize(26, 26)
-        btn_del.setStyleSheet("QPushButton { border: 1px solid #E5E7EB; border-radius: 4px; background: white; color: #DC2626; } QPushButton:hover { background: #FEE2E2; }")
+        btn_del.setIconSize(QSize(15, 15))
+        btn_del.setStyleSheet("""
+            QPushButton {
+                border: 1px solid #E2E8F0;
+                border-radius: 4px;
+                background-color: #FFFFFF;
+            }
+            QPushButton:hover {
+                background-color: #FEF2F2;
+                border-color: #FCA5A5;
+            }
+        """)
         btn_del.clicked.connect(lambda: self.request_delete.emit(self.item))
         top_layout.addWidget(btn_del)
 
@@ -783,7 +805,7 @@ class ScriptVerificationDialog(QDialog):
         header_layout.addStretch()
 
         # 번호 뱃지 토글 버튼
-        self.btn_toggle_badges = QPushButton("🏷️ 번호 뱃지 표시")
+        self.btn_toggle_badges = QPushButton("번호 뱃지 표시")
         self.btn_toggle_badges.setCheckable(True)
         self.btn_toggle_badges.setChecked(True)
         self.btn_toggle_badges.setFixedHeight(32)
@@ -969,7 +991,9 @@ class ScriptVerificationDialog(QDialog):
         bottom_layout.addStretch()
 
         # 원본으로 초기화 버튼
-        btn_reset_raw = QPushButton("🔄 OCR 원본으로 초기화")
+        btn_reset_raw = QPushButton(" OCR 원본으로 초기화")
+        btn_reset_raw.setIcon(get_colored_icon(config.ICON_REFRESH, "#64748B"))
+        btn_reset_raw.setIconSize(QSize(14, 14))
         btn_reset_raw.setFixedHeight(36)
         btn_reset_raw.setStyleSheet("""
             QPushButton {
@@ -1005,7 +1029,9 @@ class ScriptVerificationDialog(QDialog):
         bottom_layout.addWidget(btn_cancel)
 
         # 검수 완료 및 적용 버튼
-        btn_apply = QPushButton("✅ 검수 완료 및 메인 반영")
+        btn_apply = QPushButton(" 검수 완료 및 메인 반영")
+        btn_apply.setIcon(get_colored_icon(config.ICON_SUCCESS, "#FFFFFF"))
+        btn_apply.setIconSize(QSize(16, 16))
         btn_apply.setFixedHeight(36)
         btn_apply.setFont(QFont("Pretendard", 11, QFont.Bold))
         btn_apply.setStyleSheet("""
