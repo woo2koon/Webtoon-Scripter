@@ -26,6 +26,80 @@ from .dialogs import get_episode_images
 # =================================================================
 # 1. 인라인 대사 편집 에디터 (Enter=다음, Shift+Enter=줄바꿈)
 # =================================================================
+class CardResizeHandle(QWidget):
+    """대사 카드 하단에 위치하여 마우스 드래그로 칸 높이를 조절하는 핸들 바"""
+    height_delta = Signal(int)
+    double_clicked = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(12)
+        self.setCursor(Qt.SizeVerCursor)
+        self.setToolTip("위아래로 드래그하여 높이 조절 (더블클릭: 내용 자동 맞춤)")
+        self._dragging = False
+        self._start_y = 0
+        self._hovered = False
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._dragging = True
+            pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
+            self._start_y = pos.y()
+            self.update()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._dragging:
+            pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
+            cur_y = pos.y()
+            delta = cur_y - self._start_y
+            if delta != 0:
+                self.height_delta.emit(delta)
+                self._start_y = cur_y
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._dragging = False
+            self.update()
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.double_clicked.emit()
+            event.accept()
+        else:
+            super().mouseDoubleClickEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        w = 38
+        h = 4
+        x = (self.width() - w) // 2
+        y = (self.height() - h) // 2
+        color = QColor("#2563EB") if (self._hovered or self._dragging) else QColor("#CBD5E1")
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(color)
+        painter.drawRoundedRect(x, y, w, h, 2, 2)
+
+
 class VerificationTextEdit(QTextEdit):
     enter_pressed = Signal()
     navigate_up = Signal()
@@ -34,7 +108,7 @@ class VerificationTextEdit(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFont(QFont("Pretendard", 11))
-        self.setFixedHeight(56)
+        self.setMinimumHeight(56)
         self.setStyleSheet("""
             QTextEdit {
                 border: 1px solid #D1D5DB;
@@ -50,6 +124,19 @@ class VerificationTextEdit(QTextEdit):
                 background-color: #FFFFFF;
             }
         """)
+
+    def auto_fit_height(self):
+        """텍스트 줄 수와 너비에 맞게 높이를 자동 계산 (기본 최소 56px, 최대 320px)"""
+        doc = self.document()
+        w = self.viewport().width()
+        if w > 50:
+            doc.setTextWidth(w)
+        else:
+            doc.setTextWidth(380)
+        doc_h = doc.size().height()
+        needed_h = max(56, min(320, int(doc_h) + 24))
+        self.setFixedHeight(needed_h)
+        return needed_h
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
@@ -419,10 +506,43 @@ class VerificationCardWidget(QFrame):
         self.txt_dialogue.navigate_down.connect(lambda: self.navigate_down.emit(self.item))
         layout.addWidget(self.txt_dialogue)
 
+        # 3. 하단 리사이즈 핸들 (칸 높이 조절 바)
+        self.resize_handle = CardResizeHandle(self)
+        self.resize_handle.height_delta.connect(self._on_handle_resize)
+        self.resize_handle.double_clicked.connect(self._on_handle_auto_fit)
+        layout.addWidget(self.resize_handle)
+
+        # 초기 높이 설정 (사용자 지정 높이가 있으면 유지, 없으면 텍스트 길이에 맞춰 자동 조절)
+        if self.item.get('custom_height'):
+            self.txt_dialogue.setFixedHeight(self.item['custom_height'])
+        else:
+            self.txt_dialogue.auto_fit_height()
+
+    def _on_handle_resize(self, delta):
+        new_h = max(56, min(600, self.txt_dialogue.height() + delta))
+        self.txt_dialogue.setFixedHeight(new_h)
+        self.item['custom_height'] = new_h
+
+    def _on_handle_auto_fit(self):
+        self.item.pop('custom_height', None)
+        self.txt_dialogue.auto_fit_height()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self.item.get('custom_height'):
+            self.txt_dialogue.auto_fit_height()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if not self.item.get('custom_height'):
+            self.txt_dialogue.auto_fit_height()
+
     def _on_text_changed(self):
         new_text = self.txt_dialogue.toPlainText()
         self.item['text'] = new_text
         self.text_changed.emit(self.item, new_text)
+        if not self.item.get('custom_height'):
+            self.txt_dialogue.auto_fit_height()
 
     def _on_char_changed(self, text):
         val = "" if text == "지정 안 됨" else text.strip()
