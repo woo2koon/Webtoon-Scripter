@@ -1141,29 +1141,46 @@ class ScriptVerificationDialog(QDialog):
 
         return items
 
-    def rebuild_cards(self):
-        """우측 대사 카드 리스트 전체 재생성"""
+    def _create_card_widget(self, item):
+        cw = VerificationCardWidget(item, self.characters, self.cards_container)
+        cw.clicked.connect(self.on_card_clicked)
+        cw.text_changed.connect(self.on_card_text_changed)
+        cw.character_changed.connect(self.on_card_character_changed)
+        cw.verified_toggled.connect(self.on_card_verified_toggled)
+        cw.request_split.connect(self.split_card)
+        cw.request_delete.connect(self.delete_card)
+        cw.enter_next.connect(self.on_card_enter_next)
+        cw.navigate_up.connect(self.on_card_navigate_up)
+        cw.navigate_down.connect(self.on_card_navigate_down)
+        return cw
+
+    def rebuild_cards(self, preserve_scroll=True):
+        """우측 대사 카드 리스트 전체 재생성 (초기 로드 또는 전체 갱신 시)"""
+        old_scroll = self.cards_scroll.verticalScrollBar().value() if preserve_scroll else 0
+        old_active_id = self.active_item_id
+
         for cw in self.card_widgets:
             cw.deleteLater()
         self.card_widgets = []
 
         for item in self.items:
-            cw = VerificationCardWidget(item, self.characters, self.cards_container)
-            cw.clicked.connect(self.on_card_clicked)
-            cw.text_changed.connect(self.on_card_text_changed)
-            cw.character_changed.connect(self.on_card_character_changed)
-            cw.verified_toggled.connect(self.on_card_verified_toggled)
-            cw.request_split.connect(self.split_card)
-            cw.request_delete.connect(self.delete_card)
-            cw.enter_next.connect(self.on_card_enter_next)
-            cw.navigate_up.connect(self.on_card_navigate_up)
-            cw.navigate_down.connect(self.on_card_navigate_down)
+            cw = self._create_card_widget(item)
             self.cards_layout.addWidget(cw)
             self.card_widgets.append(cw)
 
         self.filter_cards()
-        if self.card_widgets and self.active_item_id is None:
-            self.set_active_item(self.items[0]['id'])
+
+        if self.card_widgets:
+            valid_ids = [it['id'] for it in self.items]
+            target_id = old_active_id if (old_active_id in valid_ids) else self.items[0]['id']
+            if preserve_scroll:
+                self.active_item_id = target_id
+                for cw in self.card_widgets:
+                    cw.set_active(cw.item.get('id') == target_id)
+                self.update_image_boxes()
+                QTimer.singleShot(30, lambda: self.cards_scroll.verticalScrollBar().setValue(old_scroll))
+            else:
+                self.set_active_item(target_id, scroll_viewer=True, scroll_card=True)
 
     def update_image_boxes(self):
         """모든 이미지 라벨에 최신 박스 정보 갱신"""
@@ -1182,7 +1199,7 @@ class ScriptVerificationDialog(QDialog):
                 active_card = cw
 
         # 2. 우측 리스트 스크롤
-        if scroll_card and active_card:
+        if scroll_card and active_card and active_card.isVisible():
             self.cards_scroll.ensureWidgetVisible(active_card, 50, 50)
 
         # 3. 좌측 뷰어 박스 하이라이트 & 자동 스크롤
@@ -1193,7 +1210,7 @@ class ScriptVerificationDialog(QDialog):
                 self.scroll_viewer_to_item(target_item)
 
     def scroll_viewer_to_item(self, item):
-        """대사가 있는 이미지 및 위치로 부드럽게 스크롤"""
+        """대사가 있는 이미지 및 위치로 스크롤"""
         img_idx = item.get('image_index', 0)
         if 0 <= img_idx < len(self.image_labels):
             lbl = self.image_labels[img_idx]
@@ -1201,7 +1218,8 @@ class ScriptVerificationDialog(QDialog):
             if not lbl.original_pixmap.isNull() and lbl.original_pixmap.height() > 0:
                 scale_y = lbl.height() / float(lbl.original_pixmap.height())
                 rel_y = int(((box[1] + box[3]) / 2.0) * scale_y)
-                target_v = lbl.y() + rel_y - (self.scroll_area.viewport().height() // 2)
+                lbl_y = lbl.mapTo(self.viewer_content, QPoint(0, 0)).y()
+                target_v = lbl_y + rel_y - (self.scroll_area.viewport().height() // 2)
                 self.scroll_area.verticalScrollBar().setValue(max(0, target_v))
 
     def on_card_clicked(self, item):
@@ -1262,7 +1280,7 @@ class ScriptVerificationDialog(QDialog):
                 break
 
     def on_new_box_created(self, image_index, box):
-        """이미지에서 영역 드래그 시 새 말풍선 추가"""
+        """이미지에서 영역 드래그 시 새 말풍선 추가 (위젯 인라인 삽입으로 스크롤 보존)"""
         new_id = max([it.get('id', 0) for it in self.items], default=0) + 1
         img_file = os.path.basename(self.image_files[image_index]) if image_index < len(self.image_files) else ""
         new_item = {
@@ -1284,10 +1302,24 @@ class ScriptVerificationDialog(QDialog):
 
         self.items.insert(insert_idx, new_item)
         self._reindex_items()
-        self.rebuild_cards()
-        self.set_active_item(new_item['id'], scroll_viewer=False, scroll_card=True)
+
+        # 전체 재생성 대신 지정 위치에 카드 위젯만 삽입
+        new_cw = self._create_card_widget(new_item)
+        self.cards_layout.insertWidget(insert_idx, new_cw)
+        self.card_widgets.insert(insert_idx, new_cw)
+
+        # 번호 뱃지 갱신
+        for card in self.card_widgets:
+            card.lbl_id.setText(f"#{card.item['id']}")
+
+        self.update_image_boxes()
+        self.update_progress()
+
+        # 방금 사용자가 직접 이미지에서 드래그했으므로 뷰어는 스크롤하지 않고 카드만 스크롤
+        QTimer.singleShot(30, lambda: self.set_active_item(new_item['id'], scroll_viewer=False, scroll_card=True))
 
     def add_new_empty_card(self):
+        """새 대사 직접 추가 (위젯 인라인 추가로 스크롤 보존)"""
         new_id = max([it.get('id', 0) for it in self.items], default=0) + 1
         cur_img_idx = 0
         if self.active_item_id:
@@ -1307,11 +1339,21 @@ class ScriptVerificationDialog(QDialog):
         }
         self.items.append(new_item)
         self._reindex_items()
-        self.rebuild_cards()
-        self.set_active_item(new_item['id'], scroll_viewer=True, scroll_card=True)
+
+        new_cw = self._create_card_widget(new_item)
+        self.cards_layout.addWidget(new_cw)
+        self.card_widgets.append(new_cw)
+
+        for card in self.card_widgets:
+            card.lbl_id.setText(f"#{card.item['id']}")
+
+        self.update_image_boxes()
+        self.update_progress()
+
+        QTimer.singleShot(30, lambda: self.set_active_item(new_item['id'], scroll_viewer=True, scroll_card=True))
 
     def split_card(self, item):
-        """대사 2개로 분할"""
+        """대사 2개로 분할 (전체 재생성 없이 인라인 분할)"""
         text = item.get('text', '')
         parts = text.split('\n', 1) if '\n' in text else [text, ""]
         if len(parts) == 1 or not parts[1]:
@@ -1325,7 +1367,11 @@ class ScriptVerificationDialog(QDialog):
 
         item['text'] = parts[0]
 
-        # 새 아이템 생성
+        # 기존 카드 텍스트 업데이트
+        cw_orig = next((w for w in self.card_widgets if w.item == item), None)
+        if cw_orig:
+            cw_orig.txt_dialogue.setPlainText(parts[0])
+
         idx = self.items.index(item)
         box = item.get('box', [100, 100, 400, 300])
         h_half = (box[3] - box[1]) // 2
@@ -1342,10 +1388,24 @@ class ScriptVerificationDialog(QDialog):
         }
         self.items.insert(idx + 1, new_item)
         self._reindex_items()
-        self.rebuild_cards()
-        self.set_active_item(new_item['id'])
+
+        # 분할된 새 카드 위젯을 기존 위치 바로 뒤에 삽입 (전체 위젯 재생성 방지)
+        new_cw = self._create_card_widget(new_item)
+        self.cards_layout.insertWidget(idx + 1, new_cw)
+        self.card_widgets.insert(idx + 1, new_cw)
+
+        # 번호 뱃지 갱신
+        for card in self.card_widgets:
+            card.lbl_id.setText(f"#{card.item['id']}")
+
+        self.update_image_boxes()
+        self.update_progress()
+
+        # 새로 분할된 카드로 포커스 및 스크롤
+        QTimer.singleShot(30, lambda: self.set_active_item(new_item['id'], scroll_viewer=True, scroll_card=True))
 
     def delete_card(self, item):
+        """대사 삭제 (삭제된 위치 주변 카드 유지 및 상단 튕김 방지)"""
         if len(self.items) <= 1:
             QMessageBox.information(self, "알림", "최소 1개의 대사는 유지되어야 합니다.")
             return
@@ -1356,11 +1416,29 @@ class ScriptVerificationDialog(QDialog):
             QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
+            del_idx = self.items.index(item)
             self.items.remove(item)
             self._reindex_items()
-            self.rebuild_cards()
+
+            # 해당 카드 위젯만 레이아웃에서 제거 (전체 위젯 재생성 방지 -> 스크롤 유지)
+            cw_to_del = next((w for w in self.card_widgets if w.item == item), None)
+            if cw_to_del:
+                self.cards_layout.removeWidget(cw_to_del)
+                cw_to_del.deleteLater()
+                self.card_widgets.remove(cw_to_del)
+
+            # 남은 카드 번호 뱃지 갱신
+            for card in self.card_widgets:
+                card.lbl_id.setText(f"#{card.item['id']}")
+
+            self.update_image_boxes()
+            self.update_progress()
+
+            # 삭제된 위치의 다음 대사(또는 마지막이면 이전 대사)를 활성화하여 그 위치에 머무름
             if self.items:
-                self.set_active_item(self.items[0]['id'])
+                next_idx = min(del_idx, len(self.items) - 1)
+                next_item = self.items[next_idx]
+                self.set_active_item(next_item['id'], scroll_viewer=True, scroll_card=True)
 
     def _reindex_items(self):
         for idx, it in enumerate(self.items):
